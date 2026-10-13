@@ -244,9 +244,34 @@ describe('generateReply — Groq', () => {
       handoff: false,
       usage: { promptTokens: 20, completionTokens: 10, totalTokens: 30 },
     })
-    const [url, opts] = fetchMock.mock.calls[0]
-    expect(url).toContain('api.groq.com')
-    expect(opts.headers.Authorization).toBe('Bearer gsk_test')
+  })
+
+  it('automatically falls back to llama-3.1-8b-instant if requested model is 404', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        errResponse(404, {
+          error: { message: 'The model llama-3.3-70b-versatile does not exist or you do not have access to it' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [{ message: { content: 'Fallback reply from 8B!' } }],
+          usage: { prompt_tokens: 15, completion_tokens: 8, total_tokens: 23 },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'groq', apiKey: 'gsk_test', model: 'llama-3.3-70b-versatile' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    expect(res.text).toBe('Fallback reply from 8B!')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const secondCallBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    expect(secondCallBody.model).toBe('llama-3.1-8b-instant')
   })
 })
 

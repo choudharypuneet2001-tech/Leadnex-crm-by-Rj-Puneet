@@ -13,7 +13,7 @@ import type { AiProvider } from './types'
 export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
   gemini: 'gemini-3.8-flash',
   openai: 'gpt-4o-mini',
-  groq: 'llama-3.3-70b-versatile',
+  groq: 'llama-3.1-8b-instant',
   anthropic: 'claude-3-5-haiku-20241022',
 }
 
