@@ -28,11 +28,16 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
   // Normalize model name:
-  // e.g. "models/gemini-1.5-flash" -> "gemini-1.5-flash"
-  // Map any "gemini-2.5-flash" alias to "gemini-1.5-flash" to avoid 404
+  // Map any older/deprecated models (1.5, 2.0, 2.5) directly to Google's current gemini-3.8-flash
   let cleanModel = model.replace(/^models\//, '').trim()
-  if (!cleanModel || cleanModel.includes('2.5')) {
-    cleanModel = 'gemini-1.5-flash'
+  if (
+    !cleanModel ||
+    cleanModel.includes('1.5') ||
+    cleanModel.includes('2.0') ||
+    cleanModel.includes('2.5') ||
+    cleanModel === 'gemini-flash'
+  ) {
+    cleanModel = 'gemini-3.8-flash'
   }
 
   // Format messages into Gemini's contents array with alternating roles ('user' and 'model')
