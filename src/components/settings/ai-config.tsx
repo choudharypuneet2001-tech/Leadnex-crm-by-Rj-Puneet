@@ -73,9 +73,9 @@ const PROVIDER_GET_KEY_URL: Record<AiProvider, { label: string; url: string }> =
 
 const RECOMMENDED_MODELS: Record<AiProvider, { id: string; label: string }[]> = {
   gemini: [
-    { id: 'gemini-2.5-flash', label: '2.5 Flash (Recommended)' },
-    { id: 'gemini-1.5-flash', label: '1.5 Flash' },
-    { id: 'gemini-2.5-pro', label: '2.5 Pro' },
+    { id: 'gemini-1.5-flash', label: '1.5 Flash (Recommended - Free & Fast)' },
+    { id: 'gemini-1.5-pro', label: '1.5 Pro' },
+    { id: 'gemini-2.0-flash', label: '2.0 Flash' },
   ],
   openai: [
     { id: 'gpt-4o-mini', label: 'GPT-4o Mini (Fast & Cheap)' },
