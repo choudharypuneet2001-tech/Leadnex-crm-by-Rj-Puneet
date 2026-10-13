@@ -39,13 +39,56 @@ const MASKED_KEY = '••••••••••••••••';
 const HANDOFF_QUEUE = '__queue__';
 
 const PROVIDER_LABEL: Record<AiProvider, string> = {
-  openai: 'OpenAI',
+  gemini: 'Google Gemini (Free API Available)',
+  openai: 'OpenAI (ChatGPT)',
+  groq: 'Groq (Ultra-Fast Llama 3)',
   anthropic: 'Anthropic (Claude)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
-  openai: 'sk-...',
+  gemini: 'AIzaSy...',
+  openai: 'sk-proj-...',
+  groq: 'gsk_...',
   anthropic: 'sk-ant-...',
+};
+
+const PROVIDER_GET_KEY_URL: Record<AiProvider, { label: string; url: string }> = {
+  gemini: {
+    label: 'Get free Gemini API Key from Google AI Studio',
+    url: 'https://aistudio.google.com/app/apikey',
+  },
+  openai: {
+    label: 'Get API Key from OpenAI Platform',
+    url: 'https://platform.openai.com/api-keys',
+  },
+  groq: {
+    label: 'Get free API Key from Groq Console',
+    url: 'https://console.groq.com/keys',
+  },
+  anthropic: {
+    label: 'Get API Key from Anthropic Console',
+    url: 'https://console.anthropic.com/settings/keys',
+  },
+};
+
+const RECOMMENDED_MODELS: Record<AiProvider, { id: string; label: string }[]> = {
+  gemini: [
+    { id: 'gemini-2.5-flash', label: '2.5 Flash (Recommended)' },
+    { id: 'gemini-1.5-flash', label: '1.5 Flash' },
+    { id: 'gemini-2.5-pro', label: '2.5 Pro' },
+  ],
+  openai: [
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini (Fast & Cheap)' },
+    { id: 'gpt-4o', label: 'GPT-4o' },
+  ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
+    { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B' },
+  ],
+  anthropic: [
+    { id: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+    { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+  ],
 };
 
 export function AiConfig() {
@@ -129,8 +172,7 @@ export function AiConfig() {
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
     const isDefaultModel =
-      model === AI_PROVIDER_DEFAULT_MODEL.openai ||
-      model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
+      Object.values(AI_PROVIDER_DEFAULT_MODEL).includes(model) ||
       model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
@@ -277,7 +319,9 @@ export function AiConfig() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="gemini">{PROVIDER_LABEL.gemini}</SelectItem>
                     <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
+                    <SelectItem value="groq">{PROVIDER_LABEL.groq}</SelectItem>
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
                     </SelectItem>
@@ -294,6 +338,22 @@ export function AiConfig() {
                   placeholder={AI_PROVIDER_DEFAULT_MODEL[provider]}
                   disabled={disabled}
                 />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {RECOMMENDED_MODELS[provider]?.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setModel(m.id)}
+                      className={`rounded-full px-2.5 py-0.5 text-xs border transition-colors ${
+                        model === m.id
+                          ? 'bg-primary text-primary-foreground border-primary font-medium'
+                          : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -345,6 +405,18 @@ export function AiConfig() {
                   {t('testKey')}
                 </Button>
               </div>
+              {PROVIDER_GET_KEY_URL[provider] && (
+                <p className="text-xs text-muted-foreground pt-1">
+                  <a
+                    href={PROVIDER_GET_KEY_URL[provider].url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
+                  >
+                    {PROVIDER_GET_KEY_URL[provider].label} ↗
+                  </a>
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

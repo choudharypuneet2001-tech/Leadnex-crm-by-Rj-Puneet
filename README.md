@@ -1,4 +1,7 @@
-# wacrm — CRM Template for WhatsApp
+# Leadnex CRM by Rj Puneet
+
+> **🚀 Live Production URL:** [https://leadnex-crm-by-rj-puneet.vercel.app](https://leadnex-crm-by-rj-puneet.vercel.app)  
+> **📦 Latest Deployment:** [https://leadnex-crm-by-rj-puneet-i15dhpuax-jatt-ps-tudioz.vercel.app](https://leadnex-crm-by-rj-puneet-i15dhpuax-jatt-ps-tudioz.vercel.app)
 
 > Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
 > sales pipelines, broadcasts, and no-code automations. Fork it, brand

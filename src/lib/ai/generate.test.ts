@@ -192,3 +192,58 @@ describe('generateReply — Anthropic', () => {
     expect(body.messages).toHaveLength(1)
   })
 })
+
+describe('generateReply — Gemini', () => {
+  it('calls the Google OpenAI endpoint with Bearer key and parses completion', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Namaste from Gemini!' } }],
+        usage: { prompt_tokens: 15, completion_tokens: 8, total_tokens: 23 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'gemini', apiKey: 'AIzaSyTest', model: 'gemini-2.5-flash' }),
+      systemPrompt: 'sys prompt',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })
+
+    expect(res).toEqual({
+      text: 'Namaste from Gemini!',
+      handoff: false,
+      usage: { promptTokens: 15, completionTokens: 8, totalTokens: 23 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('generativelanguage.googleapis.com')
+    expect(opts.headers.Authorization).toBe('Bearer AIzaSyTest')
+  })
+})
+
+describe('generateReply — Groq', () => {
+  it('calls Groq completions endpoint with Bearer key and parses response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Speedy reply from Groq!' } }],
+        usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'groq', apiKey: 'gsk_test', model: 'llama-3.3-70b-versatile' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    expect(res).toEqual({
+      text: 'Speedy reply from Groq!',
+      handoff: false,
+      usage: { promptTokens: 20, completionTokens: 10, totalTokens: 30 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('api.groq.com')
+    expect(opts.headers.Authorization).toBe('Bearer gsk_test')
+  })
+})
+

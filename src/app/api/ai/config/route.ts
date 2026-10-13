@@ -78,8 +78,9 @@ export async function POST(request: Request) {
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+    const VALID_PROVIDERS: AiProvider[] = ['openai', 'anthropic', 'gemini', 'groq']
+    if (!VALID_PROVIDERS.includes(provider)) {
+      return bad(`provider must be one of: ${VALID_PROVIDERS.join(', ')}`)
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
@@ -222,10 +223,11 @@ export async function POST(request: Request) {
         .eq('account_id', accountId)
       if (upErr) {
         console.error('[ai/config POST] update error:', upErr)
-        return NextResponse.json(
-          { error: 'Failed to save AI configuration' },
-          { status: 500 },
-        )
+        const isConstraint = upErr.message?.includes('ai_configs_provider_check')
+        const message = isConstraint
+          ? 'Database constraint: Please run migration 044 in Supabase SQL Editor to allow Gemini/Groq providers.'
+          : 'Failed to save AI configuration'
+        return NextResponse.json({ error: message }, { status: 500 })
       }
     } else {
       const { error: insErr } = await supabase.from('ai_configs').insert({
@@ -236,10 +238,11 @@ export async function POST(request: Request) {
       })
       if (insErr) {
         console.error('[ai/config POST] insert error:', insErr)
-        return NextResponse.json(
-          { error: 'Failed to save AI configuration' },
-          { status: 500 },
-        )
+        const isConstraint = insErr.message?.includes('ai_configs_provider_check')
+        const message = isConstraint
+          ? 'Database constraint: Please run migration 044 in Supabase SQL Editor to allow Gemini/Groq providers.'
+          : 'Failed to save AI configuration'
+        return NextResponse.json({ error: message }, { status: 500 })
       }
     }
 
