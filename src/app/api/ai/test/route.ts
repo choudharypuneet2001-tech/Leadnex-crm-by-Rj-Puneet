@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
+import { normalizeOpenAiModel } from '@/lib/ai/defaults'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
 /**
@@ -34,9 +35,12 @@ export async function POST(request: Request) {
         { status: 400 },
       )
     }
-    const model = typeof body.model === 'string' ? body.model.trim() : ''
+    let model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) {
       return NextResponse.json({ error: 'model is required' }, { status: 400 })
+    }
+    if (provider === 'openai') {
+      model = normalizeOpenAiModel(model)
     }
 
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
@@ -44,12 +48,18 @@ export async function POST(request: Request) {
     if (!apiKeyPlain) {
       const { data: existing } = await supabase
         .from('ai_configs')
-        .select('api_key')
+        .select('provider, api_key')
         .eq('account_id', accountId)
         .maybeSingle()
       if (!existing?.api_key) {
         return NextResponse.json(
-          { error: 'Enter an API key to test.' },
+          { error: `Enter an API key for ${provider} to test.` },
+          { status: 400 },
+        )
+      }
+      if (existing.provider !== provider) {
+        return NextResponse.json(
+          { error: `Please enter the API key for ${provider}. Cannot test with saved ${existing.provider} key.` },
           { status: 400 },
         )
       }

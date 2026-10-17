@@ -8,6 +8,8 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
+import { ingestDocument } from '@/lib/ai/knowledge'
+import { normalizeOpenAiModel } from '@/lib/ai/defaults'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
 function bad(message: string) {
@@ -82,8 +84,11 @@ export async function POST(request: Request) {
     if (!VALID_PROVIDERS.includes(provider)) {
       return bad(`provider must be one of: ${VALID_PROVIDERS.join(', ')}`)
     }
-    const model = typeof body.model === 'string' ? body.model.trim() : ''
+    let model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
+    if (provider === 'openai') {
+      model = normalizeOpenAiModel(model)
+    }
 
     const systemPrompt =
       typeof body.system_prompt === 'string' && body.system_prompt.trim()
@@ -129,7 +134,7 @@ export async function POST(request: Request) {
     // Reuse the stored key when the form didn't send a fresh one.
     const { data: existing } = await supabase
       .from('ai_configs')
-      .select('id, provider, model, api_key')
+      .select('id, provider, model, api_key, embeddings_api_key')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -137,6 +142,9 @@ export async function POST(request: Request) {
     if (rawKey) {
       apiKeyPlain = rawKey
     } else if (existing?.api_key) {
+      if (existing.provider !== provider) {
+        return bad(`You changed provider to ${provider}. Please enter the API key for ${provider}.`)
+      }
       try {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {
@@ -214,6 +222,9 @@ export async function POST(request: Request) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {
       shared.embeddings_api_key = null
+    } else if (provider === 'openai' && !existing?.embeddings_api_key) {
+      // Auto-use OpenAI API key for embeddings so semantic search immediately works
+      shared.embeddings_api_key = encryptedKey || (existing?.api_key ?? encrypt(apiKeyPlain))
     }
 
     if (existing) {
@@ -244,6 +255,44 @@ export async function POST(request: Request) {
           : 'Failed to save AI configuration'
         return NextResponse.json({ error: message }, { status: 500 })
       }
+    }
+
+    // Auto-backfill unindexed chunks in background when an embeddings key is active
+    const activeEmbeddingsKey =
+      rawEmbeddingsKey ||
+      (provider === 'openai' ? apiKeyPlain : null) ||
+      (existing?.embeddings_api_key ? decrypt(existing.embeddings_api_key) : null)
+
+    if (activeEmbeddingsKey) {
+      void (async () => {
+        try {
+          const { data: chunksWithoutEmbed } = await supabase
+            .from('ai_knowledge_chunks')
+            .select('id')
+            .eq('account_id', accountId)
+            .is('embedding', null)
+            .limit(1)
+
+          if (chunksWithoutEmbed && chunksWithoutEmbed.length > 0) {
+            const { data: docs } = await supabase
+              .from('ai_knowledge_documents')
+              .select('id, content')
+              .eq('account_id', accountId)
+
+            for (const doc of docs ?? []) {
+              await ingestDocument(
+                supabase,
+                accountId,
+                { embeddingsApiKey: activeEmbeddingsKey },
+                doc.id,
+                doc.content,
+              )
+            }
+          }
+        } catch (e) {
+          console.error('[ai/config POST] auto-backfill embeddings failed:', e)
+        }
+      })()
     }
 
     return NextResponse.json({ success: true })

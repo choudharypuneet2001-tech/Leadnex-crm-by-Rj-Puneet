@@ -18,6 +18,45 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
 }
 
 /**
+ * Normalizes OpenAI model names to handle common user inputs / typos like:
+ * 'gpt 4.1 mini', 'gpt-4.1-mini', 'gpt 4o mini', 'gpt4o-mini', etc.
+ */
+export function normalizeOpenAiModel(model: string): string {
+  const trimmed = model.trim().toLowerCase()
+  if (
+    trimmed === 'gpt-4o-mini' ||
+    trimmed === 'gpt-4.1-mini' ||
+    trimmed === 'gpt 4.1 mini' ||
+    trimmed === 'gpt 4.1-mini' ||
+    trimmed === 'gpt4.1mini' ||
+    trimmed === 'gpt-4.0-mini' ||
+    trimmed === 'gpt 4.0 mini' ||
+    trimmed === 'gpt 4o mini' ||
+    trimmed === 'gpt-4o mini' ||
+    trimmed === 'gpt4o-mini' ||
+    trimmed === 'gpt4o mini' ||
+    trimmed === '4o-mini' ||
+    trimmed === '4.1-mini' ||
+    trimmed === 'gpt4.1-mini' ||
+    trimmed === 'gpt4.1'
+  ) {
+    return 'gpt-4o-mini'
+  }
+  if (
+    trimmed === 'gpt-4o' ||
+    trimmed === 'gpt 4o' ||
+    trimmed === 'gpt4o' ||
+    trimmed === 'gpt-4.0' ||
+    trimmed === 'gpt 4.0' ||
+    trimmed === 'gpt-4.1' ||
+    trimmed === 'gpt 4.1'
+  ) {
+    return 'gpt-4o'
+  }
+  return model.trim()
+}
+
+/**
  * Sentinel the model is instructed to emit (in auto-reply mode) when it
  * can't confidently help and a human should take over. Parsed and
  * stripped by `generateReply`.

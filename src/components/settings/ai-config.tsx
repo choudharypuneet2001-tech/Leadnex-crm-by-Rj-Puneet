@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
-import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
+import { AI_PROVIDER_DEFAULT_MODEL, normalizeOpenAiModel } from '@/lib/ai/defaults';
 import type { AiProvider } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
@@ -77,8 +77,8 @@ const RECOMMENDED_MODELS: Record<AiProvider, { id: string; label: string }[]> = 
     { id: 'gemini-3.8-pro', label: '3.8 Pro (Advanced)' },
   ],
   openai: [
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini (Fast & Cheap)' },
-    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini (Fast & Cheap — Recommended)' },
+    { id: 'gpt-4o', label: 'GPT-4o (High Intelligence)' },
   ],
   groq: [
     { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B (Fast & Free Tier)' },
@@ -103,6 +103,7 @@ export function AiConfig() {
   const [removing, setRemoving] = useState(false);
 
   const [configured, setConfigured] = useState(false);
+  const [savedProvider, setSavedProvider] = useState<AiProvider | null>(null);
   const [provider, setProvider] = useState<AiProvider>('openai');
   const [model, setModel] = useState(AI_PROVIDER_DEFAULT_MODEL.openai);
   const [apiKey, setApiKey] = useState('');
@@ -137,6 +138,7 @@ export function AiConfig() {
       }
       if (data.configured) {
         setConfigured(true);
+        setSavedProvider(data.provider);
         setProvider(data.provider);
         setModel(data.model);
         setSystemPrompt(data.system_prompt ?? '');
@@ -172,6 +174,18 @@ export function AiConfig() {
   // typed a custom model.
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
+    // If switching away from the saved provider, clear the key input
+    // so the user isn't misled into thinking the previous provider's key applies
+    if (savedProvider && next !== savedProvider) {
+      setHasStoredKey(false);
+      setApiKey('');
+      setKeyEdited(false);
+    } else if (savedProvider && next === savedProvider) {
+      setHasStoredKey(true);
+      setApiKey(MASKED_KEY);
+      setKeyEdited(false);
+    }
+
     const isDefaultModel =
       Object.values(AI_PROVIDER_DEFAULT_MODEL).includes(model) ||
       model.trim() === '';
@@ -197,6 +211,16 @@ export function AiConfig() {
   });
 
   const handleTest = async () => {
+    let cleanModel = model.trim();
+    if (provider === 'openai') {
+      cleanModel = normalizeOpenAiModel(cleanModel);
+      setModel(cleanModel);
+    }
+    if (savedProvider && provider !== savedProvider && (!keyEdited || !apiKey.trim())) {
+      toast.error(`Please enter your ${PROVIDER_LABEL[provider]} API key to test.`);
+      return;
+    }
+
     setTesting(true);
     try {
       const res = await fetch('/api/ai/test', {
@@ -204,7 +228,7 @@ export function AiConfig() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider,
-          model: model.trim(),
+          model: cleanModel,
           api_key: keyPayload(),
         }),
       });
@@ -219,8 +243,17 @@ export function AiConfig() {
   };
 
   const handleSave = async () => {
-    if (!model.trim()) {
+    let cleanModel = model.trim();
+    if (provider === 'openai') {
+      cleanModel = normalizeOpenAiModel(cleanModel);
+      setModel(cleanModel);
+    }
+    if (!cleanModel) {
       toast.error(t('missingModel'));
+      return;
+    }
+    if (savedProvider && provider !== savedProvider && (!keyEdited || !apiKey.trim())) {
+      toast.error(`Please enter your ${PROVIDER_LABEL[provider]} API key.`);
       return;
     }
     if (!configured && !keyEdited) {
@@ -232,7 +265,10 @@ export function AiConfig() {
       const res = await fetch('/api/ai/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildBody()),
+        body: JSON.stringify({
+          ...buildBody(),
+          model: cleanModel,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -255,6 +291,7 @@ export function AiConfig() {
       if (res.ok) {
         toast.success(t('removeSuccess'));
         setConfigured(false);
+        setSavedProvider(null);
         setHasStoredKey(false);
         setApiKey('');
         setKeyEdited(false);
@@ -427,6 +464,11 @@ export function AiConfig() {
                   {t('optionalSemanticSearch')}
                 </span>
               </Label>
+              {provider === 'openai' && (
+                <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">
+                  ✨ <strong>OpenAI Connected:</strong> Your OpenAI API key is automatically used for AI Knowledge Base semantic search. You don&apos;t need to enter anything here unless you want to use a separate key.
+                </div>
+              )}
               <Input
                 id="ai-embeddings-key"
                 type="password"

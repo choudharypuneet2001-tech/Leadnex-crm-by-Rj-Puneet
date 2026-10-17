@@ -1,5 +1,5 @@
 import { AiError, type ProviderResult } from '../types'
-import { MAX_OUTPUT_TOKENS } from '../defaults'
+import { MAX_OUTPUT_TOKENS, normalizeOpenAiModel } from '../defaults'
 import {
   mergeConsecutive,
   normalizeUsage,
@@ -26,6 +26,7 @@ interface OpenAiResponse {
  */
 export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
+  const normalizedModel = normalizeOpenAiModel(model) || 'gpt-4o-mini'
 
   let res: Response
   try {
@@ -36,7 +37,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model,
+        model: normalizedModel,
         messages: [
           { role: 'system', content: systemPrompt },
           ...mergeConsecutive(messages),
