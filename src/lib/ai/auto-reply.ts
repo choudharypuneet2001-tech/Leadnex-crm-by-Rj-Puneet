@@ -130,17 +130,64 @@ export async function dispatchInboundToAiReply(
       latestUserMessage(messages),
     )
 
+    // Load contact details if available to personalise and extract lead info
+    const { data: contact } = await db
+      .from('contacts')
+      .select('id, name, company')
+      .eq('id', contactId)
+      .maybeSingle()
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      contact: {
+        name: contact?.name,
+        city: contact?.company,
+      },
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text, handoff, usage, contactUpdate } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
+
+    // If contact name or city was extracted, update the contact record
+    if (contactUpdate && (contactUpdate.name || contactUpdate.city)) {
+      try {
+        const updatePayload: Record<string, unknown> = {
+          updated_at: new Date().toISOString(),
+        }
+        if (contactUpdate.name && (!contact?.name || contact.name.trim() === '')) {
+          updatePayload.name = contactUpdate.name
+        }
+        if (contactUpdate.city && (!contact?.company || contact.company.trim() === '')) {
+          updatePayload.company = contactUpdate.city
+        }
+        if (Object.keys(updatePayload).length > 1) {
+          if (contactUpdate.city) {
+            const res = await db
+              .from('contacts')
+              .update({ ...updatePayload, city: contactUpdate.city })
+              .eq('id', contactId)
+            if (res.error) {
+              await db
+                .from('contacts')
+                .update(updatePayload)
+                .eq('id', contactId)
+            }
+          } else {
+            await db
+              .from('contacts')
+              .update(updatePayload)
+              .eq('id', contactId)
+          }
+        }
+      } catch (err) {
+        console.warn('[ai auto-reply] failed to update contact with extracted info:', err)
+      }
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`

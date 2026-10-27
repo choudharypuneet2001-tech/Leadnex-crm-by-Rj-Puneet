@@ -325,13 +325,13 @@ export function ContactForm({
 
           <div className="space-y-2">
             <Label htmlFor="cf-company" className="text-muted-foreground">
-              {t('companyLabel')}
+              City / Location
             </Label>
             <Input
               id="cf-company"
               value={company}
               onChange={(e) => setCompany(e.target.value)}
-              placeholder={t('companyPlaceholder')}
+              placeholder="e.g. Jaipur, Delhi, Mumbai"
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
           </div>

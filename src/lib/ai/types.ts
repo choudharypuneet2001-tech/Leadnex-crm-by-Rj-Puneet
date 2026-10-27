@@ -54,14 +54,21 @@ export interface ProviderResult {
   usage: AiUsage | null
 }
 
+export interface ContactUpdateExtracted {
+  name?: string
+  city?: string
+}
+
 /** Outcome of a generation call. */
 export interface GenerateResult {
-  /** The reply text, with any handoff sentinel stripped. */
+  /** The reply text, with any handoff sentinel or update tags stripped. */
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
+  /** Extracted contact fields (name, city) from conversation turn if any. */
+  contactUpdate?: ContactUpdateExtracted | null
 }
 
 /**

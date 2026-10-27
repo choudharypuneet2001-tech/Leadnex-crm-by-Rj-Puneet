@@ -60,12 +60,16 @@ describe('parseGeneration', () => {
     })
   })
 
-  it('passes usage straight through', () => {
-    const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
-    expect(parseGeneration('Hi', usage)).toEqual({
-      text: 'Hi',
+  it('detects and strips contact update tags', () => {
+    const raw = 'Namaste Anjali ji! [[UPDATE_CONTACT: {"name": "Anjali", "city": "Jaipur"}]]'
+    expect(parseGeneration(raw)).toEqual({
+      text: 'Namaste Anjali ji!',
       handoff: false,
-      usage,
+      usage: null,
+      contactUpdate: {
+        name: 'Anjali',
+        city: 'Jaipur',
+      },
     })
   })
 })

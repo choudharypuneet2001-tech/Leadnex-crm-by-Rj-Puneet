@@ -429,6 +429,16 @@ export function ContactDetailView({
                         <Copy className="size-3" />
                       )}
                     </button>
+                    {contact.phone && (
+                      <a
+                        href={`tel:${contact.phone}`}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white transition-colors cursor-pointer text-xs font-medium"
+                        title="Call contact"
+                      >
+                        <Phone className="size-3" />
+                        Call
+                      </a>
+                    )}
                     {contact.email && (
                       <span className="flex items-center gap-1">
                         <Mail className="size-3" />
@@ -526,10 +536,11 @@ export function ContactDetailView({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('company')}</Label>
+                    <Label className="text-muted-foreground text-xs">City / Location</Label>
                     <Input
                       value={editCompany}
                       onChange={(e) => setEditCompany(e.target.value)}
+                      placeholder="e.g. Jaipur, Delhi, Mumbai"
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>

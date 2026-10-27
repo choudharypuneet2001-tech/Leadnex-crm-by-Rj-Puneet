@@ -44,6 +44,18 @@ vi.mock('./admin-client', () => ({
         }
         return chain
       }
+      if (table === 'contacts') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+            }),
+          }),
+          update: () => ({
+            eq: () => Promise.resolve({ error: null }),
+          }),
+        }
+      }
       // conversations
       return {
         select: () => ({

@@ -59,8 +59,13 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
   return parseGeneration(result.text, result.usage)
 }
 
+import type { ContactUpdateExtracted } from './types'
+
+export const CONTACT_UPDATE_REGEX =
+  /\[\[(?:UPDATE_CONTACT|CONTACT_UPDATE):\s*(\{[\s\S]*?\})\s*\]\]/i
+
 /**
- * Split the raw model output into `{ text, handoff, usage }`. The
+ * Split the raw model output into `{ text, handoff, usage, contactUpdate }`. The
  * sentinel can appear alone or trailing a partial reply; either way we
  * treat the turn as a handoff and strip the marker from any remaining
  * text. `usage` is passed straight through (null when the provider
@@ -70,7 +75,35 @@ export function parseGeneration(
   raw: string,
   usage: AiUsage | null = null,
 ): GenerateResult {
-  const handoff = raw.includes(HANDOFF_SENTINEL)
-  const text = raw.split(HANDOFF_SENTINEL).join('').trim()
-  return { text, handoff, usage }
+  let contactUpdate: ContactUpdateExtracted | null = null
+  const updateMatch = raw.match(CONTACT_UPDATE_REGEX)
+  if (updateMatch) {
+    try {
+      const parsed = JSON.parse(updateMatch[1])
+      if (typeof parsed === 'object' && parsed !== null) {
+        const name =
+          typeof parsed.name === 'string' && parsed.name.trim()
+            ? parsed.name.trim()
+            : undefined
+        const city =
+          typeof parsed.city === 'string' && parsed.city.trim()
+            ? parsed.city.trim()
+            : undefined
+        if (name || city) {
+          contactUpdate = { name, city }
+        }
+      }
+    } catch {
+      // Malformed JSON - ignore gracefully
+    }
+  }
+
+  const cleanRaw = raw.replace(CONTACT_UPDATE_REGEX, '')
+  const handoff = cleanRaw.includes(HANDOFF_SENTINEL)
+  const text = cleanRaw.split(HANDOFF_SENTINEL).join('').trim()
+  const result: GenerateResult = { text, handoff, usage }
+  if (contactUpdate) {
+    result.contactUpdate = contactUpdate
+  }
+  return result
 }

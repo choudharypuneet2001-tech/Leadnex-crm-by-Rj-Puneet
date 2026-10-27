@@ -49,6 +49,8 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Phone,
+  MapPin,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -544,7 +546,7 @@ export default function ContactsPage() {
               <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
+              <TableHead className="text-muted-foreground hidden sm:table-cell">City / Location</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
               <TableHead className="text-muted-foreground w-12" />
@@ -601,16 +603,38 @@ export default function ContactsPage() {
                     />
                   </TableCell>
                   <TableCell className="text-foreground font-medium">
-                    {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+                    <div>
+                      <div>{contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}</div>
+                      {(contact.city || contact.company) && (
+                        <div className="text-xs text-muted-foreground font-normal flex items-center gap-1 mt-0.5">
+                          <MapPin className="size-3 text-emerald-500 shrink-0" />
+                          <span>{contact.city || contact.company}</span>
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
-                    {contact.phone}
+                    <div className="flex items-center gap-2">
+                      <span>{contact.phone || '-'}</span>
+                      {contact.phone && (
+                        <a
+                          href={`tel:${contact.phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          title={`Call ${contact.name || contact.phone}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all font-sans font-semibold text-[11px] shadow-xs cursor-pointer border border-emerald-500/20"
+                          aria-label={`Call ${contact.name || contact.phone}`}
+                        >
+                          <Phone className="size-3 fill-current" />
+                          <span>Call</span>
+                        </a>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
                     {contact.email || <span className="text-muted-foreground">-</span>}
                   </TableCell>
-                  <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
-                    {contact.company || <span className="text-muted-foreground">-</span>}
+                  <TableCell className="text-muted-foreground hidden sm:table-cell text-sm">
+                    {contact.city || contact.company || <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <div className="flex flex-wrap gap-1">
@@ -662,6 +686,18 @@ export default function ContactsPage() {
                         align="end"
                         className="bg-popover border-border"
                       >
+                        {contact.phone && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.location.href = `tel:${contact.phone}`;
+                            }}
+                            className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer"
+                          >
+                            <Phone className="size-4 text-emerald-500" />
+                            Call ({contact.phone})
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
