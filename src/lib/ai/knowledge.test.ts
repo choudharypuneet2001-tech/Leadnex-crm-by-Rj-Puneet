@@ -70,6 +70,14 @@ describe('retrieveKnowledge', () => {
     expect(state.rpcCalls).toEqual([])
   })
 
+  it('short-circuits for pure greetings without touching DB or calling embedTexts', async () => {
+    const { db, state } = makeDb()
+    const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'Namaste ji 🙏')
+    expect(out).toEqual([])
+    expect(h.embedTexts).not.toHaveBeenCalled()
+    expect(state.rpcCalls).toEqual([])
+  })
+
   it('short-circuits (no embed, no RPC) when the KB is empty', async () => {
     const { db, state } = makeDb()
     state.chunkCount = 0

@@ -13,6 +13,7 @@ import {
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { splitIntoWhatsAppChunks } from './split-messages'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -64,43 +65,41 @@ export async function dispatchInboundToAiReply(
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
 
-    // Deterministic, user-configured responders win over the LLM — the
-    // caller already excludes messages a Flow consumed. Message-level
-    // automations (`new_message_received` / `keyword_match`) are
-    // dispatched independently for this same inbound and may send their
-    // own reply, so if the account has any active one we stand down to
-    // avoid double-texting the customer. (Relationship triggers like
-    // `first_inbound_message` don't count — they're not per-message
-    // auto-responders.)
-    const { data: autoResponders } = await db
-      .from('automations')
-      .select('id')
-      .eq('account_id', accountId)
-      .eq('is_active', true)
-      .in('trigger_type', ['new_message_received', 'keyword_match'])
-      .limit(1)
+    // Parallelize pre-checks for minimum latency: automations, conversation status,
+    // recent context messages, and contact details are fetched simultaneously.
+    const [autoRespondersRes, convRes, messages, contactRes] = await Promise.all([
+      db
+        .from('automations')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('is_active', true)
+        .in('trigger_type', ['new_message_received', 'keyword_match'])
+        .limit(1),
+      db
+        .from('conversations')
+        .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+        .eq('id', conversationId)
+        .maybeSingle(),
+      buildConversationContext(db, conversationId),
+      db
+        .from('contacts')
+        .select('id, name, company')
+        .eq('id', contactId)
+        .maybeSingle(),
+    ])
+
+    const autoResponders = autoRespondersRes.data
     if (autoResponders && autoResponders.length > 0) return
 
-    const { data: conv, error: convErr } = await db
-      .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
-      .eq('id', conversationId)
-      .maybeSingle()
-    if (convErr || !conv) return
+    const conv = convRes.data
+    if (convRes.error || !conv) return
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
-    // Cheap early-out; the authoritative cap check is the atomic claim
-    // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
 
-    const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
 
-    // Account-wide throttle on the shared BYO key. The per-conversation
-    // cap bounds one thread; this bounds a burst across many threads (a
-    // marketing blast landing 200 replies at once) so we never run the
-    // owner's key past the provider's rate limit. Over the limit → skip
-    // the auto-reply; the inbound still sits in the inbox for a human.
+    // Account-wide throttle on the shared BYO key.
     const acctLimit = checkRateLimit(
       `ai-autoreply:${accountId}`,
       RATE_LIMITS.aiAutoReplyAccount,
@@ -112,30 +111,22 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Every gate has passed — we're committed to attempting a reply, so
-    // show the customer "typing…" (and mark their message read) while the
-    // retrieval + LLM round trips run. Meta clears the indicator after
-    // 25 s or when our reply lands, whichever is first, so there's
-    // nothing to undo on the handoff / no-text path. Strictly
-    // best-effort: a failed indicator must never cost us the reply.
+    // Fire typing indicator concurrently in the background so it marks the message read
+    // and displays "typing…" without blocking the LLM retrieval and generation pipeline.
     if (inboundMessageId) {
-      await showTypingIndicator(db, accountId, inboundMessageId)
+      void showTypingIndicator(db, accountId, inboundMessageId)
     }
 
+    const contact = contactRes.data
+
     // Ground the reply in the account's knowledge base (best-effort).
+    // Greetings automatically take the 0ms fast-path!
     const knowledge = await retrieveKnowledge(
       db,
       accountId,
       config,
       latestUserMessage(messages),
     )
-
-    // Load contact details if available to personalise and extract lead info
-    const { data: contact } = await db
-      .from('contacts')
-      .select('id, name, company')
-      .eq('id', contactId)
-      .maybeSingle()
 
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
@@ -250,14 +241,33 @@ export async function dispatchInboundToAiReply(
     }
     if (claimed !== true) return // lost the per-conversation cap race
 
-    await engineSendText({
-      accountId,
-      userId: configOwnerUserId,
-      conversationId,
-      contactId,
-      text,
-      aiGenerated: true,
-    })
+    // Split large paragraphs into 1-4 short, bite-sized messages ("tukde")
+    // for natural, easy-to-read WhatsApp chatting.
+    const chunks = splitIntoWhatsAppChunks(text, 4)
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      if (i > 0) {
+        // Natural 400ms pause between message chunks so WhatsApp delivers
+        // and displays them in exact sequential order.
+        await new Promise((r) => setTimeout(r, 400))
+      }
+      try {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text: chunk,
+          aiGenerated: true,
+        })
+      } catch (sendErr) {
+        console.error(
+          `[ai auto-reply] failed to send message chunk ${i + 1}/${chunks.length}:`,
+          sendErr,
+        )
+        break
+      }
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

@@ -138,6 +138,23 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     )
   })
 
+  it('splits multi-chunk replies and sends each chunk to WhatsApp', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Namaste! Welcome. ---\nKripya apna naam batayein?',
+      handoff: false,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ conversationId: 'conv-1', text: 'Namaste! Welcome.' }),
+    )
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ conversationId: 'conv-1', text: 'Kripya apna naam batayein?' }),
+    )
+  })
+
   it('grounds the reply in retrieved knowledge', async () => {
     h.retrieveKnowledge.mockResolvedValue(['Returns accepted within 30 days.'])
     await dispatchInboundToAiReply(ARGS)

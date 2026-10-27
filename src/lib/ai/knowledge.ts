@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AiConfig } from './types'
 import { chunkText } from './chunk'
 import { embedTexts, toVectorLiteral } from './embeddings'
+import { isGreetingOnly } from './query'
 
 // ============================================================
 // Knowledge base: ingest (chunk + optionally embed) and hybrid
@@ -90,6 +91,13 @@ export async function retrieveKnowledge(
 ): Promise<string[]> {
   const query = queryText.trim()
   if (!query || k <= 0) return []
+
+  // Fast-path for pure greetings (hi, namaskar, hello, etc.):
+  // Knowledge search is completely irrelevant for greetings and skipping it
+  // cuts 1.5s - 2.5s of network latency (OpenAI embeddings + Supabase RPCs).
+  if (isGreetingOnly(query)) {
+    return []
+  }
 
   // Skip everything when the account has no knowledge base — otherwise
   // every draft / auto-reply would pay for a query embedding + two RPCs
