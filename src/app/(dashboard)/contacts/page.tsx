@@ -99,6 +99,31 @@ function formatCsvDate(dateStr?: string | null): string {
   }
 }
 
+function get10DigitPhone(rawPhone?: string | null): string {
+  if (!rawPhone) return '';
+  const digits = rawPhone.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits.slice(2);
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return digits.slice(1);
+  }
+  return digits;
+}
+
+function getFormattedPhone(rawPhone?: string | null): string {
+  if (!rawPhone) return '';
+  const digits = rawPhone.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) {
+    const main = digits.slice(2);
+    return `+91 ${main.slice(0, 5)} ${main.slice(5)}`;
+  }
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  }
+  return rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
+}
+
 export default function ContactsPage() {
   const t = useTranslations('Contacts.page');
   const supabase = createClient();
@@ -469,7 +494,8 @@ export default function ContactsPage() {
       // Build CSV headers and rows
       const headers = [
         'Name',
-        'Phone',
+        'Mobile (10 Digits)',
+        'WhatsApp Phone (+91)',
         'Email',
         'City / Location',
         'Tags',
@@ -489,7 +515,8 @@ export default function ContactsPage() {
 
         return [
           c.name ?? '',
-          c.phone ?? '',
+          get10DigitPhone(c.phone),
+          getFormattedPhone(c.phone),
           c.email ?? '',
           c.city ?? '',
           contactTagNames,
@@ -528,10 +555,19 @@ export default function ContactsPage() {
       const selectedContacts = contacts.filter((c) => selected.has(c.id));
       if (selectedContacts.length === 0) return;
 
-      const headers = ['Name', 'Phone', 'Email', 'City / Location', 'Tags', 'Created At'];
+      const headers = [
+        'Name',
+        'Mobile (10 Digits)',
+        'WhatsApp Phone (+91)',
+        'Email',
+        'City / Location',
+        'Tags',
+        'Created At',
+      ];
       const rows = selectedContacts.map((c) => [
         c.name ?? '',
-        c.phone ?? '',
+        get10DigitPhone(c.phone),
+        getFormattedPhone(c.phone),
         c.email ?? '',
         c.city ?? '',
         (c.tags ?? []).map((t) => t.name).join(', '),
