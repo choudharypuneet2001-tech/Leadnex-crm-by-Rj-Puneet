@@ -39,6 +39,7 @@ import {
   Search,
   Plus,
   Upload,
+  Download,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -66,6 +67,38 @@ interface ContactWithTags extends Contact {
   tags?: Tag[];
 }
 
+/**
+ * CSV export helper - RFC 4180 quoting with UTF-8 BOM so Excel opens
+ * international / Hindi text and commas seamlessly.
+ */
+function toCsv(rows: string[][]): string {
+  const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
+  return rows.map((r) => r.map(escape).join(',')).join('\n');
+}
+
+function downloadCsv(filename: string, content: string) {
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function formatCsvDate(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toISOString().replace('T', ' ').substring(0, 19);
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function ContactsPage() {
   const t = useTranslations('Contacts.page');
   const supabase = createClient();
@@ -74,6 +107,7 @@ export default function ContactsPage() {
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
@@ -341,6 +375,179 @@ export default function ContactsPage() {
     setPage(0);
   }
 
+  const handleExportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      toast.info('Preparing contacts export...');
+      const term = search.trim();
+      let exportContactRows: Contact[] = [];
+
+      if (selectedTagIds.length > 0) {
+        // Tag filter active - fetch all contacts matching active tags
+        const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
+          p_tag_ids: selectedTagIds,
+          p_search: term || null,
+          p_limit: 10000,
+          p_offset: 0,
+        });
+        if (error) throw error;
+        const rows = (data ?? []) as { contact: Contact; total_count: number }[];
+        exportContactRows = rows.map((r) => r.contact);
+      } else {
+        // Fetch all contacts matching search query
+        let query = supabase
+          .from('contacts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(10000);
+
+        if (term) {
+          const like = `%${term}%`;
+          query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        exportContactRows = data ?? [];
+      }
+
+      if (exportContactRows.length === 0) {
+        toast.error('No contacts found to export');
+        return;
+      }
+
+      // Fetch tags for exported contacts in safe chunks
+      const contactIds = exportContactRows.map((c) => c.id);
+      const chunkSize = 500;
+      const allContactTags: { contact_id: string; tag_id: string }[] = [];
+      for (let i = 0; i < contactIds.length; i += chunkSize) {
+        const chunk = contactIds.slice(i, i + chunkSize);
+        const { data: ctData } = await supabase
+          .from('contact_tags')
+          .select('contact_id, tag_id')
+          .in('contact_id', chunk);
+        if (ctData) {
+          allContactTags.push(...ctData);
+        }
+      }
+
+      const tagsByContact: Record<string, string[]> = {};
+      allContactTags.forEach((ct) => {
+        if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
+        tagsByContact[ct.contact_id].push(ct.tag_id);
+      });
+
+      // Fetch custom fields
+      const { data: customFieldsData } = await supabase
+        .from('custom_fields')
+        .select('id, field_name')
+        .order('field_name');
+      const customFields = customFieldsData ?? [];
+
+      const customValuesByContact: Record<string, Record<string, string>> = {};
+      if (customFields.length > 0) {
+        for (let i = 0; i < contactIds.length; i += chunkSize) {
+          const chunk = contactIds.slice(i, i + chunkSize);
+          const { data: cvData } = await supabase
+            .from('contact_custom_values')
+            .select('contact_id, custom_field_id, value')
+            .in('contact_id', chunk);
+          if (cvData) {
+            cvData.forEach((cv) => {
+              if (!customValuesByContact[cv.contact_id]) {
+                customValuesByContact[cv.contact_id] = {};
+              }
+              if (cv.value) {
+                customValuesByContact[cv.contact_id][cv.custom_field_id] = cv.value;
+              }
+            });
+          }
+        }
+      }
+
+      // Build CSV headers and rows
+      const headers = [
+        'Name',
+        'Phone',
+        'Email',
+        'City / Location',
+        'Tags',
+        ...customFields.map((f) => f.field_name),
+        'Created At',
+      ];
+
+      const rows = exportContactRows.map((c) => {
+        const contactTagNames = (tagsByContact[c.id] ?? [])
+          .map((tid) => tagsMap[tid]?.name)
+          .filter(Boolean)
+          .join(', ');
+
+        const customCells = customFields.map(
+          (f) => customValuesByContact[c.id]?.[f.id] ?? ''
+        );
+
+        return [
+          c.name ?? '',
+          c.phone ?? '',
+          c.email ?? '',
+          c.city ?? '',
+          contactTagNames,
+          ...customCells,
+          formatCsvDate(c.created_at),
+        ];
+      });
+
+      const csvContent = toCsv([headers, ...rows]);
+      const dateStr = new Date().toISOString().split('T')[0];
+      let filename = `contacts-${dateStr}.csv`;
+      if (selectedTagIds.length > 0) {
+        const tagNames = selectedTagIds
+          .map((id) => tagsMap[id]?.name)
+          .filter(Boolean)
+          .join('-')
+          .replace(/[^a-zA-Z0-9_\u0900-\u097F-]/g, '_');
+        filename = `contacts-${tagNames}-${dateStr}.csv`;
+      } else if (term) {
+        filename = `contacts-search_${term.replace(/[^a-zA-Z0-9_\u0900-\u097F-]/g, '_')}-${dateStr}.csv`;
+      }
+
+      downloadCsv(filename, csvContent);
+      toast.success(`Exported ${exportContactRows.length} contacts successfully!`);
+    } catch (err) {
+      console.error('[Contacts] export error:', err);
+      toast.error('Failed to export contacts');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportSelected = () => {
+    if (selected.size === 0) return;
+    try {
+      const selectedContacts = contacts.filter((c) => selected.has(c.id));
+      if (selectedContacts.length === 0) return;
+
+      const headers = ['Name', 'Phone', 'Email', 'City / Location', 'Tags', 'Created At'];
+      const rows = selectedContacts.map((c) => [
+        c.name ?? '',
+        c.phone ?? '',
+        c.email ?? '',
+        c.city ?? '',
+        (c.tags ?? []).map((t) => t.name).join(', '),
+        formatCsvDate(c.created_at),
+      ]);
+
+      const csvContent = toCsv([headers, ...rows]);
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadCsv(`contacts-selected-${selected.size}-${dateStr}.csv`, csvContent);
+      toast.success(`Exported ${selectedContacts.length} selected contacts!`);
+    } catch (err) {
+      console.error('[Contacts] export selected error:', err);
+      toast.error('Failed to export selected contacts');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -362,6 +569,19 @@ export default function ContactsPage() {
               {t('customFieldsBtn')}
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={exporting || totalCount === 0}
+            className="border-border text-muted-foreground hover:bg-muted"
+          >
+            {exporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            Export CSV {selectedTagIds.length > 0 && totalCount > 0 ? `(${totalCount})` : ''}
+          </Button>
           <GatedButton
             variant="outline"
             canAct={canEdit}
@@ -507,6 +727,16 @@ export default function ContactsPage() {
             {t('selectedCount', { count: selected.size })}
           </p>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportSelected}
+              disabled={exporting}
+              className="border-border text-muted-foreground hover:text-foreground"
+            >
+              <Download className="size-3.5" />
+              Export selected ({selected.size})
+            </Button>
             <Button
               variant="ghost"
               size="sm"
