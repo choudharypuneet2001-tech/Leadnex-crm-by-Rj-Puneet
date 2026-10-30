@@ -1,8 +1,9 @@
 'use client';
 
-import { Suspense, useMemo, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ShieldAlert } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { useTheme } from '@/hooks/use-theme';
@@ -42,7 +43,7 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, canManageMembers, canManageTechSettings } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -52,11 +53,23 @@ function SettingsPageInner() {
   // resolve onto their new home; unknown/empty → the Overview landing.
   const section = resolveSection(searchParams.get('tab'));
 
+  const isSectionAllowed = useMemo(() => {
+    if (section === 'whatsapp' || section === 'api') return canManageTechSettings;
+    if (section === 'members') return canManageMembers;
+    return true;
+  }, [section, canManageTechSettings, canManageMembers]);
+
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('tab', next);
     router.replace(`/settings?${params.toString()}`, { scroll: false });
   };
+
+  useEffect(() => {
+    if (!isSectionAllowed && (section === 'whatsapp' || section === 'api' || section === 'members')) {
+      go('overview');
+    }
+  }, [section, isSectionAllowed]);
 
   // Cheap, fetch-free rail hints. The Overview landing carries the
   // full live status/counts; the rail just surfaces the two that are
@@ -69,19 +82,31 @@ function SettingsPageInner() {
     [mode, defaultCurrency],
   );
 
+  const accessDeniedPanel = (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center">
+      <ShieldAlert className="size-12 text-destructive" />
+      <h3 className="mt-4 text-lg font-semibold text-foreground">Access Restricted</h3>
+      <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+        You do not have permission to access this section. Technical configurations are restricted to administrators.
+      </p>
+    </div>
+  );
+
   const panel: Record<SettingsSection, ReactNode> = {
     overview: <SettingsOverview onSelect={go} />,
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
-    whatsapp: <WhatsAppConfig />,
+    whatsapp: canManageTechSettings ? <WhatsAppConfig /> : accessDeniedPanel,
     templates: <TemplateManager />,
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
-    members: <MembersTab />,
-    api: <ApiKeysSettings />,
+    members: canManageMembers ? <MembersTab /> : accessDeniedPanel,
+    api: canManageTechSettings ? <ApiKeysSettings /> : accessDeniedPanel,
   };
+
+  const activeSection = isSectionAllowed ? section : 'overview';
 
   return (
     <div>
@@ -95,8 +120,8 @@ function SettingsPageInner() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">
-        <SettingsRail active={section} onSelect={go} hints={hints} />
-        <div className="min-w-0">{panel[section]}</div>
+        <SettingsRail active={activeSection} onSelect={go} hints={hints} />
+        <div className="min-w-0">{panel[activeSection]}</div>
       </div>
     </div>
   );

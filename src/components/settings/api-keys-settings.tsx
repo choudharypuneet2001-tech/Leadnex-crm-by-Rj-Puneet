@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Copy, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Copy, KeyRound, Loader2, Plus, Trash2, ShieldAlert } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -70,7 +70,7 @@ function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
 }
 
 export function ApiKeysSettings() {
-  const { canEditSettings } = useAuth();
+  const { canManageTechSettings, canEditSettings } = useAuth();
   const t = useTranslations('Settings.apiKeys');
 
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -79,6 +79,10 @@ export function ApiKeysSettings() {
   const [revoking, setRevoking] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!canManageTechSettings) {
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch('/api/account/api-keys', { cache: 'no-store' });
       if (!res.ok) {
@@ -130,6 +134,18 @@ export function ApiKeysSettings() {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="text-primary size-6 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!canManageTechSettings) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center">
+        <ShieldAlert className="size-12 text-destructive" />
+        <h3 className="mt-4 text-lg font-semibold text-foreground">Access Restricted</h3>
+        <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+          API key management is restricted to administrators.
+        </p>
       </div>
     );
   }

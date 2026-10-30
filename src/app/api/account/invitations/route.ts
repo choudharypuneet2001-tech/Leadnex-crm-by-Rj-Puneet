@@ -93,7 +93,9 @@ function isHostAllowed(
 
 function getBaseUrl(request: Request): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
+  if (explicit && !explicit.includes("example.com") && !explicit.includes("wacrm.tech")) {
+    return explicit.replace(/\/+$/, "");
+  }
 
   const allowList = parseAllowedHosts();
   const forwardedHost = request.headers
@@ -104,34 +106,24 @@ function getBaseUrl(request: Request): string {
     .get("x-forwarded-proto")
     ?.split(",")[0]
     ?.trim();
-  if (forwardedHost && isHostAllowed(forwardedHost, allowList)) {
+  if (forwardedHost && isHostAllowed(forwardedHost, allowList) && !forwardedHost.includes("example.com")) {
     return `${forwardedProto || "https"}://${forwardedHost}`;
   }
 
   const host = request.headers.get("host")?.trim();
-  if (host && isHostAllowed(host, allowList)) {
+  if (host && isHostAllowed(host, allowList) && !host.includes("example.com")) {
     // The protocol on `request.url` is whatever the framework saw —
     // reliable for bare deployments where no proxy is rewriting it.
     const reqProto = new URL(request.url).protocol.replace(":", "");
     return `${reqProto}://${host}`;
   }
 
-  // We fall through here when EITHER no Host header was present at
-  // all (essentially impossible from a real browser) OR an
-  // ALLOWED_INVITE_HOSTS list was set and neither candidate matched
-  // it. The warning is the operator's signal that someone is
-  // probing the API with a spoofed Host header.
-  if (allowList && (forwardedHost || host)) {
-    console.warn(
-      "[POST /api/account/invitations] rejected non-allow-listed host:",
-      { forwardedHost, host, allowList },
-    );
-  } else {
-    console.warn(
-      "[POST /api/account/invitations] could not derive base URL from request; falling back to marketing domain",
-    );
+  // Fallback to explicit if defined or production Vercel domain
+  if (explicit) {
+    return explicit.replace(/\/+$/, "");
   }
-  return "https://wacrm.tech";
+
+  return "https://leadnex-crm-by-rj-puneet.vercel.app";
 }
 
 const MAX_LABEL_LEN = 80;

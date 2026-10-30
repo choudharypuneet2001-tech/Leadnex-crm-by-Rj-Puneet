@@ -3,7 +3,9 @@ import {
   getCurrentAccount,
   requireRole,
   toErrorResponse,
+  ForbiddenError,
 } from '@/lib/auth/account'
+import { canManageTechSettings } from '@/lib/auth/roles'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
@@ -71,7 +73,12 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const { supabase, accountId, userId } = await requireRole('admin')
+    const ctx = await requireRole('admin')
+    const { supabase, accountId, userId, role } = ctx
+    const { data: userProfile } = await supabase.from('profiles').select('email').eq('user_id', userId).maybeSingle()
+    if (!canManageTechSettings(role, userProfile?.email)) {
+      throw new ForbiddenError('Only technical administrators can configure AI agent settings')
+    }
 
     const limit = checkRateLimit(`ai-config:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
@@ -309,7 +316,12 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const { supabase, accountId } = await requireRole('admin')
+    const ctx = await requireRole('admin')
+    const { supabase, accountId, userId, role } = ctx
+    const { data: userProfile } = await supabase.from('profiles').select('email').eq('user_id', userId).maybeSingle()
+    if (!canManageTechSettings(role, userProfile?.email)) {
+      throw new ForbiddenError('Only technical administrators can configure AI agent settings')
+    }
     const { error } = await supabase
       .from('ai_configs')
       .delete()

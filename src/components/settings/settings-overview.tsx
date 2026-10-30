@@ -36,7 +36,7 @@ export function SettingsOverview({
 }: {
   onSelect: (section: SettingsSection) => void;
 }) {
-  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
+  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers, canManageTechSettings } =
     useAuth();
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
@@ -117,29 +117,33 @@ export function SettingsOverview({
       setCountsLoading(false);
     })();
 
-    // WhatsApp connection status — slower, independent.
-    (async () => {
-      setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
-        supabase
-          .from('whatsapp_config')
-          .select('phone_number_id')
-          .eq('account_id', acctId)
-          .maybeSingle(),
-        fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
-      ]);
-      if (cancelled) return;
-      setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
-        connected: health.status === 'fulfilled' && !!health.value?.connected,
-      });
+    // WhatsApp connection status — only queried if user has tech settings access
+    if (canManageTechSettings) {
+      (async () => {
+        setWhatsappLoading(true);
+        const [row, health] = await Promise.allSettled([
+          supabase
+            .from('whatsapp_config')
+            .select('phone_number_id')
+            .eq('account_id', acctId)
+            .maybeSingle(),
+          fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
+        ]);
+        if (cancelled) return;
+        setWhatsapp({
+          configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
+          connected: health.status === 'fulfilled' && !!health.value?.connected,
+        });
+        setWhatsappLoading(false);
+      })();
+    } else {
       setWhatsappLoading(false);
-    })();
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [user?.id, accountId, canManageMembers]);
+  }, [user?.id, accountId, canManageMembers, canManageTechSettings]);
 
   const displayName = profile?.full_name || profile?.email || t('yourAccount');
   const initial = (profile?.full_name || profile?.email || 'U').charAt(0).toUpperCase();
@@ -158,33 +162,41 @@ export function SettingsOverview({
     loading: boolean;
     subtitle: ReactNode;
   }[] = [
-    {
-      section: 'whatsapp',
-      loading: whatsappLoading,
-      subtitle: !whatsapp?.configured ? (
-        t('notSetup')
-      ) : whatsapp.connected ? (
-        <>
-          <StatusDot tone="ok" /> {t('connected')}
-        </>
-      ) : (
-        <>
-          <StatusDot tone="muted" /> {t('needsReconnecting')}
-        </>
-      ),
-    },
-    {
-      section: 'members',
-      loading: countsLoading,
-      subtitle:
-        counts?.members == null
-          ? t('viewTeamMembers')
-          : `${t('membersCount', { count: counts.members })}${
-              counts.pendingInvites
-                ? ` · ${t('pendingInvites', { count: counts.pendingInvites })}`
-                : ''
-            }`,
-    },
+    ...(canManageTechSettings
+      ? [
+          {
+            section: 'whatsapp' as SettingsSection,
+            loading: whatsappLoading,
+            subtitle: !whatsapp?.configured ? (
+              t('notSetup')
+            ) : whatsapp.connected ? (
+              <>
+                <StatusDot tone="ok" /> {t('connected')}
+              </>
+            ) : (
+              <>
+                <StatusDot tone="muted" /> {t('needsReconnecting')}
+              </>
+            ),
+          },
+        ]
+      : []),
+    ...(canManageMembers
+      ? [
+          {
+            section: 'members' as SettingsSection,
+            loading: countsLoading,
+            subtitle:
+              counts?.members == null
+                ? t('viewTeamMembers')
+                : `${t('membersCount', { count: counts.members })}${
+                    counts.pendingInvites
+                      ? ` · ${t('pendingInvites', { count: counts.pendingInvites })}`
+                      : ''
+                  }`,
+          },
+        ]
+      : []),
     {
       section: 'templates',
       loading: countsLoading,

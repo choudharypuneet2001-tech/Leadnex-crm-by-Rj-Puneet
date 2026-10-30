@@ -23,7 +23,9 @@ import {
   getCurrentAccount,
   requireRole,
   toErrorResponse,
+  ForbiddenError,
 } from '@/lib/auth/account';
+import { canManageTechSettings } from '@/lib/auth/roles';
 import { generateApiKey } from '@/lib/api-keys/keys';
 import { normalizeScopes } from '@/lib/api-keys/scopes';
 import {
@@ -44,9 +46,15 @@ const SAFE_COLUMNS =
 
 export async function GET() {
   try {
-    // Any member can view the roster (RLS allows it); we just need a
-    // resolved account context.
     const ctx = await getCurrentAccount();
+    const { data: userProfile } = await ctx.supabase
+      .from('profiles')
+      .select('email')
+      .eq('user_id', ctx.userId)
+      .maybeSingle();
+    if (!canManageTechSettings(ctx.role, userProfile?.email)) {
+      throw new ForbiddenError('Access restricted to administrators');
+    }
 
     const { data, error } = await ctx.supabase
       .from('api_keys')
@@ -71,6 +79,14 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const ctx = await requireRole('admin');
+    const { data: userProfile } = await ctx.supabase
+      .from('profiles')
+      .select('email')
+      .eq('user_id', ctx.userId)
+      .maybeSingle();
+    if (!canManageTechSettings(ctx.role, userProfile?.email)) {
+      throw new ForbiddenError('Access restricted to administrators');
+    }
 
     const limit = checkRateLimit(
       `admin:apiKeyCreate:${ctx.userId}`,

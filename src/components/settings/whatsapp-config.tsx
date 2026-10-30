@@ -13,6 +13,7 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
+  ShieldAlert,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -74,6 +75,7 @@ export function WhatsAppConfig() {
     loading: authLoading,
     profileLoading,
     canEditSettings,
+    canManageTechSettings,
   } = useAuth();
 
   const [loading, setLoading] = useState(true);
@@ -233,6 +235,10 @@ export function WhatsAppConfig() {
     // for the first render window and bail without ever retrying
     // once the profile arrives.
     if (authLoading || profileLoading) return;
+    if (!canManageTechSettings) {
+      setLoading(false);
+      return;
+    }
     if (!user || !accountId) {
       loadedAccountIdRef.current = null;
       setLoading(false);
@@ -538,6 +544,24 @@ export function WhatsAppConfig() {
       <p>{t('metaErrorDetailsHint')}</p>
     </div>
   );
+
+  if (!canManageTechSettings) {
+    return (
+      <section className="animate-in fade-in-50 duration-200">
+        <SettingsPanelHead
+          title={t("title")}
+          description={t("description")}
+        />
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center">
+          <ShieldAlert className="size-12 text-destructive" />
+          <h3 className="mt-4 text-lg font-semibold text-foreground">Access Restricted</h3>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+            WhatsApp API configuration is restricted to technical administrators. You cannot view or modify these credentials.
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="animate-in fade-in-50 duration-200">

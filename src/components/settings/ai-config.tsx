@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
@@ -93,8 +93,8 @@ const RECOMMENDED_MODELS: Record<AiProvider, { id: string; label: string }[]> = 
 };
 
 export function AiConfig() {
-  const { accountId, accountRole, profileLoading } = useAuth();
-  const canEdit = accountRole ? canEditSettings(accountRole) : false;
+  const { accountId, accountRole, profileLoading, canManageTechSettings } = useAuth();
+  const canEdit = canManageTechSettings;
   const t = useTranslations('Settings.aiConfig');
 
   const [loading, setLoading] = useState(true);
@@ -309,6 +309,18 @@ export function AiConfig() {
       setRemoving(false);
     }
   };
+
+  if (!canManageTechSettings) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center">
+        <ShieldAlert className="size-12 text-destructive" />
+        <h3 className="mt-4 text-lg font-semibold text-foreground">Access Restricted</h3>
+        <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+          AI Agent credentials and configuration are restricted to administrators. You cannot view or modify these API keys.
+        </p>
+      </div>
+    );
+  }
 
   if (loading || profileLoading) {
     return (

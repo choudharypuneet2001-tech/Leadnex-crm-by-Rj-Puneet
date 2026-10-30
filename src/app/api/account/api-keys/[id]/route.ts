@@ -14,7 +14,8 @@
 
 import { NextResponse } from 'next/server';
 
-import { requireRole, toErrorResponse } from '@/lib/auth/account';
+import { requireRole, toErrorResponse, ForbiddenError } from '@/lib/auth/account';
+import { canManageTechSettings } from '@/lib/auth/roles';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -27,6 +28,14 @@ export async function DELETE(
 ) {
   try {
     const ctx = await requireRole('admin');
+    const { data: userProfile } = await ctx.supabase
+      .from('profiles')
+      .select('email')
+      .eq('user_id', ctx.userId)
+      .maybeSingle();
+    if (!canManageTechSettings(ctx.role, userProfile?.email)) {
+      throw new ForbiddenError('Access restricted to administrators');
+    }
 
     const limit = checkRateLimit(
       `admin:apiKeyRevoke:${ctx.userId}`,

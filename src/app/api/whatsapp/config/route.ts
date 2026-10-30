@@ -22,6 +22,7 @@ import {
 } from '@/lib/whatsapp/waba-pairing'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveVerifyTokenForSave } from '@/lib/whatsapp/verify-token'
+import { canManageTechSettings } from '@/lib/auth/roles'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -107,6 +108,19 @@ export async function GET() {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_role, email')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!profile || !canManageTechSettings(profile.account_role, profile.email || user.email)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Access restricted to administrators' },
+        { status: 403 }
+      )
     }
 
     const accountId = await resolveAccountId(supabase, user.id)
@@ -256,6 +270,19 @@ export async function POST(request: Request) {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_role, email')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!profile || !canManageTechSettings(profile.account_role, profile.email || user.email)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Access restricted to administrators' },
+        { status: 403 }
+      )
     }
 
     const accountId = await resolveAccountId(supabase, user.id)
@@ -598,6 +625,19 @@ export async function DELETE() {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_role, email')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!profile || !canManageTechSettings(profile.account_role, profile.email || user.email)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Access restricted to administrators' },
+        { status: 403 }
+      )
     }
 
     const accountId = await resolveAccountId(supabase, user.id)

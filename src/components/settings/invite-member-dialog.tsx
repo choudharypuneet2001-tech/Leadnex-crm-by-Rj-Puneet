@@ -126,8 +126,19 @@ export function InviteMemberDialog({
         expiresInDays: number;
       };
 
+      // Guarantee the invite URL matches the current domain where the user is browsing
+      let resolvedUrl = data.url;
+      try {
+        if (typeof window !== 'undefined' && window.location?.origin) {
+          const parsed = new URL(data.url, window.location.origin);
+          resolvedUrl = `${window.location.origin}${parsed.pathname}`;
+        }
+      } catch {
+        resolvedUrl = data.url;
+      }
+
       setResult({
-        url: data.url,
+        url: resolvedUrl,
         role,
         expiresInDays: data.expiresInDays,
         // Snapshot the account name into the result so the wa.me

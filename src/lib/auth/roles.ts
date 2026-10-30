@@ -66,6 +66,37 @@ export function isAccountRole(value: unknown): value is AccountRole {
 // = one new predicate here + one call site change per consumer.
 // ============================================================
 
+/**
+ * Developer / Super-admin email who always has full technical control
+ * even when assigned the 'owner' role in the database.
+ */
+export const SUPER_ADMIN_EMAILS: readonly string[] = [
+  'choudharypuneet2001@gmail.com',
+];
+
+export function isSuperAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
+}
+
+/**
+ * Technical settings: WhatsApp API credentials, AI API keys, developer API keys.
+ * Admin role and Super Admin Owner have full access to view and edit.
+ */
+export function canManageTechSettings(role: AccountRole, email?: string | null): boolean {
+  if (isSuperAdminEmail(email)) return true;
+  return role === "admin";
+}
+
+/**
+ * Who can view technical settings sections (WhatsApp, API keys, AI setup).
+ * Employees ('agent') and viewers CANNOT view them at all.
+ */
+export function canViewTechSettings(role: AccountRole, email?: string | null): boolean {
+  if (isSuperAdminEmail(email)) return true;
+  return role === "admin";
+}
+
 /** Owner / admin: invite, remove, change roles. */
 export function canManageMembers(role: AccountRole): boolean {
   return hasMinRole(role, "admin");

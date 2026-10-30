@@ -14,21 +14,25 @@ type Tab = 'playground' | 'setup' | 'usage';
 
 export default function AgentsPage() {
   const t = useTranslations('Agents');
-  const { accountRole } = useAuth();
+  const { accountRole, canManageTechSettings } = useAuth();
   const canViewUsage = accountRole ? canEditSettings(accountRole) : false;
   const [tab, setTab] = useState<Tab>('playground');
   const [decided, setDecided] = useState(false);
 
-  // Land first-time users on Setup, returning users on the Playground.
+  // Land first-time tech admins on Setup, returning users and non-tech users on Playground.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        if (!canManageTechSettings) {
+          if (!cancelled) setTab('playground');
+          return;
+        }
         const res = await fetch('/api/ai/config');
         const data = await res.json().catch(() => ({}));
         if (!cancelled) setTab(data?.configured ? 'playground' : 'setup');
       } catch {
-        if (!cancelled) setTab('setup');
+        if (!cancelled) setTab('playground');
       } finally {
         if (!cancelled) setDecided(true);
       }
@@ -36,7 +40,9 @@ export default function AgentsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canManageTechSettings]);
+
+  const activeTab = !canManageTechSettings && tab === 'setup' ? 'playground' : tab;
 
   return (
     <div>
@@ -52,17 +58,22 @@ export default function AgentsPage() {
 
       {decided && (
         <Tabs
-          value={tab}
-          onValueChange={(v) => setTab(v as Tab)}
+          value={activeTab}
+          onValueChange={(v) => {
+            if (v === 'setup' && !canManageTechSettings) return;
+            setTab(v as Tab);
+          }}
           className="mt-6"
         >
           <TabsList>
             <TabsTrigger value="playground">
               <Sparkles className="mr-1.5 h-4 w-4" /> {t('tabPlayground')}
             </TabsTrigger>
-            <TabsTrigger value="setup">
-              <Settings2 className="mr-1.5 h-4 w-4" /> {t('tabSetup')}
-            </TabsTrigger>
+            {canManageTechSettings && (
+              <TabsTrigger value="setup">
+                <Settings2 className="mr-1.5 h-4 w-4" /> {t('tabSetup')}
+              </TabsTrigger>
+            )}
             {canViewUsage && (
               <TabsTrigger value="usage">
                 <BarChart3 className="mr-1.5 h-4 w-4" /> {t('tabUsage')}
@@ -71,12 +82,14 @@ export default function AgentsPage() {
           </TabsList>
 
           <TabsContent value="playground" className="mt-4">
-            <AiPlayground onGoToSetup={() => setTab('setup')} />
+            <AiPlayground onGoToSetup={canManageTechSettings ? () => setTab('setup') : undefined} />
           </TabsContent>
 
-          <TabsContent value="setup" className="mt-4">
-            <AiConfig />
-          </TabsContent>
+          {canManageTechSettings && (
+            <TabsContent value="setup" className="mt-4">
+              <AiConfig />
+            </TabsContent>
+          )}
 
           {canViewUsage && (
             <TabsContent value="usage" className="mt-4">

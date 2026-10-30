@@ -17,6 +17,7 @@ import {
   canEditSettings as canEditSettingsFor,
   canManageMembers as canManageMembersFor,
   canSendMessages as canSendMessagesFor,
+  canManageTechSettings as canManageTechSettingsFor,
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
@@ -130,6 +131,8 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /** True if the caller can configure tech settings (WhatsApp API, AI API keys). */
+  canManageTechSettings: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -400,6 +403,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // dependencies downstream.
   const derived = useMemo(() => {
     const role = profile?.account_role ?? null;
+    const email = profile?.email ?? user?.email ?? null;
     return {
       accountRole: role,
       accountId: profile?.account_id ?? null,
@@ -410,8 +414,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
+      canManageTechSettings: role ? canManageTechSettingsFor(role, email) : false,
     };
-  }, [profile?.account_role, profile?.account_id]);
+  }, [profile?.account_role, profile?.account_id, profile?.email, user?.email]);
 
   // Signed out is not a broken account — the shell redirects to /login
   // before anything reads this.
@@ -481,6 +486,7 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      canManageTechSettings: false,
     };
   }
   return ctx;
