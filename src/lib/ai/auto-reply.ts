@@ -95,7 +95,19 @@ export async function dispatchInboundToAiReply(
     if (convRes.error || !conv) return
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+
+    // 0 or >= 100 indicates Unlimited replies (continuous chatting until manual human takeover)
+    const isUnlimited =
+      !config.autoReplyMaxPerConversation ||
+      config.autoReplyMaxPerConversation <= 0 ||
+      config.autoReplyMaxPerConversation >= 100
+
+    if (!isUnlimited && conv.ai_reply_count >= config.autoReplyMaxPerConversation) {
+      console.log(
+        `[ai auto-reply] reply cap reached for conversation ${conversationId} (${conv.ai_reply_count}/${config.autoReplyMaxPerConversation})`,
+      )
+      return
+    }
 
     if (messages.length === 0) return
 
@@ -194,41 +206,38 @@ export async function dispatchInboundToAiReply(
       usage,
     })
 
-    if (handoff || !text) {
-      // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
-      // (sticky until re-enabled), (b) route the conversation to the
-      // configured handoff agent — null leaves it in the shared queue —
-      // and (c) leave a short internal note so whoever picks it up has
-      // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
-      const summary = buildHandoffSummary({
-        messages,
-        replyCount: conv.ai_reply_count ?? 0,
-      })
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: summary,
+    let replyText = text?.trim() ?? ''
+
+    if (!replyText) {
+      if (handoff) {
+        // The model explicitly asked for handoff with no text to send
+        const summary = buildHandoffSummary({
+          messages,
+          replyCount: conv.ai_reply_count ?? 0,
+        })
+        const update: Record<string, unknown> = {
+          ai_autoreply_disabled: true,
+          ai_handoff_summary: summary,
+        }
+        if (config.handoffAgentId && !conv.assigned_agent_id) {
+          update.assigned_agent_id = config.handoffAgentId
+        }
+        await db.from('conversations').update(update).eq('id', conversationId)
+        return
       }
-      // Only set the assignee when a target is configured AND the thread
-      // isn't already owned — never stomp an existing human assignment.
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
-        update.assigned_agent_id = config.handoffAgentId
-      }
-      await db.from('conversations').update(update).eq('id', conversationId)
-      return
+
+      // If text was unexpectedly empty but no handoff, provide warm fallback so patient is not left hanging
+      replyText =
+        'Namaste ji! Main aapki bilkul madad kar sakti hoon. Kripya batayein aapko kis baare mein jaankari chahiye? Humari team aapki poori sahayata karegi. 🙏'
     }
 
-    // Atomically claim a reply slot: the cap check + increment happen in
-    // one UPDATE, so concurrent inbounds can never overshoot the cap. If
-    // another inbound just took the last slot, `claimed` is false and we
-    // skip the send. (We consume a slot slightly before the send lands —
-    // fail-safe: under-reply rather than over-reply.)
+    // Atomically claim a reply slot. For unlimited configs, pass 999999 so it never blocks.
+    const maxSlotLimit = isUnlimited ? 999999 : config.autoReplyMaxPerConversation
     const { data: claimed, error: claimErr } = await db.rpc(
       'claim_ai_reply_slot',
       {
         conversation_id: conversationId,
-        max_replies: config.autoReplyMaxPerConversation,
+        max_replies: maxSlotLimit,
       },
     )
     if (claimErr) {
@@ -243,7 +252,7 @@ export async function dispatchInboundToAiReply(
 
     // Split large paragraphs into 1-4 short, bite-sized messages ("tukde")
     // for natural, easy-to-read WhatsApp chatting.
-    const chunks = splitIntoWhatsAppChunks(text, 4)
+    const chunks = splitIntoWhatsAppChunks(replyText, 4)
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
       if (i > 0) {

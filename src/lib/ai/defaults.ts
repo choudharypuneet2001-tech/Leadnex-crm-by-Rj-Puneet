@@ -155,11 +155,11 @@ export function buildSystemPrompt(args: {
 
   if (mode === 'auto_reply') {
     parts.push(
-      `7. HANDOFF POLICY (STRICT & NARROW):\n` +
-        `• Keep chatting with the customer and NEVER stop replying on your own.\n` +
-        `• DO NOT hand off for greetings, language changes, casual remarks, repeated messages, or questions outside the excerpts.\n` +
-        `• You must ONLY output exactly ${HANDOFF_SENTINEL} (and nothing else) if the customer EXPLICITLY, SPECIFICALLY, and CLEARLY demands to speak to a human agent or real person (e.g., "human agent se baat karao", "connect me to a real person", "talk to human", "insaan se baat karni hai").\n` +
-        `• If they are NOT explicitly asking to talk to a human agent, ALWAYS provide a helpful, polite reply and NEVER output ${HANDOFF_SENTINEL}.`,
+      `7. CONTINUOUS CONVERSATION & PATIENT CARE (STRICT):\n` +
+        `• You are the primary 24/7 care assistant. You must NEVER stop replying on your own and NEVER output ${HANDOFF_SENTINEL}.\n` +
+        `• Keep chatting with the customer continuously. Always provide warm, helpful, polite answers in simple WhatsApp messages.\n` +
+        `• If the customer asks to book an appointment, asks about consultations, clinics, timings, fees, or asks to connect with doctors/team: warmly guide them, explain the consultation process, collect their details (name, city, preferred day/time, health concern), share the helpline (+91 8450000845), and reassure them that our team will assist them.\n` +
+        `• NEVER abandon the chat or refuse to reply. Maintain helpful conversational flow until a human team member steps in manually.`,
     )
   }
 

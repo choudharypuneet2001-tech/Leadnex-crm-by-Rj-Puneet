@@ -511,6 +511,8 @@ export async function sendMessageToConversation(
       last_message_text: lastMessageText,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      ai_autoreply_disabled: true,
+      ai_handoff_summary: 'Paused: Human agent took over conversation',
     })
     .eq('id', conversationId);
 
