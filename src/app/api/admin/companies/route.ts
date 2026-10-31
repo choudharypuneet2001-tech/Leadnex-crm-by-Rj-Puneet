@@ -27,7 +27,7 @@ export async function GET() {
       contactsRes,
       conversationsRes,
     ] = await Promise.all([
-      db.from('accounts').select('id, name, created_at, owner_user_id').order('created_at', { ascending: false }),
+      db.from('accounts').select('id, name, created_at, owner_user_id, status, suspension_reason').order('created_at', { ascending: false }),
       db.from('profiles').select('id, user_id, full_name, email, account_id, account_role'),
       db.from('whatsapp_config').select('account_id, phone_number_id, waba_id, created_at'),
       db.from('ai_configs').select('account_id, provider, model, is_active, auto_reply_enabled'),
@@ -71,6 +71,8 @@ export async function GET() {
         id: acc.id,
         name: acc.name,
         createdAt: acc.created_at,
+        status: acc.status || 'active',
+        suspensionReason: acc.suspension_reason || null,
         owner: owner ? { name: owner.full_name, email: owner.email } : null,
         memberCount: members.length,
         contactsCount: contactCountMap[acc.id] || 0,
