@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getCurrentAccount, ForbiddenError, toErrorResponse } from '@/lib/auth/account';
+import { createClient } from '@/lib/supabase/server';
 import { isSuperAdminEmail } from '@/lib/auth/roles';
 import { supabaseAdmin } from '@/lib/ai/admin-client';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -13,16 +16,21 @@ type Params = { params: Promise<{ id: string }> };
  */
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    const { supabase, userId } = await getCurrentAccount();
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser();
 
-    const { data: userProfile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('user_id', userId)
-      .maybeSingle();
+    if (authErr || !user || !user.email) {
+      return NextResponse.json({ error: 'Session expired. Please sign in again.' }, { status: 401 });
+    }
 
-    if (!isSuperAdminEmail(userProfile?.email)) {
-      throw new ForbiddenError('Super Admin access required to manage company status');
+    if (!isSuperAdminEmail(user.email)) {
+      return NextResponse.json(
+        { error: 'Super Admin access required to manage company status' },
+        { status: 403 },
+      );
     }
 
     const { id: targetAccountId } = await params;
@@ -51,7 +59,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (error) {
       console.error('[admin/companies PATCH] update error:', error);
       return NextResponse.json(
-        { error: 'Failed to update company status' },
+        { error: 'Failed to update company status: ' + error.message },
         { status: 500 },
       );
     }
@@ -61,7 +69,8 @@ export async function PATCH(request: Request, { params }: Params) {
       account: updated,
     });
   } catch (err) {
-    return toErrorResponse(err);
+    const msg = err instanceof Error ? err.message : 'Internal Server Error';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -72,16 +81,21 @@ export async function PATCH(request: Request, { params }: Params) {
  */
 export async function DELETE(request: Request, { params }: Params) {
   try {
-    const { supabase, userId } = await getCurrentAccount();
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser();
 
-    const { data: userProfile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('user_id', userId)
-      .maybeSingle();
+    if (authErr || !user || !user.email) {
+      return NextResponse.json({ error: 'Session expired. Please sign in again.' }, { status: 401 });
+    }
 
-    if (!isSuperAdminEmail(userProfile?.email)) {
-      throw new ForbiddenError('Super Admin access required to delete a company');
+    if (!isSuperAdminEmail(user.email)) {
+      return NextResponse.json(
+        { error: 'Super Admin access required to delete a company' },
+        { status: 403 },
+      );
     }
 
     const { id: targetAccountId } = await params;
@@ -98,7 +112,7 @@ export async function DELETE(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 });
     }
 
-    if (targetAccount.owner_user_id === userId) {
+    if (targetAccount.owner_user_id === user.id) {
       return NextResponse.json(
         { error: 'You cannot delete your own master account' },
         { status: 400 },
@@ -124,6 +138,7 @@ export async function DELETE(request: Request, { params }: Params) {
       message: 'Company deleted successfully',
     });
   } catch (err) {
-    return toErrorResponse(err);
+    const msg = err instanceof Error ? err.message : 'Internal Server Error';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

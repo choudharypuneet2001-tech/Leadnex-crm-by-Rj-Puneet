@@ -13,3 +13,4 @@ ALTER TABLE accounts
   ADD COLUMN IF NOT EXISTS suspension_reason TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status);
+

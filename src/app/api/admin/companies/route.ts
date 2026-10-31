@@ -1,20 +1,31 @@
 import { NextResponse } from 'next/server';
-import { getCurrentAccount, ForbiddenError, toErrorResponse } from '@/lib/auth/account';
+import { createClient } from '@/lib/supabase/server';
 import { isSuperAdminEmail } from '@/lib/auth/roles';
 import { supabaseAdmin } from '@/lib/ai/admin-client';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
-    const { supabase, userId } = await getCurrentAccount();
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser();
 
-    const { data: userProfile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('user_id', userId)
-      .maybeSingle();
+    if (authErr || !user || !user.email) {
+      return NextResponse.json(
+        { error: 'Session expired or not logged in. Please sign in again.' },
+        { status: 401 }
+      );
+    }
 
-    if (!isSuperAdminEmail(userProfile?.email)) {
-      throw new ForbiddenError('Super Admin access required to view all companies');
+    if (!isSuperAdminEmail(user.email)) {
+      return NextResponse.json(
+        { error: `Super Admin access required (${user.email} is not authorized)` },
+        { status: 403 }
+      );
     }
 
     const db = supabaseAdmin();
@@ -35,7 +46,13 @@ export async function GET() {
       db.from('conversations').select('account_id'),
     ]);
 
-    if (accountsRes.error) throw accountsRes.error;
+    if (accountsRes.error) {
+      console.error('[admin/companies GET] accounts query error:', accountsRes.error);
+      return NextResponse.json(
+        { error: 'Failed to fetch accounts from database: ' + accountsRes.error.message },
+        { status: 500 }
+      );
+    }
 
     const accounts = accountsRes.data || [];
     const profiles = profilesRes.data || [];
@@ -108,6 +125,8 @@ export async function GET() {
       },
     });
   } catch (err) {
-    return toErrorResponse(err);
+    console.error('[admin/companies GET] unexpected error:', err);
+    const msg = err instanceof Error ? err.message : 'Internal Server Error';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

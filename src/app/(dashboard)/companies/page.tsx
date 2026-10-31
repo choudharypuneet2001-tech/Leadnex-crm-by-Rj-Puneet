@@ -94,15 +94,19 @@ export default function CompaniesPage() {
   const fetchCompanies = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/companies");
+      const res = await fetch("/api/admin/companies", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error("Failed to load companies");
+        throw new Error(data.error || "Failed to load companies");
       }
-      const data = await res.json();
       setCompanies(data.companies || []);
       setSummary(data.summary || null);
-    } catch (err) {
-      toast.error("Failed to load companies data.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to load companies data.";
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
