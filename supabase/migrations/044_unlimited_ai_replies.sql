@@ -25,3 +25,4 @@ RETURNS boolean AS $$
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 
 GRANT EXECUTE ON FUNCTION public.claim_ai_reply_slot(uuid, integer) TO service_role;
+

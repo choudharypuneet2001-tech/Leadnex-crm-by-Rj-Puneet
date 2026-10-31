@@ -10,6 +10,7 @@ import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   Bell,
   Bot,
+  Building2,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -26,7 +27,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import type { AccountRole } from "@/lib/auth/roles";
+import { type AccountRole, isSuperAdminEmail } from "@/lib/auth/roles";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -119,6 +120,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
+  const isSuperAdmin = isSuperAdminEmail(profile?.email);
   // Only surface the account-name strip when it actually carries
   // information. A solo user's personal account is named after them
   // (the 017 signup trigger seeds it from `full_name`), so showing it
@@ -291,6 +293,34 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               );
             })}
           </ul>
+
+          {isSuperAdmin && (
+            <>
+              <div className="my-3 border-t border-border" />
+              <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Platform Admin
+              </div>
+              <ul className="flex flex-col gap-1">
+                <li>
+                  <Link
+                    href="/companies"
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      pathname.startsWith("/companies")
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Building2 className="h-4 w-4 text-primary" />
+                    <span className="flex-1">Companies</span>
+                    <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                      Super
+                    </span>
+                  </Link>
+                </li>
+              </ul>
+            </>
+          )}
         </nav>
 
         {/* User section */}
