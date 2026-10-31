@@ -81,11 +81,11 @@ export function isSuperAdminEmail(email?: string | null): boolean {
 
 /**
  * Technical settings: WhatsApp API credentials, AI API keys, developer API keys.
- * Admin role and Super Admin Owner have full access to view and edit.
+ * Owner and Admin roles have full access to view and edit. Super Admin also has full access.
  */
 export function canManageTechSettings(role: AccountRole, email?: string | null): boolean {
   if (isSuperAdminEmail(email)) return true;
-  return role === "admin";
+  return hasMinRole(role, "admin");
 }
 
 /**
@@ -94,7 +94,7 @@ export function canManageTechSettings(role: AccountRole, email?: string | null):
  */
 export function canViewTechSettings(role: AccountRole, email?: string | null): boolean {
   if (isSuperAdminEmail(email)) return true;
-  return role === "admin";
+  return hasMinRole(role, "admin");
 }
 
 /** Owner / admin: invite, remove, change roles. */

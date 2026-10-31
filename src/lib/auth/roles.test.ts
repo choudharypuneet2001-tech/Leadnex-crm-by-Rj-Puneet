@@ -8,6 +8,8 @@ import {
   canSendMessages,
   canTransferOwnership,
   canViewOnly,
+  canManageTechSettings,
+  canViewTechSettings,
   hasMinRole,
   isAccountRole,
   roleRank,
@@ -126,5 +128,22 @@ describe("capability predicates", () => {
     expect(canTransferOwnership("admin")).toBe(false);
     expect(canTransferOwnership("agent")).toBe(false);
     expect(canTransferOwnership("viewer")).toBe(false);
+  });
+
+  it("canManageTechSettings: owner, admin, and super admin only", () => {
+    expect(canManageTechSettings("owner")).toBe(true);
+    expect(canManageTechSettings("admin")).toBe(true);
+    expect(canManageTechSettings("agent")).toBe(false);
+    expect(canManageTechSettings("viewer")).toBe(false);
+    expect(canManageTechSettings("agent", "choudharypuneet2001@gmail.com")).toBe(true);
+    expect(canManageTechSettings("viewer", "choudharypuneet2001@gmail.com")).toBe(true);
+  });
+
+  it("canViewTechSettings: owner, admin, and super admin only", () => {
+    expect(canViewTechSettings("owner")).toBe(true);
+    expect(canViewTechSettings("admin")).toBe(true);
+    expect(canViewTechSettings("agent")).toBe(false);
+    expect(canViewTechSettings("viewer")).toBe(false);
+    expect(canViewTechSettings("agent", "choudharypuneet2001@gmail.com")).toBe(true);
   });
 });

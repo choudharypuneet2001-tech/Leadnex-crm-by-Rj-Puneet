@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Bot, Sparkles, Settings2, BarChart3 } from 'lucide-react';
+import { Bot, Sparkles, Settings2, BarChart3, ShieldAlert } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiUsageCard } from '@/components/agents/ai-usage';
@@ -56,11 +56,20 @@ export default function AgentsPage() {
         {t('description')}
       </p>
 
-      {decided && (
+      {decided && !canManageTechSettings && (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center mt-6">
+          <ShieldAlert className="size-12 text-destructive" />
+          <h3 className="mt-4 text-lg font-semibold text-foreground">Access Restricted</h3>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+            You do not have permission to view or manage AI Agents. AI configuration is restricted to administrators and owners.
+          </p>
+        </div>
+      )}
+
+      {decided && canManageTechSettings && (
         <Tabs
-          value={activeTab}
+          value={tab}
           onValueChange={(v) => {
-            if (v === 'setup' && !canManageTechSettings) return;
             setTab(v as Tab);
           }}
           className="mt-6"
