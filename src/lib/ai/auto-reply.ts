@@ -6,7 +6,7 @@ import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
-import { latestUserMessage } from './query'
+import { latestUserMessage, isGreetingOrAdClick } from './query'
 import {
   engineSendText,
   loadAccountMetaCredentials,
@@ -27,6 +27,8 @@ interface DispatchArgs {
    *  a typing indicator (which also marks it read) is shown while the
    *  reply is generated. Optional so older callers keep working. */
   inboundMessageId?: string
+  /** True when inbound was triggered from an ad referral */
+  isAdReferral?: boolean
 }
 
 /**
@@ -66,8 +68,8 @@ export async function dispatchInboundToAiReply(
     if (!config || !config.autoReplyEnabled) return
 
     // Parallelize pre-checks for minimum latency: automations, conversation status,
-    // recent context messages, and contact details are fetched simultaneously.
-    const [autoRespondersRes, convRes, messages, contactRes] = await Promise.all([
+    // recent context messages, contact details, and account name are fetched simultaneously.
+    const [autoRespondersRes, convRes, messages, contactRes, accountRes] = await Promise.all([
       db
         .from('automations')
         .select('id')
@@ -85,6 +87,11 @@ export async function dispatchInboundToAiReply(
         .from('contacts')
         .select('id, name, company')
         .eq('id', contactId)
+        .maybeSingle(),
+      db
+        .from('accounts')
+        .select('name')
+        .eq('id', accountId)
         .maybeSingle(),
     ])
 
@@ -130,14 +137,15 @@ export async function dispatchInboundToAiReply(
     }
 
     const contact = contactRes.data
+    const userMsg = latestUserMessage(messages)
 
     // Ground the reply in the account's knowledge base (best-effort).
-    // Greetings automatically take the 0ms fast-path!
+    // Greetings and ad clicks automatically take the 0ms fast-path!
     const knowledge = await retrieveKnowledge(
       db,
       accountId,
       config,
-      latestUserMessage(messages),
+      userMsg,
     )
 
     const systemPrompt = buildSystemPrompt({
@@ -195,8 +203,6 @@ export async function dispatchInboundToAiReply(
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
     // swallows its own errors, so the floating promise can't reject.
-    // Logged regardless of handoff — the provider call happened either
-    // way.
     void logAiUsage(db, {
       accountId,
       conversationId,
@@ -228,7 +234,7 @@ export async function dispatchInboundToAiReply(
 
       // If text was unexpectedly empty but no handoff, provide warm fallback so patient is not left hanging
       replyText =
-        'Namaste ji! Main aapki bilkul madad kar sakti hoon. Kripya batayein aapko kis baare mein jaankari chahiye? Humari team aapki poori sahayata karegi. 🙏'
+        'Namaskar, Gynocci Femtech Ltd. mein aapka swagat hai! Kaise hain aap? Bataiye main aapki kya sahayta kar sakti hoon? 🙏'
     }
 
     // Atomically claim a reply slot. For unlimited configs, pass 999999 so it never blocks.
@@ -256,9 +262,9 @@ export async function dispatchInboundToAiReply(
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
       if (i > 0) {
-        // Natural 400ms pause between message chunks so WhatsApp delivers
-        // and displays them in exact sequential order.
-        await new Promise((r) => setTimeout(r, 400))
+        // Natural 150ms pause between message chunks so WhatsApp delivers
+        // and displays them in exact sequential order without unnecessary delay.
+        await new Promise((r) => setTimeout(r, 150))
       }
       try {
         await engineSendText({

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { latestUserMessage, isGreetingOnly } from './query'
+import { latestUserMessage, isGreetingOnly, isGreetingOrAdClick } from './query'
 
 describe('latestUserMessage', () => {
   it('returns the most recent user turn', () => {
@@ -42,6 +42,23 @@ describe('isGreetingOnly', () => {
     expect(isGreetingOnly('Mera naam Anjali hai')).toBe(false)
     expect(isGreetingOnly('Ovulation tracking kaise karein')).toBe(false)
     expect(isGreetingOnly('')).toBe(false)
+  })
+})
+
+describe('isGreetingOrAdClick', () => {
+  it('detects both greetings and ad referral prefill text', () => {
+    expect(isGreetingOrAdClick('Hi')).toBe(true)
+    expect(isGreetingOrAdClick('Hi, I saw your ad on Facebook')).toBe(true)
+    expect(isGreetingOrAdClick('I saw this on Facebook')).toBe(true)
+    expect(isGreetingOrAdClick('Interested in this')).toBe(true)
+    expect(isGreetingOrAdClick('Please send details')).toBe(true)
+    expect(isGreetingOrAdClick('Mujhe jankari chahiye')).toBe(true)
+    expect(isGreetingOrAdClick('Hello I saw your ad on Instagram')).toBe(true)
+  })
+
+  it('does not classify complex medical queries as ad greetings', () => {
+    expect(isGreetingOrAdClick('Mujhe periods me dard hota hai')).toBe(false)
+    expect(isGreetingOrAdClick('IVF cycle fail hone par kya karein')).toBe(false)
   })
 })
 

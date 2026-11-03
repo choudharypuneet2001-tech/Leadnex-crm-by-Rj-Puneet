@@ -78,9 +78,65 @@ const GREETING_WORDS = new Set([
   'you',
 ])
 
+export const AD_CLICK_PHRASES = [
+  'i saw your ad',
+  'i saw this ad',
+  'saw your ad',
+  'i saw this on facebook',
+  'i saw this on instagram',
+  'i saw your ad on facebook',
+  'i saw your ad on instagram',
+  'saw ad on facebook',
+  'saw ad on instagram',
+  'can i get more info',
+  'can you tell me more',
+  'want to know more',
+  'want more info',
+  'interested in this',
+  'interested in gynocci',
+  'please send details',
+  'send details',
+  'details please',
+  'mujhe jankari chahiye',
+  'jaankari chahiye',
+  'more info',
+  'info please',
+  'get started',
+]
+
+/**
+ * Returns true if the customer input is purely a greeting or an incoming
+ * Click-to-WhatsApp ad prefill message (e.g., "Hi, I saw your ad on Facebook").
+ */
+export function isGreetingOrAdClick(text: string): boolean {
+  if (!text) return false
+  if (isGreetingOnly(text)) return true
+
+  const clean = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  for (const phrase of AD_CLICK_PHRASES) {
+    if (clean.includes(phrase)) return true
+  }
+
+  // Common pattern: starts with greeting + asks about ad / Facebook / Instagram / details
+  if (
+    (clean.startsWith('hi ') || clean.startsWith('hello ') || clean.startsWith('namaste ') || clean.startsWith('hey ')) &&
+    (clean.includes('ad') || clean.includes('facebook') || clean.includes('instagram') || clean.includes('fb') || clean.includes('insta') || clean.includes('details') || clean.includes('jankari'))
+  ) {
+    return true
+  }
+
+  return false
+}
+
 /**
  * Returns true if the customer input is purely a greeting / pleasantry
- * (e.g., "hi", "namaskar", "namaste ji", "hello doctor", "good morning").
+ * (e.g., "hi", "namaskar", "namaste ji", "hello doctor", "good morning",
+ * or an ad-click headline).
  *
  * For these messages, performing a semantic vector search across the knowledge base
  * is completely redundant and adds 1.5 - 2.5s of latency (OpenAI embeddings + Supabase RPCs).
@@ -106,6 +162,10 @@ export function isGreetingOnly(text: string): boolean {
   }
 
   if (!clean) return true
+
+  for (const phrase of AD_CLICK_PHRASES) {
+    if (clean === phrase) return true
+  }
 
   const words = clean.split(' ').filter(Boolean)
   if (words.length === 0 || words.length > 5) return false

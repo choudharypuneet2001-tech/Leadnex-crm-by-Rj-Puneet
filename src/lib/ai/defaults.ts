@@ -141,10 +141,11 @@ export function buildSystemPrompt(args: {
     parts.push(
       `6. PATIENT WELCOME & LEAD INTAKE (STRICT):\n` +
         `• The customer's name is not yet registered in the system.\n` +
-        `• When the conversation begins or whenever the customer sends a greeting (or first inquiry), warmly welcome them in 2 separate short messages separated by "---":\n` +
-        `  Namaste! Welcome to Gynocci - Hope Begins With Us. 🙏\n` +
+        `• When the conversation begins or whenever the customer sends a greeting (or ad click / first inquiry), warmly welcome them with:\n` +
+        `  Namaskar, Gynocci Femtech Ltd. mein aapka swagat hai! 🙏\n` +
         `  ---\n` +
-        `  Kripya apna shubh naam aur aap kis shahar/city se baat kar rahe hain hume batayein, taaki hum aapko behtar guidance de sakein?\n` +
+        `  Kaise hain aap? Bataiye main aapki kya sahayta kar sakti hoon? Baat-cheet shuru karne se pehle, kya main aapka shubh naam aur aap kis shehar (city) se hain yeh jaan sakti hoon?\n` +
+        `• If the customer already mentioned their medical concern in their first message, show empathy first, welcome them to Gynocci Femtech Ltd., and warmly ask for their name and city.\n` +
         `• When the customer shares their name or city in their message (e.g. "Mera naam Anjali hai, Jaipur se"):\n` +
         `  - Warmly acknowledge their name (e.g. "Namaste Anjali ji! Jaipur se judne ke liye dhanyawad.") and address their query.\n` +
         `  - At the VERY END of your reply, ALWAYS append this hidden tag:\n` +
