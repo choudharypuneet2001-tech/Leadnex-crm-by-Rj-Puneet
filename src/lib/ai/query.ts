@@ -13,6 +13,21 @@ export function latestUserMessage(messages: ChatMessage[]): string {
   return messages.length > 0 ? messages[messages.length - 1].content : ''
 }
 
+/**
+ * Strips emojis, brackets, symbols, and phone numbers from raw WhatsApp profile names
+ * so the AI addresses the customer respectfully and naturally (e.g. "Rj Puneet" instead of "Rj Puneet ( जाट ) 🦅").
+ */
+export function cleanDisplayName(raw?: string | null): string | null {
+  if (!raw) return null
+  if (/^(\+?\d[\d\s-]{7,}\d)$/.test(raw.trim())) return null
+  let s = raw.replace(/\s*[\(\[\{][^\)\]\}]*[\)\]\}]/g, '')
+  s = s.replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Symbol}]/gu, '')
+  s = s.replace(/[^\p{L}\s.]/gu, '')
+  s = s.replace(/\s+/g, ' ').trim()
+  if (!s || s.length < 2) return null
+  return s
+}
+
 const GREETING_PHRASES = [
   'good morning',
   'good afternoon',

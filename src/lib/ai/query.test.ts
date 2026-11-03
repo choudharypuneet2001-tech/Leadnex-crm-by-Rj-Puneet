@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { latestUserMessage, isGreetingOnly, isGreetingOrAdClick } from './query'
+import { latestUserMessage, isGreetingOnly, isGreetingOrAdClick, cleanDisplayName } from './query'
 
 describe('latestUserMessage', () => {
   it('returns the most recent user turn', () => {
@@ -59,6 +59,17 @@ describe('isGreetingOrAdClick', () => {
   it('does not classify complex medical queries as ad greetings', () => {
     expect(isGreetingOrAdClick('Mujhe periods me dard hota hai')).toBe(false)
     expect(isGreetingOrAdClick('IVF cycle fail hone par kya karein')).toBe(false)
+  })
+})
+
+describe('cleanDisplayName', () => {
+  it('strips emojis, brackets, symbols, and phone numbers', () => {
+    expect(cleanDisplayName('Rj Puneet ( जाट ) 🦅')).toBe('Rj Puneet')
+    expect(cleanDisplayName('Priya ❤️')).toBe('Priya')
+    expect(cleanDisplayName('Dr. Komal Choudhary')).toBe('Dr. Komal Choudhary')
+    expect(cleanDisplayName('+919588233263')).toBe(null)
+    expect(cleanDisplayName('')).toBe(null)
+    expect(cleanDisplayName(null)).toBe(null)
   })
 })
 

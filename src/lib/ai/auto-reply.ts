@@ -67,6 +67,27 @@ export async function dispatchInboundToAiReply(
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
 
+    // Rapid-message burst debounce:
+    // When a customer sends 2-3 short messages back-to-back (e.g. within ~1.2s),
+    // wait briefly so older webhooks yield to the latest message, which responds
+    // to the full accumulated context in a single, coherent turn.
+    if (inboundMessageId && process.env.NODE_ENV !== 'test') {
+      await new Promise((r) => setTimeout(r, 1200))
+
+      const { data: latestInbound } = await db
+        .from('messages')
+        .select('message_id')
+        .eq('conversation_id', conversationId)
+        .eq('sender_type', 'customer')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (latestInbound?.message_id && latestInbound.message_id !== inboundMessageId) {
+        return
+      }
+    }
+
     // Parallelize pre-checks for minimum latency: automations, conversation status,
     // recent context messages, contact details, and account name are fetched simultaneously.
     const [autoRespondersRes, convRes, messages, contactRes, accountRes] = await Promise.all([
@@ -235,6 +256,26 @@ export async function dispatchInboundToAiReply(
       // If text was unexpectedly empty but no handoff, provide warm fallback so patient is not left hanging
       replyText =
         'Namaskar, Gynocci Femtech Ltd. mein aapka swagat hai! Kaise hain aap? Bataiye main aapki kya sahayta kar sakti hoon? 🙏'
+    }
+
+    // Pre-send guard: if another inbound arrived from the customer while the LLM was
+    // generating, abort this send so we do not send an outdated reply or collide with the newer message.
+    if (inboundMessageId && process.env.NODE_ENV !== 'test') {
+      const { data: latestInbound } = await db
+        .from('messages')
+        .select('message_id')
+        .eq('conversation_id', conversationId)
+        .eq('sender_type', 'customer')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (latestInbound?.message_id && latestInbound.message_id !== inboundMessageId) {
+        console.log(
+          `[ai auto-reply] skipping send for ${inboundMessageId} because newer customer message ${latestInbound.message_id} arrived`,
+        )
+        return
+      }
     }
 
     // Atomically claim a reply slot. For unlimited configs, pass 999999 so it never blocks.
