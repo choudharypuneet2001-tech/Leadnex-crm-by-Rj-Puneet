@@ -120,6 +120,13 @@ export interface Contact {
   company?: string;
   city?: string;
   avatar_url?: string;
+  /** Meta Click-to-WhatsApp (CTWA) Ad referral tracking (migration 046). */
+  ad_id?: string | null;
+  ad_name?: string | null;
+  ad_source?: string | null;
+  ad_source_url?: string | null;
+  ad_body?: string | null;
+  ad_media_url?: string | null;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the

@@ -39,6 +39,8 @@ import {
   X,
   DollarSign,
   LayoutTemplate,
+  Megaphone,
+  ExternalLink,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
@@ -544,6 +546,83 @@ export function ContactDetailView({
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
+
+                  {/* Meta Ad Referral Section */}
+                  {(contact?.ad_name || contact?.ad_id || contact?.ad_source_url) ? (
+                    <div className="rounded-lg border border-blue-500/25 bg-blue-500/5 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
+                          <Megaphone className="size-3.5" />
+                          <span>Meta Ad Referral (CTWA)</span>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
+                          {contact.ad_source || 'Meta Ad'}
+                        </Badge>
+                      </div>
+
+                      {contact.ad_name && (
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Ad Campaign / Headline</span>
+                          <p className="text-sm font-semibold text-foreground mt-0.5">{contact.ad_name}</p>
+                        </div>
+                      )}
+
+                      {contact.ad_id && (
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Meta Ad ID</span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded border border-border text-foreground select-all">
+                              {contact.ad_id}
+                            </code>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-6 text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                navigator.clipboard.writeText(contact.ad_id || '');
+                                toast.success('Ad ID copied!');
+                              }}
+                              title="Copy Ad ID"
+                            >
+                              <Copy className="size-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {contact.ad_body && (
+                        <div>
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Ad Text / Copy</span>
+                          <p className="text-xs text-muted-foreground mt-0.5 p-2 rounded bg-background/60 border border-border/50 line-clamp-4 whitespace-pre-wrap">
+                            {contact.ad_body}
+                          </p>
+                        </div>
+                      )}
+
+                      {contact.ad_source_url && (
+                        <div className="pt-0.5">
+                          <a
+                            href={contact.ad_source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400 font-medium"
+                          >
+                            <ExternalLink className="size-3" />
+                            View Ad on Facebook / Instagram
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Megaphone className="size-3 text-muted-foreground/60" />
+                        <span>Source: <strong>Direct WhatsApp / Organic</strong></span>
+                      </div>
+                    </div>
+                  )}
+
                   <Button
                     onClick={saveDetails}
                     disabled={savingDetails}

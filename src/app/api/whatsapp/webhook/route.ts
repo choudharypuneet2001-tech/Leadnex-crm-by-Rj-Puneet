@@ -95,6 +95,11 @@ interface WhatsAppMessage {
     source_id?: string
     headline?: string
     body?: string
+    media_type?: string
+    image_url?: string
+    video_url?: string
+    thumbnail_url?: string
+    ctwa_clid?: string
   }
 }
 
@@ -696,6 +701,44 @@ async function processMessage(
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+
+  // Capture Meta Click-to-WhatsApp (CTWA) Ad referral details on contact
+  if (message.referral) {
+    const ref = message.referral
+    const adPatch: Record<string, unknown> = {}
+    if (ref.source_id && ref.source_id !== contactRecord.ad_id) {
+      adPatch.ad_id = ref.source_id
+    }
+    if (ref.headline && ref.headline !== contactRecord.ad_name) {
+      adPatch.ad_name = ref.headline
+    }
+    if (ref.source_type && ref.source_type !== contactRecord.ad_source) {
+      adPatch.ad_source = ref.source_type
+    }
+    if (ref.source_url && ref.source_url !== contactRecord.ad_source_url) {
+      adPatch.ad_source_url = ref.source_url
+    }
+    if (ref.body && ref.body !== contactRecord.ad_body) {
+      adPatch.ad_body = ref.body
+    }
+    const mediaUrl = ref.image_url || ref.video_url || ref.thumbnail_url
+    if (mediaUrl && mediaUrl !== contactRecord.ad_media_url) {
+      adPatch.ad_media_url = mediaUrl
+    }
+
+    if (Object.keys(adPatch).length > 0) {
+      const { data: updatedContact, error: adUpdateErr } = await supabaseAdmin()
+        .from('contacts')
+        .update({ ...adPatch, updated_at: new Date().toISOString() })
+        .eq('id', contactRecord.id)
+        .select()
+        .maybeSingle()
+
+      if (!adUpdateErr && updatedContact) {
+        Object.assign(contactRecord, updatedContact)
+      }
+    }
+  }
 
   // Find or create conversation
   const convResult = await findOrCreateConversation(

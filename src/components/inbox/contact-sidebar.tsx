@@ -15,6 +15,7 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -183,6 +184,35 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </div>
             )}
           </div>
+
+          {/* Meta Ad Referral */}
+          {(contact.ad_name || contact.ad_id) && (
+            <div className="mt-3 rounded-lg border border-blue-500/25 bg-blue-500/5 p-2.5 text-left space-y-1">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                <Megaphone className="h-3 w-3 shrink-0" />
+                <span>Meta Ad Referral</span>
+              </div>
+              {contact.ad_name && (
+                <div className="text-xs font-semibold text-foreground line-clamp-2" title={contact.ad_name}>
+                  {contact.ad_name}
+                </div>
+              )}
+              {contact.ad_id && (
+                <div className="text-[10px] font-mono text-muted-foreground flex items-center justify-between">
+                  <span>ID: {contact.ad_id}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(contact.ad_id || '');
+                    }}
+                    className="hover:text-foreground cursor-pointer"
+                    title="Copy Ad ID"
+                  >
+                    <Copy className="size-2.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />

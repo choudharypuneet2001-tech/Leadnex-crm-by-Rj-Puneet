@@ -52,6 +52,7 @@ import {
   X,
   Phone,
   MapPin,
+  Megaphone,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -223,7 +224,7 @@ export default function ContactsPage() {
 
       if (term) {
         const like = `%${term}%`;
-        query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+        query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like},ad_name.ilike.${like},ad_id.ilike.${like}`);
       }
 
       const { data, count: exactCount, error } = await query;
@@ -429,7 +430,7 @@ export default function ContactsPage() {
 
         if (term) {
           const like = `%${term}%`;
-          query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+          query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like},ad_name.ilike.${like},ad_id.ilike.${like}`);
         }
 
         const { data, error } = await query;
@@ -498,6 +499,8 @@ export default function ContactsPage() {
         'WhatsApp Phone (+91)',
         'Email',
         'City / Location',
+        'Meta Ad Name',
+        'Meta Ad ID',
         'Tags',
         ...customFields.map((f) => f.field_name),
         'Created At',
@@ -519,6 +522,8 @@ export default function ContactsPage() {
           getFormattedPhone(c.phone),
           c.email ?? '',
           c.city ?? '',
+          c.ad_name ?? '',
+          c.ad_id ?? '',
           contactTagNames,
           ...customCells,
           formatCsvDate(c.created_at),
@@ -813,15 +818,16 @@ export default function ContactsPage() {
               <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
               <TableHead className="text-muted-foreground hidden sm:table-cell">City / Location</TableHead>
+              <TableHead className="text-muted-foreground hidden lg:table-cell">Meta Ad Source</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
+              <TableHead className="text-muted-foreground hidden xl:table-cell">{t('tableColumns.createdAt')}</TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={9} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -830,7 +836,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={9} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -871,12 +877,20 @@ export default function ContactsPage() {
                   <TableCell className="text-foreground font-medium">
                     <div>
                       <div>{contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}</div>
-                      {(contact.city || contact.company) && (
-                        <div className="text-xs text-muted-foreground font-normal flex items-center gap-1 mt-0.5">
-                          <MapPin className="size-3 text-emerald-500 shrink-0" />
-                          <span>{contact.city || contact.company}</span>
-                        </div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-muted-foreground font-normal">
+                        {(contact.city || contact.company) && (
+                          <div className="flex items-center gap-1">
+                            <MapPin className="size-3 text-emerald-500 shrink-0" />
+                            <span>{contact.city || contact.company}</span>
+                          </div>
+                        )}
+                        {(contact.ad_name || contact.ad_id) && (
+                          <div className="lg:hidden inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium border border-blue-500/20 truncate max-w-[150px]">
+                            <Megaphone className="size-2.5 shrink-0" />
+                            <span className="truncate">{contact.ad_name || `Ad ${contact.ad_id}`}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
@@ -901,6 +915,26 @@ export default function ContactsPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground hidden sm:table-cell text-sm">
                     {contact.city || contact.company || <span className="text-muted-foreground">-</span>}
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    {contact.ad_name || contact.ad_id ? (
+                      <div className="flex flex-col gap-0.5 max-w-[190px]">
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium truncate border border-blue-500/20"
+                          title={contact.ad_name || `Meta Ad ID: ${contact.ad_id}`}
+                        >
+                          <Megaphone className="size-3 shrink-0" />
+                          <span className="truncate">{contact.ad_name || 'Meta Ad'}</span>
+                        </span>
+                        {contact.ad_id && (
+                          <span className="text-[10px] text-muted-foreground font-mono truncate pl-1">
+                            ID: {contact.ad_id}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/60 text-xs italic">Direct</span>
+                    )}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <div className="flex flex-wrap gap-1">
