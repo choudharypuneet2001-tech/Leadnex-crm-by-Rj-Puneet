@@ -134,6 +134,14 @@ export function parseGeneration(
             typeof parsed.health_concern === 'string' && parsed.health_concern.trim()
               ? parsed.health_concern.trim()
               : undefined,
+          consultation_type:
+            typeof parsed.consultation_type === 'string' && parsed.consultation_type.trim()
+              ? parsed.consultation_type.trim()
+              : undefined,
+          clinic_location:
+            typeof parsed.clinic_location === 'string' && parsed.clinic_location.trim()
+              ? parsed.clinic_location.trim()
+              : undefined,
         }
       }
     } catch {

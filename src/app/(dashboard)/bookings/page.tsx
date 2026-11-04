@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
-import type { Booking, BookingStatus } from '@/types';
+import type { Booking, BookingStatus, ConsultationType } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -41,10 +41,8 @@ import {
   Clock,
   Activity,
   MessageSquare,
-  ExternalLink,
   CheckCircle2,
   XCircle,
-  AlertCircle,
   Megaphone,
   MoreHorizontal,
   RefreshCw,
@@ -54,6 +52,8 @@ import {
   CalendarDays,
   User,
   Trash2,
+  Building2,
+  Video,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -97,6 +97,7 @@ export default function BookingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | BookingStatus>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'clinic_visit' | 'video_consultation'>('all');
 
   // Selected booking modal
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -233,6 +234,8 @@ export default function BookingsPage() {
       'Patient Name',
       'Phone Number',
       'City',
+      'Consultation Mode',
+      'Clinic Location',
       'Preferred Date & Time',
       'Health Concern',
       'Meta Ad Campaign',
@@ -246,6 +249,8 @@ export default function BookingsPage() {
       b.patient_name,
       b.phone,
       b.city || '',
+      b.consultation_type === 'clinic_visit' ? 'Clinic Visit' : 'Video Consultation',
+      b.clinic_location || b.city || '',
       [b.preferred_date, b.preferred_time].filter(Boolean).join(' - ') || 'Not specified',
       b.health_concern || '',
       b.ad_name || '',
@@ -264,6 +269,7 @@ export default function BookingsPage() {
     const q = search.trim().toLowerCase();
     return bookings.filter((b) => {
       if (statusFilter !== 'all' && b.status !== statusFilter) return false;
+      if (typeFilter !== 'all' && b.consultation_type !== typeFilter) return false;
       if (!q) return true;
       return (
         b.booking_query_id.toLowerCase().includes(q) ||
@@ -271,18 +277,19 @@ export default function BookingsPage() {
         b.phone.includes(q) ||
         (b.city && b.city.toLowerCase().includes(q)) ||
         (b.health_concern && b.health_concern.toLowerCase().includes(q)) ||
-        (b.ad_name && b.ad_name.toLowerCase().includes(q))
+        (b.ad_name && b.ad_name.toLowerCase().includes(q)) ||
+        (b.clinic_location && b.clinic_location.toLowerCase().includes(q))
       );
     });
-  }, [bookings, search, statusFilter]);
+  }, [bookings, search, statusFilter, typeFilter]);
 
   // Stats
   const stats = useMemo(() => {
     const total = bookings.length;
     const confirmed = bookings.filter((b) => b.status === 'confirmed').length;
-    const completed = bookings.filter((b) => b.status === 'completed').length;
-    const cancelled = bookings.filter((b) => b.status === 'cancelled').length;
-    return { total, confirmed, completed, cancelled };
+    const clinicVisits = bookings.filter((b) => b.consultation_type === 'clinic_visit').length;
+    const videoConsultations = bookings.filter((b) => b.consultation_type !== 'clinic_visit').length;
+    return { total, confirmed, clinicVisits, videoConsultations };
   }, [bookings]);
 
   return (
@@ -349,29 +356,29 @@ export default function BookingsPage() {
           <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
             {stats.confirmed}
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">Ready for doctor team</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Ready for Gynocci team</p>
         </div>
 
         <div className="rounded-xl border bg-card p-4 shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium uppercase tracking-wider">Completed</span>
-            <Sparkles className="h-4 w-4 text-blue-500" />
+            <span className="text-xs font-medium uppercase tracking-wider">Clinic Visits</span>
+            <Building2 className="h-4 w-4 text-amber-500" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400">
+            {stats.clinicVisits}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">Jaipur & clinic appointments</p>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium uppercase tracking-wider">Video Calls</span>
+            <Video className="h-4 w-4 text-blue-500" />
           </div>
           <div className="mt-2 text-2xl font-bold text-blue-600 dark:text-blue-400">
-            {stats.completed}
+            {stats.videoConsultations}
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">Consultations done</p>
-        </div>
-
-        <div className="rounded-xl border bg-card p-4 shadow-xs">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium uppercase tracking-wider">Cancelled</span>
-            <XCircle className="h-4 w-4 text-rose-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-rose-600 dark:text-rose-400">
-            {stats.cancelled}
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">Rescheduled / cancelled</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Online consultations</p>
         </div>
       </div>
 
@@ -380,25 +387,58 @@ export default function BookingsPage() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search patient, phone, query ID, city, takleef..."
+            placeholder="Search patient, phone, query ID, city, concern..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-9"
           />
         </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {(['all', 'confirmed', 'completed', 'cancelled'] as const).map((st) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Mode Filter */}
+          <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
             <Button
-              key={st}
-              variant={statusFilter === st ? 'default' : 'outline'}
+              variant={typeFilter === 'all' ? 'secondary' : 'ghost'}
               size="sm"
-              onClick={() => setStatusFilter(st)}
-              className="h-8 capitalize text-xs"
+              onClick={() => setTypeFilter('all')}
+              className="h-7 text-xs px-2"
             >
-              {st}
+              All Modes
             </Button>
-          ))}
+            <Button
+              variant={typeFilter === 'clinic_visit' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setTypeFilter('clinic_visit')}
+              className="h-7 text-xs px-2 gap-1 text-amber-700 dark:text-amber-300"
+            >
+              <Building2 className="h-3 w-3" />
+              Clinic Visit
+            </Button>
+            <Button
+              variant={typeFilter === 'video_consultation' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setTypeFilter('video_consultation')}
+              className="h-7 text-xs px-2 gap-1 text-blue-700 dark:text-blue-300"
+            >
+              <Video className="h-3 w-3" />
+              Video Call
+            </Button>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
+            {(['all', 'confirmed', 'completed', 'cancelled'] as const).map((st) => (
+              <Button
+                key={st}
+                variant={statusFilter === st ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setStatusFilter(st)}
+                className="h-7 capitalize text-xs px-2"
+              >
+                {st}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -418,7 +458,7 @@ export default function BookingsPage() {
             </div>
             <h3 className="text-lg font-semibold text-foreground">No appointments found</h3>
             <p className="text-sm text-muted-foreground max-w-sm mt-1">
-              {search || statusFilter !== 'all'
+              {search || statusFilter !== 'all' || typeFilter !== 'all'
                 ? 'No bookings match your current filter criteria. Try clearing filters.'
                 : 'When patients confirm their appointment via WhatsApp or Ads, their booking details and query ID will automatically appear here.'}
             </p>
@@ -428,21 +468,23 @@ export default function BookingsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[140px]">Query ID</TableHead>
+                  <TableHead className="w-[130px]">Query ID</TableHead>
                   <TableHead>Patient Details</TableHead>
+                  <TableHead>Consultation Mode</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead>Preferred Schedule</TableHead>
                   <TableHead>Health Concern (तकलीफ)</TableHead>
                   <TableHead>Meta Ad Referral</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Booked On</TableHead>
-                  <TableHead className="w-[80px] text-right">Actions</TableHead>
+                  <TableHead className="w-[70px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredBookings.map((b) => {
                   const phoneDigits = b.phone.replace(/\D/g, '');
                   const waUrl = `https://wa.me/${phoneDigits}`;
+                  const isClinic = b.consultation_type === 'clinic_visit';
 
                   return (
                     <TableRow
@@ -503,6 +545,28 @@ export default function BookingsPage() {
                         </div>
                       </TableCell>
 
+                      {/* Consultation Mode */}
+                      <TableCell>
+                        {isClinic ? (
+                          <div className="space-y-0.5">
+                            <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-xs">
+                              <Building2 className="h-3 w-3" />
+                              Clinic Visit
+                            </Badge>
+                            {b.clinic_location && (
+                              <p className="text-[11px] text-muted-foreground font-medium">
+                                {b.clinic_location} Clinic
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 gap-1 text-xs">
+                            <Video className="h-3 w-3" />
+                            Video Call
+                          </Badge>
+                        )}
+                      </TableCell>
+
                       {/* City */}
                       <TableCell>
                         {b.city ? (
@@ -537,19 +601,19 @@ export default function BookingsPage() {
                       </TableCell>
 
                       {/* Health Concern */}
-                      <TableCell className="max-w-[220px]">
+                      <TableCell className="max-w-[200px]">
                         {b.health_concern ? (
                           <div className="flex items-start gap-1 text-xs text-foreground">
                             <Activity className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
                             <span className="line-clamp-2">{b.health_concern}</span>
                           </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground italic">Consultation request</span>
+                          <span className="text-xs text-muted-foreground italic">Ayurvedic consultation</span>
                         )}
                       </TableCell>
 
                       {/* Meta Ad Referral */}
-                      <TableCell className="max-w-[180px]">
+                      <TableCell className="max-w-[170px]">
                         {b.ad_name ? (
                           <div className="space-y-0.5">
                             <Badge
@@ -718,7 +782,7 @@ export default function BookingsPage() {
               Appointment Details
             </DialogTitle>
             <DialogDescription>
-              Consultation query recorded for Gynocci doctor team.
+              Consultation query recorded for Gynocci team.
             </DialogDescription>
           </DialogHeader>
 
@@ -752,6 +816,26 @@ export default function BookingsPage() {
                 </div>
               </div>
 
+              {/* Consultation Mode Card */}
+              <div className="p-3.5 rounded-lg border bg-muted/40 space-y-2">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Consultation Mode
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedBooking.consultation_type === 'clinic_visit' ? (
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-sm">
+                      <Building2 className="h-5 w-5" />
+                      <span>Clinic Visit ({selectedBooking.clinic_location || selectedBooking.city || 'Jaipur'} Clinic)</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-semibold text-sm">
+                      <Video className="h-5 w-5" />
+                      <span>Online Video Consultation (Video Call)</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Schedule Card */}
               <div className="p-3.5 rounded-lg border bg-muted/40 space-y-2">
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -779,8 +863,8 @@ export default function BookingsPage() {
                   <Activity className="h-3.5 w-3.5 text-amber-500" />
                   Health Concern / Takleef
                 </div>
-                <p className="text-sm text-foreground pt-1">
-                  {selectedBooking.health_concern || 'Doctor consultation required'}
+                <p className="text-sm text-foreground pt-1 font-medium">
+                  {selectedBooking.health_concern || 'Ayurvedic doctor consultation required'}
                 </p>
               </div>
 

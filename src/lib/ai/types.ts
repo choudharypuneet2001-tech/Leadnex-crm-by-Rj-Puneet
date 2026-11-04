@@ -67,6 +67,8 @@ export interface BookingConfirmedExtracted {
   preferred_date?: string
   preferred_time?: string
   health_concern?: string
+  consultation_type?: 'clinic_visit' | 'video_consultation' | string
+  clinic_location?: string
 }
 
 /** Outcome of a generation call. */

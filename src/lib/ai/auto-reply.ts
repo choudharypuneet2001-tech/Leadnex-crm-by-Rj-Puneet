@@ -240,7 +240,18 @@ export async function dispatchInboundToAiReply(
           bookingConfirmed.city?.trim() || contact?.company || ''
         const preferredDate = bookingConfirmed.preferred_date?.trim() || ''
         const preferredTime = bookingConfirmed.preferred_time?.trim() || ''
-        const healthConcern = bookingConfirmed.health_concern?.trim() || ''
+        const rawHealthConcern = bookingConfirmed.health_concern?.trim() || ''
+        const healthConcern =
+          rawHealthConcern && !rawHealthConcern.includes('[') && !rawHealthConcern.toLowerCase().includes('yahan')
+            ? rawHealthConcern
+            : (contact?.ad_name ? `Consultation for ${contact.ad_name}` : 'Women Reproductive Health & Ayurvedic Care')
+
+        const consultationType =
+          bookingConfirmed.consultation_type?.toLowerCase().includes('clinic')
+            ? 'clinic_visit'
+            : 'video_consultation'
+
+        const clinicLocation = bookingConfirmed.clinic_location?.trim() || null
 
         const { error: bookingErr } = await db.from('bookings').insert({
           account_id: accountId,
@@ -253,6 +264,8 @@ export async function dispatchInboundToAiReply(
           preferred_date: preferredDate,
           preferred_time: preferredTime,
           health_concern: healthConcern,
+          consultation_type: consultationType,
+          clinic_location: clinicLocation,
           ad_name: contact?.ad_name || null,
           ad_id: contact?.ad_id || null,
           status: 'confirmed',
@@ -281,6 +294,12 @@ export async function dispatchInboundToAiReply(
     })
 
     let replyText = text?.trim() ?? ''
+
+    // Clean up any stray template placeholders so patients never see developer notes
+    replyText = replyText.replace(/\s*\(yahan aapka health concern[\s\S]*?\)/gi, '')
+    replyText = replyText.replace(/\[(?:Takleef|Concern|Takleef\/Concern|Health Concern)\]/gi, contact?.ad_name || 'Ayurvedic Health Consultation')
+    replyText = replyText.replace(/\[(?:Patient Name|Naam)\]/gi, contact?.name || 'Patient')
+    replyText = replyText.replace(/\[(?:Random 4 digits|Random 4 Digits)\]/gi, Math.floor(1000 + Math.random() * 9000).toString())
 
     if (!replyText) {
       if (handoff) {

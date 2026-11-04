@@ -135,6 +135,7 @@ export interface Contact {
 }
 
 export type BookingStatus = 'confirmed' | 'completed' | 'cancelled';
+export type ConsultationType = 'clinic_visit' | 'video_consultation';
 
 export interface Booking {
   id: string;
@@ -148,6 +149,8 @@ export interface Booking {
   preferred_date?: string | null;
   preferred_time?: string | null;
   health_concern?: string | null;
+  consultation_type?: ConsultationType | string;
+  clinic_location?: string | null;
   ad_name?: string | null;
   ad_id?: string | null;
   status: BookingStatus;
