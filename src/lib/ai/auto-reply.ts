@@ -106,7 +106,7 @@ export async function dispatchInboundToAiReply(
       buildConversationContext(db, conversationId),
       db
         .from('contacts')
-        .select('id, name, company')
+        .select('id, name, company, phone, ad_name, ad_id')
         .eq('id', contactId)
         .maybeSingle(),
       db
@@ -179,29 +179,31 @@ export async function dispatchInboundToAiReply(
       },
     })
 
-    const { text, handoff, usage, contactUpdate } = await generateReply({
+    const { text, handoff, usage, contactUpdate, bookingConfirmed } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
 
     // If contact name or city was extracted, update the contact record
-    if (contactUpdate && (contactUpdate.name || contactUpdate.city)) {
+    const extractedName = contactUpdate?.name || bookingConfirmed?.patient_name
+    const extractedCity = contactUpdate?.city || bookingConfirmed?.city
+    if (extractedName || extractedCity) {
       try {
         const updatePayload: Record<string, unknown> = {
           updated_at: new Date().toISOString(),
         }
-        if (contactUpdate.name && (!contact?.name || contact.name.trim() === '')) {
-          updatePayload.name = contactUpdate.name
+        if (extractedName && (!contact?.name || contact.name.trim() === '')) {
+          updatePayload.name = extractedName
         }
-        if (contactUpdate.city && (!contact?.company || contact.company.trim() === '')) {
-          updatePayload.company = contactUpdate.city
+        if (extractedCity && (!contact?.company || contact.company.trim() === '')) {
+          updatePayload.company = extractedCity
         }
         if (Object.keys(updatePayload).length > 1) {
-          if (contactUpdate.city) {
+          if (extractedCity) {
             const res = await db
               .from('contacts')
-              .update({ ...updatePayload, city: contactUpdate.city })
+              .update({ ...updatePayload, city: extractedCity })
               .eq('id', contactId)
             if (res.error) {
               await db
@@ -218,6 +220,51 @@ export async function dispatchInboundToAiReply(
         }
       } catch (err) {
         console.warn('[ai auto-reply] failed to update contact with extracted info:', err)
+      }
+    }
+
+    // If an appointment booking was confirmed by the assistant, save it to `bookings`
+    if (bookingConfirmed) {
+      try {
+        const randomDigits = Math.floor(1000 + Math.random() * 9000).toString()
+        const queryId =
+          bookingConfirmed.booking_query_id && bookingConfirmed.booking_query_id.startsWith('#')
+            ? bookingConfirmed.booking_query_id
+            : `#GYN-${randomDigits}`
+
+        const patientName =
+          bookingConfirmed.patient_name?.trim() || contact?.name || 'Patient'
+        const phone =
+          bookingConfirmed.phone?.trim() || contact?.phone || ''
+        const city =
+          bookingConfirmed.city?.trim() || contact?.company || ''
+        const preferredDate = bookingConfirmed.preferred_date?.trim() || ''
+        const preferredTime = bookingConfirmed.preferred_time?.trim() || ''
+        const healthConcern = bookingConfirmed.health_concern?.trim() || ''
+
+        const { error: bookingErr } = await db.from('bookings').insert({
+          account_id: accountId,
+          contact_id: contactId,
+          conversation_id: conversationId,
+          booking_query_id: queryId,
+          patient_name: patientName,
+          phone: phone,
+          city: city,
+          preferred_date: preferredDate,
+          preferred_time: preferredTime,
+          health_concern: healthConcern,
+          ad_name: contact?.ad_name || null,
+          ad_id: contact?.ad_id || null,
+          status: 'confirmed',
+        })
+
+        if (bookingErr) {
+          console.error('[ai auto-reply] failed to record booking:', bookingErr)
+        } else {
+          console.log(`[ai auto-reply] recorded booking ${queryId} for contact ${contactId}`)
+        }
+      } catch (bookingSaveErr) {
+        console.warn('[ai auto-reply] booking save exception:', bookingSaveErr)
       }
     }
 

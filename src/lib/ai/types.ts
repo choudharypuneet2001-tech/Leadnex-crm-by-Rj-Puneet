@@ -59,6 +59,16 @@ export interface ContactUpdateExtracted {
   city?: string
 }
 
+export interface BookingConfirmedExtracted {
+  booking_query_id?: string
+  patient_name?: string
+  phone?: string
+  city?: string
+  preferred_date?: string
+  preferred_time?: string
+  health_concern?: string
+}
+
 /** Outcome of a generation call. */
 export interface GenerateResult {
   /** The reply text, with any handoff sentinel or update tags stripped. */
@@ -69,6 +79,8 @@ export interface GenerateResult {
   usage: AiUsage | null
   /** Extracted contact fields (name, city) from conversation turn if any. */
   contactUpdate?: ContactUpdateExtracted | null
+  /** Extracted booking details when an appointment is confirmed. */
+  bookingConfirmed?: BookingConfirmedExtracted | null
 }
 
 /**

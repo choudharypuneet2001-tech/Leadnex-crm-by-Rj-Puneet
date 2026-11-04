@@ -59,17 +59,18 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
   return parseGeneration(result.text, result.usage)
 }
 
-import type { ContactUpdateExtracted } from './types'
+import type { ContactUpdateExtracted, BookingConfirmedExtracted } from './types'
 
 export const CONTACT_UPDATE_REGEX =
   /\[\[(?:UPDATE_CONTACT|CONTACT_UPDATE):\s*(\{[\s\S]*?\})\s*\]\]/i
 
+export const BOOKING_CONFIRMED_REGEX =
+  /\[\[(?:BOOKING_CONFIRMED|APPOINTMENT_BOOKED):\s*(\{[\s\S]*?\})\s*\]\]/i
+
 /**
- * Split the raw model output into `{ text, handoff, usage, contactUpdate }`. The
- * sentinel can appear alone or trailing a partial reply; either way we
- * treat the turn as a handoff and strip the marker from any remaining
- * text. `usage` is passed straight through (null when the provider
- * didn't report it).
+ * Split the raw model output into `{ text, handoff, usage, contactUpdate, bookingConfirmed }`.
+ * The sentinel and meta-tags are parsed and stripped so only clean, user-facing
+ * text is sent out on WhatsApp.
  */
 export function parseGeneration(
   raw: string,
@@ -98,12 +99,58 @@ export function parseGeneration(
     }
   }
 
-  const cleanRaw = raw.replace(CONTACT_UPDATE_REGEX, '')
+  let bookingConfirmed: BookingConfirmedExtracted | null = null
+  const bookingMatch = raw.match(BOOKING_CONFIRMED_REGEX)
+  if (bookingMatch) {
+    try {
+      const parsed = JSON.parse(bookingMatch[1])
+      if (typeof parsed === 'object' && parsed !== null) {
+        bookingConfirmed = {
+          booking_query_id:
+            typeof parsed.booking_query_id === 'string' && parsed.booking_query_id.trim()
+              ? parsed.booking_query_id.trim()
+              : undefined,
+          patient_name:
+            typeof parsed.patient_name === 'string' && parsed.patient_name.trim()
+              ? parsed.patient_name.trim()
+              : undefined,
+          phone:
+            typeof parsed.phone === 'string' && parsed.phone.trim()
+              ? parsed.phone.trim()
+              : undefined,
+          city:
+            typeof parsed.city === 'string' && parsed.city.trim()
+              ? parsed.city.trim()
+              : undefined,
+          preferred_date:
+            typeof parsed.preferred_date === 'string' && parsed.preferred_date.trim()
+              ? parsed.preferred_date.trim()
+              : undefined,
+          preferred_time:
+            typeof parsed.preferred_time === 'string' && parsed.preferred_time.trim()
+              ? parsed.preferred_time.trim()
+              : undefined,
+          health_concern:
+            typeof parsed.health_concern === 'string' && parsed.health_concern.trim()
+              ? parsed.health_concern.trim()
+              : undefined,
+        }
+      }
+    } catch {
+      // Malformed JSON - ignore gracefully
+    }
+  }
+
+  let cleanRaw = raw.replace(CONTACT_UPDATE_REGEX, '')
+  cleanRaw = cleanRaw.replace(BOOKING_CONFIRMED_REGEX, '')
   const handoff = cleanRaw.includes(HANDOFF_SENTINEL)
   const text = cleanRaw.split(HANDOFF_SENTINEL).join('').trim()
   const result: GenerateResult = { text, handoff, usage }
   if (contactUpdate) {
     result.contactUpdate = contactUpdate
+  }
+  if (bookingConfirmed) {
+    result.bookingConfirmed = bookingConfirmed
   }
   return result
 }

@@ -134,6 +134,29 @@ export interface Contact {
   tags?: Tag[];
 }
 
+export type BookingStatus = 'confirmed' | 'completed' | 'cancelled';
+
+export interface Booking {
+  id: string;
+  account_id: string;
+  contact_id?: string | null;
+  conversation_id?: string | null;
+  booking_query_id: string;
+  patient_name: string;
+  phone: string;
+  city?: string | null;
+  preferred_date?: string | null;
+  preferred_time?: string | null;
+  health_concern?: string | null;
+  ad_name?: string | null;
+  ad_id?: string | null;
+  status: BookingStatus;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  contact?: Contact | null;
+}
+
 export interface Tag {
   id: string;
   user_id: string;
