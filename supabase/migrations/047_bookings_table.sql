@@ -47,3 +47,4 @@ CREATE POLICY bookings_delete ON bookings
 
 -- Enable realtime on bookings table
 ALTER PUBLICATION supabase_realtime ADD TABLE bookings;
+
