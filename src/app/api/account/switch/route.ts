@@ -73,11 +73,24 @@ export async function POST(req: Request) {
       }
     }
 
+    // Security: Leadnex Super Admin account can ONLY be accessed by the Super Admin!
+    const isSuperAdminAccount =
+      targetAccount.name.toLowerCase().includes('leadnex') ||
+      targetAccount.name.toLowerCase().includes('super admin');
+
+    if (isSuperAdminAccount && !isSuperAdmin) {
+      return NextResponse.json(
+        { error: 'Super Admin privileges required to enter this workspace' },
+        { status: 403 }
+      );
+    }
+
     const isLegacyGynocci =
-      userEmail.includes('puneet') ||
-      userEmail.includes('choudhary') ||
-      userDomain === 'gynocci.com' ||
-      userEmail === 'dr.komalchoudhary05@gmail.com';
+      (userEmail.includes('puneet') ||
+        userEmail.includes('choudhary') ||
+        userDomain === 'gynocci.com' ||
+        userEmail === 'dr.komalchoudhary05@gmail.com') &&
+      targetAccount.name.toLowerCase().includes('gynocci');
 
     if (!isSuperAdmin && !isOwner && !isGrantedInBeta && !isSameOrg && !isLegacyGynocci) {
       console.warn(`[POST /api/account/switch] User ${userEmail} not permitted to switch to ${targetAccountId}`);

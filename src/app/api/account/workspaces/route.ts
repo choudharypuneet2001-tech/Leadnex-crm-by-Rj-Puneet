@@ -68,6 +68,16 @@ export async function GET() {
     const currentAcc = allAccounts.find((a) => a.id === currentAccountId);
 
     const accessibleAccounts = allAccounts.filter((acc) => {
+      const isSuperAdminAccount =
+        acc.name.toLowerCase().includes('leadnex') ||
+        acc.name.toLowerCase().includes('super admin');
+
+      // Security: The Leadnex Master Admin workspace is strictly reserved for Super Admin!
+      // Normal company admins/members must NEVER see or access the master admin account.
+      if (isSuperAdminAccount && !isSuperAdmin) {
+        return false;
+      }
+
       // 1. Super Admin has universal access
       if (isSuperAdmin) return true;
       // 2. Currently active workspace
@@ -80,14 +90,14 @@ export async function GET() {
       if (currentAcc && currentAcc.owner_user_id && currentAcc.owner_user_id === acc.owner_user_id) {
         return true;
       }
-      // 6. Gynocci team member fallback
+      // 6. Gynocci team member fallback (strictly for Gynocci accounts, never Leadnex Super Admin)
       if (
         userEmail.includes('puneet') ||
         userEmail.includes('choudhary') ||
         userDomain === 'gynocci.com' ||
         userEmail === 'dr.komalchoudhary05@gmail.com'
       ) {
-        if (acc.name.toLowerCase().includes('gynocci') || acc.name.toLowerCase().includes('leadnex')) {
+        if (acc.name.toLowerCase().includes('gynocci')) {
           return true;
         }
       }

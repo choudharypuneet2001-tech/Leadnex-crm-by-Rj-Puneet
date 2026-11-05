@@ -18,3 +18,4 @@ DROP INDEX IF EXISTS idx_accounts_one_per_owner;
 -- Recreate as a non-unique lookup index for fast queries
 CREATE INDEX IF NOT EXISTS idx_accounts_owner_user_id
   ON accounts(owner_user_id);
+
