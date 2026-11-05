@@ -6,3 +6,4 @@ ADD COLUMN IF NOT EXISTS consultation_type TEXT NOT NULL DEFAULT 'video_consulta
 ADD COLUMN IF NOT EXISTS clinic_location TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_bookings_consultation_type ON bookings(consultation_type);
+

@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "dashboard",
@@ -59,7 +60,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 lg:px-6">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
         <button
           type="button"
@@ -72,6 +73,10 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
           {t(titleKey as string)}
         </h1>
+
+        <div className="hidden h-4 w-px bg-border/60 sm:block" />
+
+        <WorkspaceSwitcher />
       </div>
 
       <div className="flex items-center gap-1 sm:gap-2">
