@@ -259,16 +259,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 {tSidebar("tags")}
               </div>
               <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
-                    title="Manage tags"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span className="text-[11px]">Add</span>
-                  </Button>
+                <PopoverTrigger
+                  className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer rounded hover:bg-muted transition-colors"
+                  title="Manage tags"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span className="text-[11px]">Add</span>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-56 p-0 shadow-lg">
                   <div className="px-3 py-2 border-b border-border">
