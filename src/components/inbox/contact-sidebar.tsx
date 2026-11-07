@@ -16,9 +16,14 @@ import {
   StickyNote,
   Plus,
   Megaphone,
+  X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
@@ -36,6 +41,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [tagLoading, setTagLoading] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
@@ -44,8 +51,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, tags, and all account tags in parallel
+    const [dealsRes, notesRes, tagsRes, allTagsRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -60,10 +67,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase
+        .from("tags")
+        .select("*")
+        .order("name", { ascending: true }),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
+    if (allTagsRes.data) setAllTags(allTagsRes.data);
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
@@ -74,6 +86,28 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       setTags(mapped);
     }
   }, [contact]);
+
+  const handleToggleTag = useCallback(async (tag: Tag) => {
+    if (!contact || tagLoading) return;
+    setTagLoading(true);
+
+    const isAssigned = tags.some((t) => t.id === tag.id);
+    try {
+      if (isAssigned) {
+        await deleteContactTag(contact.id, tag.id);
+        setTags((prev) => prev.filter((t) => t.id !== tag.id));
+        toast.success(`Removed tag "${tag.name}"`);
+      } else {
+        await addContactTag(contact.id, tag.id);
+        setTags((prev) => [...prev, { ...tag, contact_tag_id: tag.id }]);
+        toast.success(`Assigned tag "${tag.name}"`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update tag');
+    } finally {
+      setTagLoading(false);
+    }
+  }, [contact, tagLoading, tags]);
 
   // Load on contact change. setContactData/setTags run inside async
   // Supabase callbacks, not synchronously in the effect body.
@@ -219,24 +253,87 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Tags */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <TagIcon className="h-3 w-3" />
-              {tSidebar("tags")}
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <TagIcon className="h-3 w-3" />
+                {tSidebar("tags")}
+              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
+                    title="Manage tags"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span className="text-[11px]">Add</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-0 shadow-lg">
+                  <div className="px-3 py-2 border-b border-border">
+                    <span className="text-xs font-semibold text-foreground">
+                      Assign Tags
+                    </span>
+                  </div>
+                  {allTags.length === 0 ? (
+                    <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+                      No tags created yet.
+                    </p>
+                  ) : (
+                    <div className="max-h-56 overflow-y-auto p-1 space-y-0.5">
+                      {allTags.map((tag) => {
+                        const isSelected = tags.some((t) => t.id === tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            disabled={tagLoading}
+                            onClick={() => handleToggleTag(tag)}
+                            className={cn(
+                              "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors text-left cursor-pointer",
+                              isSelected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                            )}
+                          >
+                            <span className="flex items-center gap-2 truncate">
+                              <span
+                                className="h-2 w-2 rounded-full shrink-0"
+                                style={{ backgroundColor: tag.color }}
+                              />
+                              <span className="truncate">{tag.name}</span>
+                            </span>
+                            {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-1" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {tags.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{tSidebar("noTags")}</p>
               ) : (
                 tags.map((tag) => (
                   <span
-                    key={tag.contact_tag_id}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    key={tag.contact_tag_id || tag.id}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium group"
                     style={{
                       backgroundColor: `${tag.color}20`,
                       color: tag.color,
                     }}
                   >
-                    {tag.name}
+                    <span>{tag.name}</span>
+                    <button
+                      type="button"
+                      disabled={tagLoading}
+                      onClick={() => handleToggleTag(tag)}
+                      className="opacity-50 hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5 transition-opacity cursor-pointer"
+                      title={`Remove tag ${tag.name}`}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
                   </span>
                 ))
               )}
