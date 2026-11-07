@@ -61,7 +61,9 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     .split(',')
     .map((h) => h.trim().toLowerCase().replace(/["']/g, ''));
 
-  const phoneIdx = headers.indexOf('phone');
+  const phoneIdx = headers.findIndex((h) =>
+    ['phone', 'mobile', 'phone number', 'phonenumber', 'contact', 'contact number'].includes(h)
+  );
   if (phoneIdx === -1) {
     return {
       rows: [],
@@ -71,7 +73,9 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     };
   }
 
-  const nameIdx = headers.indexOf('name');
+  const nameIdx = headers.findIndex((h) =>
+    ['name', 'patient name', 'patient_name', 'full name', 'fullname', 'contact name'].includes(h)
+  );
   const emailIdx = headers.indexOf('email');
   const companyIdx = headers.indexOf('company');
   const tagsIdx = headers.indexOf('tags');

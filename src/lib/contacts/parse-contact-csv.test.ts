@@ -88,4 +88,24 @@ describe('parseContactCsv', () => {
       ],
     });
   });
+
+  it('tolerates Patient Name and mobile headers', () => {
+    const csv = `Patient Name,Mobile
+Alice,+15551234567`;
+
+    expect(parseContactCsv(csv)).toEqual({
+      hasPhoneColumn: true,
+      hasTagsColumn: false,
+      hasCompanyColumn: false,
+      rows: [
+        {
+          phone: '+15551234567',
+          name: 'Alice',
+          email: undefined,
+          company: undefined,
+          tagNames: [],
+        },
+      ],
+    });
+  });
 });
