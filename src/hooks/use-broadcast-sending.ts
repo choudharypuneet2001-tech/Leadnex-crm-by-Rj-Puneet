@@ -169,9 +169,21 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     let contacts: Contact[] = [];
 
     if (audience.type === 'all') {
-      const { data, error } = await supabase.from('contacts').select('*');
-      if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-      contacts = data ?? [];
+      const all: Contact[] = [];
+      let from = 0;
+      const CHUNK = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('*')
+          .range(from, from + CHUNK - 1);
+        if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
+        if (!data || data.length === 0) break;
+        all.push(...(data as Contact[]));
+        if (data.length < CHUNK) break;
+        from += CHUNK;
+      }
+      contacts = all;
     } else if (
       audience.type === 'tags' &&
       audience.tagIds &&
@@ -259,17 +271,22 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     }
     const keys = [...uniqueByKey.keys()];
 
-    // Single round-trip lookup of the contacts already in this ACCOUNT.
-    // Scoping to `user_id` missed rows a teammate created on a shared
-    // account, so those numbers looked new and their inserts collided
-    // with the account-wide unique index.
-    const { data: existing, error: lookupErr } = await supabase
-      .from('contacts')
-      .select('*')
-      .eq('account_id', accountId)
-      .in('phone_normalized', keys);
-    if (lookupErr) {
-      throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
+    // Chunked lookup of existing contacts in this ACCOUNT.
+    // Chunking avoids URL length overflows on large CSVs and bypasses
+    // PostgREST's 1000-row cap.
+    const existing: Contact[] = [];
+    const LOOKUP_CHUNK = 200;
+    for (let i = 0; i < keys.length; i += LOOKUP_CHUNK) {
+      const chunkKeys = keys.slice(i, i + LOOKUP_CHUNK);
+      const { data: chunk, error: lookupErr } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('account_id', accountId)
+        .in('phone_normalized', chunkKeys);
+      if (lookupErr) {
+        throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
+      }
+      if (chunk) existing.push(...(chunk as Contact[]));
     }
 
     const byKey = new Map<string, Contact>();
@@ -491,14 +508,26 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
 
       // ── Step 4: Fetch recipients back (joined contact) ────────────
+      // Paginating in 1000-row chunks guarantees broadcasts with >1000
+      // contacts load every single recipient rather than silently capping.
       setProgress(30);
-      const { data: recipients, error: recipientsFetchError } = await supabase
-        .from('broadcast_recipients')
-        .select('*, contact:contacts(*)')
-        .eq('broadcast_id', broadcast.id);
+      const recipients: any[] = [];
+      let fromRec = 0;
+      const REC_CHUNK = 1000;
+      while (true) {
+        const { data: chunk, error: recipientsFetchError } = await supabase
+          .from('broadcast_recipients')
+          .select('*, contact:contacts(*)')
+          .eq('broadcast_id', broadcast.id)
+          .range(fromRec, fromRec + REC_CHUNK - 1);
 
-      if (recipientsFetchError || !recipients) {
-        throw new Error('Failed to fetch broadcast recipients');
+        if (recipientsFetchError) {
+          throw new Error(`Failed to fetch broadcast recipients: ${recipientsFetchError.message}`);
+        }
+        if (!chunk || chunk.length === 0) break;
+        recipients.push(...chunk);
+        if (chunk.length < REC_CHUNK) break;
+        fromRec += REC_CHUNK;
       }
 
       let failedCount = 0;
