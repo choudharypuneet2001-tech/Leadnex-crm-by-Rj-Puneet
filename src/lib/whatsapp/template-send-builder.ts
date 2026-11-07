@@ -137,10 +137,15 @@ function buildBodyComponent(
   }
   // Trim to the variable count — extra values are dropped silently so
   // a legacy caller that passes too many doesn't error out.
+  // Meta Cloud API strictly rejects empty or whitespace-only parameters
+  // with "(#131008) Required parameter is missing". Default empty values to '-'.
   const values = body.slice(0, varCount);
   return {
     type: 'body',
-    parameters: values.map((text) => ({ type: 'text', text: String(text) })),
+    parameters: values.map((text) => {
+      const trimmed = typeof text === 'string' ? text.trim() : String(text ?? '').trim();
+      return { type: 'text', text: trimmed || '-' };
+    }),
   };
 }
 

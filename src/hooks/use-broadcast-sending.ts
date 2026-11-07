@@ -110,20 +110,21 @@ export function resolveVariables(
 
   return keys.map((key) => {
     const v = variables[key];
-    if (v.type === 'static') return v.value;
+    if (v.type === 'static') return v.value?.trim() || '-';
 
     if (v.type === 'field') {
       const fieldMap: Record<string, string | undefined> = {
-        name: contact.name,
+        name: contact.name?.trim() || 'जी',
         phone: contact.phone,
         email: contact.email,
         company: contact.company,
       };
-      return fieldMap[v.value] ?? '';
+      const val = fieldMap[v.value]?.trim();
+      return val || (v.value === 'name' ? 'जी' : '-');
     }
 
     // custom_field
-    return customValues?.get(v.value) ?? '';
+    return customValues?.get(v.value)?.trim() || '-';
   });
 }
 
@@ -272,9 +273,35 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     }
 
     const byKey = new Map<string, Contact>();
+    const toUpdate: { id: string; name: string }[] = [];
     for (const c of (existing ?? []) as Contact[]) {
       const key = normalizeKey(c.phone ?? '');
-      if (key) byKey.set(key, c);
+      if (key) {
+        const row = uniqueByKey.get(key);
+        // If the CSV provides a name and the existing contact has no name,
+        // enrich the in-memory contact and record it for DB update.
+        if (row?.name?.trim() && (!c.name || !c.name.trim())) {
+          c.name = row.name.trim();
+          toUpdate.push({ id: c.id, name: c.name });
+        }
+        byKey.set(key, c);
+      }
+    }
+
+    // Best-effort update existing contacts with names in chunks
+    if (toUpdate.length > 0) {
+      const UPDATE_CHUNK = 200;
+      for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK) {
+        const chunk = toUpdate.slice(i, i + UPDATE_CHUNK);
+        await Promise.allSettled(
+          chunk.map((item) =>
+            supabase
+              .from('contacts')
+              .update({ name: item.name })
+              .eq('id', item.id),
+          ),
+        );
+      }
     }
 
     // Insert only missing contacts, in one batch per 200 rows (PostgREST
