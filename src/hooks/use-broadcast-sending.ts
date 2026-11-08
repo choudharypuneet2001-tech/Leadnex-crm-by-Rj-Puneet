@@ -542,7 +542,8 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         headerType === 'image' ||
         headerType === 'video' ||
         headerType === 'document';
-      const headerMediaUrl = payload.headerMediaUrl?.trim();
+      const headerMediaUrl =
+        payload.headerMediaUrl?.trim() || payload.template.header_media_url?.trim();
       const messageParams =
         isMediaHeader && headerMediaUrl ? { headerMediaUrl } : undefined;
 
