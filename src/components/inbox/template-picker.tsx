@@ -34,6 +34,8 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
+  /** Optional contact name from the active inbox thread — pre-fills {{1}}. */
+  contactName?: string | null;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -78,6 +80,7 @@ export function TemplatePicker({
   open,
   onOpenChange,
   onSelect,
+  contactName,
 }: TemplatePickerProps) {
   const t = useTranslations("Inbox.templatePicker");
 
@@ -156,7 +159,11 @@ export function TemplatePicker({
       return;
     }
     setSelected(template);
-    setParams(new Array(slots.bodyVars.length).fill(""));
+    const initialParams = new Array(slots.bodyVars.length).fill("");
+    if (initialParams.length > 0 && contactName?.trim()) {
+      initialParams[0] = contactName.trim();
+    }
+    setParams(initialParams);
     setHeaderText("");
     setButtonParams({});
   }
