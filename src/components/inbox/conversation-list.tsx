@@ -98,7 +98,7 @@ export function ConversationList({
       const { data, error } = await supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
+        .order("last_message_at", { ascending: false, nullsFirst: false });
 
       if (cancelled) return;
 
@@ -187,7 +187,14 @@ export function ConversationList({
       });
     }
 
-    return result;
+    // Keep active threads ordered newest-first; empty ghost threads
+    // (null last_message_at, e.g. reaction-only conversations) stay at the bottom.
+    return [...result].sort((a, b) => {
+      if (!a.last_message_at && !b.last_message_at) return 0;
+      if (!a.last_message_at) return 1;
+      if (!b.last_message_at) return -1;
+      return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+    });
   }, [conversations, filter, search, selectedTagIds, selectedCompany]);
 
   const toggleTag = useCallback((id: string) => {
