@@ -13,11 +13,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Radio, Plus, Loader2 } from 'lucide-react';
+import { Radio, Plus, Loader2, Search, Users } from 'lucide-react';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
 import { useTranslations } from 'next-intl';
+import { BroadcastPatientSearch } from '@/components/broadcasts/broadcast-patient-search';
 
 /**
  * Poll cadence while any broadcast is sending. Kept modest so we don't
@@ -65,6 +66,8 @@ export default function BroadcastsPage() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'search'>('campaigns');
+  const [quickSearch, setQuickSearch] = useState('');
 
   // Used to kick off polling only while something is actively sending.
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -198,7 +201,66 @@ export default function BroadcastsPage() {
         </GatedButton>
       </div>
 
-      {broadcasts.length === 0 ? (
+      {/* Navigation tabs & Search bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-border pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('campaigns')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'campaigns'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            <Radio className="h-4 w-4" />
+            <span>Campaigns ({broadcasts.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('search')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === 'search'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            <Search className="h-4 w-4" />
+            <span>Search Patient in Broadcasts</span>
+          </button>
+        </div>
+
+        {activeTab === 'campaigns' && (
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search patient by name or phone..."
+              value={quickSearch}
+              onChange={(e) => {
+                setQuickSearch(e.target.value);
+                if (e.target.value.trim().length > 0) {
+                  setActiveTab('search');
+                }
+              }}
+              onFocus={() => {
+                if (quickSearch.trim()) setActiveTab('search');
+              }}
+              className="w-full h-8 pl-8 pr-3 text-xs bg-muted/50 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+        )}
+      </div>
+
+      {activeTab === 'search' ? (
+        <BroadcastPatientSearch
+          initialQuery={quickSearch}
+          onClear={() => {
+            setQuickSearch('');
+            setActiveTab('campaigns');
+          }}
+        />
+      ) : broadcasts.length === 0 ? (
         <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-card">
           <Radio className="mb-3 h-10 w-10 text-muted-foreground" />
           <p className="text-sm font-medium text-foreground">{t('noBroadcastsYet')}</p>

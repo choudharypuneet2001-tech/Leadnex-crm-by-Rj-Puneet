@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Broadcast, BroadcastRecipient, RecipientStatus } from '@/types';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -34,6 +35,8 @@ import {
   Trash2,
   PlayCircle,
   RotateCcw,
+  Search,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -158,6 +161,7 @@ export default function BroadcastDetailPage() {
   const [statusFilter, setStatusFilter] = useState<RecipientStatus | 'all'>(
     'all',
   );
+  const [searchQuery, setSearchQuery] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [resumingScope, setResumingScope] = useState<
@@ -177,14 +181,26 @@ export default function BroadcastDetailPage() {
       if (bcError) throw bcError;
       setBroadcast(bc);
 
-      const { data: recs, error: recsError } = await supabase
-        .from('broadcast_recipients')
-        .select('*, contact:contacts(*)')
-        .eq('broadcast_id', broadcastId)
-        .order('created_at', { ascending: false });
+      const allRecipients: BroadcastRecipient[] = [];
+      const CHUNK = 1000;
+      let from = 0;
+      while (true) {
+        const { data: recs, error: recsError } = await supabase
+          .from('broadcast_recipients')
+          .select('*, contact:contacts(*)')
+          .eq('broadcast_id', broadcastId)
+          .order('created_at', { ascending: false })
+          .range(from, from + CHUNK - 1);
 
-      if (recsError) throw recsError;
-      setRecipients(recs ?? []);
+        if (recsError) throw recsError;
+        if (recs && recs.length > 0) {
+          allRecipients.push(...(recs as BroadcastRecipient[]));
+        }
+        if (!recs || recs.length < CHUNK) break;
+        from += CHUNK;
+      }
+
+      setRecipients(allRecipients);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('notFound'));
     } finally {
@@ -196,13 +212,31 @@ export default function BroadcastDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  const filteredRecipients = useMemo(
-    () =>
-      statusFilter === 'all'
-        ? recipients
-        : recipients.filter((r) => r.status === statusFilter),
-    [recipients, statusFilter],
-  );
+  const filteredRecipients = useMemo(() => {
+    let list = recipients;
+    if (statusFilter !== 'all') {
+      list = list.filter((r) => r.status === statusFilter);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      const cleanDigits = q.replace(/\D/g, '');
+      const last10 =
+        cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+      list = list.filter((r) => {
+        const name = (r.contact?.name ?? '').toLowerCase();
+        const phone = r.contact?.phone ?? '';
+        const phoneDigits = phone.replace(/\D/g, '');
+        const matchName = name.includes(q);
+        const matchPhone =
+          cleanDigits.length >= 3
+            ? phoneDigits.includes(cleanDigits) ||
+              (last10 ? phoneDigits.includes(last10) : false)
+            : phone.toLowerCase().includes(q);
+        return matchName || matchPhone;
+      });
+    }
+    return list;
+  }, [recipients, statusFilter, searchQuery]);
 
   function handleExport() {
     if (!broadcast) return;
@@ -508,13 +542,35 @@ export default function BroadcastDetailPage() {
 
       {/* Recipients Table */}
       <div className="rounded-xl border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <h2 className="text-sm font-medium text-foreground">
-            {statusFilter !== 'all'
+            {statusFilter !== 'all' || searchQuery.trim()
               ? t('recipientsHeader', { filtered: filteredRecipients.length, total: recipients.length })
               : t('recipientsHeaderAll', { total: recipients.length })}
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Search recipient by name or mobile */}
+            <div className="relative w-44 sm:w-64">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search name or mobile..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-8 pl-8 pr-7 text-xs bg-background border-border"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded-full"
+                  title="Clear search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -570,12 +626,24 @@ export default function BroadcastDetailPage() {
         </div>
 
         {filteredRecipients.length === 0 ? (
-          <div className="flex h-32 items-center justify-center">
-            <p className="text-sm text-muted-foreground">
-              {recipients.length === 0
+          <div className="flex h-36 flex-col items-center justify-center gap-1.5 p-4 text-center">
+            <p className="text-sm font-medium text-foreground">
+              {searchQuery.trim()
+                ? `No recipients matching "${searchQuery}"`
+                : recipients.length === 0
                 ? t('noRecipients')
                 : t('noRecipientsFilter')}
             </p>
+            {searchQuery && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSearchQuery('')}
+                className="mt-2 h-7 text-xs border-border"
+              >
+                Clear Search
+              </Button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
