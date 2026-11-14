@@ -383,15 +383,39 @@ export async function dispatchInboundToAiReply(
     // Clean up any stray template placeholders so patients never see developer notes
     replyText = replyText.replace(/\s*\(yahan aapka health concern[\s\S]*?\)/gi, '')
     replyText = replyText.replace(/\[(?:Takleef|Concern|Takleef\/Concern|Health Concern|Actual Takleef|Actual Problem)\]/gi, finalConcern)
-    replyText = replyText.replace(/\[(?:Patient Name|Naam|Actual Patient Name)\]/gi, finalPatientName)
     replyText = replyText.replace(/\[(?:Random 4 digits|Random 4 Digits|\.\.\.|XXXX)\]/gi, (assignedQueryId || '#GYN-001').replace('#GYN-', ''))
     replyText = replyText.replace(/\[(?:Actual Age \/ Umar|Actual Age|Age|Umar)\]/gi, finalAge)
     replyText = replyText.replace(/\[(?:Actual Phone|Phone|Mobile)\]/gi, finalPhone)
     replyText = replyText.replace(/\[(?:Actual City|City|आपका शहर|शहर)\]/gi, finalCity)
 
+    // Clean up any leaked [Name] / [Patient Name] placeholders
+    if (effectiveName) {
+      replyText = replyText.replace(/\[?(?:Name|Patient Name|Naam|Actual Name|Actual Patient Name|Patient)\]\s*जी?/gi, `${effectiveName} जी`)
+      replyText = replyText.replace(/\bName\s*जी\b/gi, `${effectiveName} जी`)
+    } else {
+      // If name is unknown, completely remove [Name] जी and fix punctuation
+      replyText = replyText.replace(/,\s*\[?(?:Name|Patient Name|Naam|Actual Name|Actual Patient Name|Patient)\]\s*जी?!?/gi, '!')
+      replyText = replyText.replace(/\[?(?:Name|Patient Name|Naam|Actual Name|Actual Patient Name|Patient)\]\s*जी?!?/gi, '')
+      replyText = replyText.replace(/\bName\s*जी\b/gi, '')
+      replyText = replyText.replace(/धन्यवाद,\s*!/gi, 'धन्यवाद!')
+      replyText = replyText.replace(/,\s*!/g, '!')
+    }
+
     // Strict City line cleanup in confirmation receipt
     if (finalCity) {
       replyText = replyText.replace(/📍\s*City:\s*\[?(?:आपका शहर|शहर|Actual City|City)?\]?/gi, `📍 City: ${finalCity}`)
+    }
+
+    // If city is a clinic city (e.g. Jaipur), ensure we NEVER unilaterally pitch video consultation
+    if (finalCity && isClinicCity(finalCity)) {
+      replyText = replyText.replace(
+        /(?:इसके बाद\s*)?मैं आपकी ऑनलाइन वीडियो कंसल्टेशन की व्यवस्था कर दूंगी\.?/gi,
+        `क्या आप हमारे ${finalCity} क्लीनिक में विज़िट करना चाहेंगे या ऑनलाइन परामर्श लेना चाहेंगे?`,
+      )
+      replyText = replyText.replace(
+        /उसके आधार पर,\s*मैं आपको ऑनलाइन वीडियो कंसल्टेशन की व्यवस्था कर दूंगी\.?/gi,
+        `ताकि हम आपको उचित क्लीनिक विज़िट अथवा ऑनलाइन परामर्श की सुविधा दे सकें।`,
+      )
     }
 
     // If city is not a clinic city, make sure the consultation type in the receipt is video consultation
