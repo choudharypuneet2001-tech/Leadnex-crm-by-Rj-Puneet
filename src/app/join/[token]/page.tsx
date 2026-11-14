@@ -292,20 +292,31 @@ export default function JoinPage() {
         })}
       </CardTitle>
       <CardDescription className="text-muted-foreground">
-        {t.rich('joinAs', {
-          role: tRoles(peek.role),
-          date: new Date(peek.expires_at).toLocaleDateString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-          }),
-          badge: (chunks) => (
-            <span className="inline-flex items-center gap-1 text-foreground">
+        {new Date(peek.expires_at).getTime() - Date.now() > 365 * 24 * 60 * 60 * 1000 ? (
+          <span className="inline-flex items-center gap-1.5">
+            You&apos;ll join as{' '}
+            <span className="inline-flex items-center gap-1 text-foreground font-medium">
               <ShieldCheck className="size-3.5 text-primary" />
-              {chunks}
+              {tRoles(peek.role)}
             </span>
-          ),
-        })}
+            . Permanent staff access.
+          </span>
+        ) : (
+          t.rich('joinAs', {
+            role: tRoles(peek.role),
+            date: new Date(peek.expires_at).toLocaleDateString(undefined, {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            }),
+            badge: (chunks) => (
+              <span className="inline-flex items-center gap-1 text-foreground">
+                <ShieldCheck className="size-3.5 text-primary" />
+                {chunks}
+              </span>
+            ),
+          })
+        )}
       </CardDescription>
     </CardHeader>
   );

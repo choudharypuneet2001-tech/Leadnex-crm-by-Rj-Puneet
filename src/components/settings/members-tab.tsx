@@ -119,6 +119,7 @@ function fmtExpiresIn(iso: string, t: (key: string, values?: Record<string, stri
   const ms = new Date(iso).getTime() - Date.now();
   if (ms <= 0) return t('expired');
   const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+  if (days >= 365) return 'Never expires (Permanent)';
   if (days >= 1) return t('expiresInDays', { days });
   const hours = Math.max(1, Math.floor(ms / (60 * 60 * 1000)));
   return t('expiresInHours', { hours });

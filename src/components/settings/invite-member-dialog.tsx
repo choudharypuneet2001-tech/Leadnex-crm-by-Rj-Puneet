@@ -49,12 +49,6 @@ interface InviteMemberDialogProps {
   onCreated: () => void;
 }
 
-const EXPIRY_OPTIONS = [
-  { value: '1', labelKey: 'days1' },
-  { value: '7', labelKey: 'days7' },
-  { value: '30', labelKey: 'days30' },
-];
-
 // Server caps label at 80 chars (see src/app/api/account/invitations/route.ts).
 // Mirror it on the client so we short-circuit before the round-trip
 // rather than letting the user submit and bounce off a 400.
@@ -78,14 +72,12 @@ export function InviteMemberDialog({
   const tRoles = useTranslations('Settings.roles');
   const { account } = useAuth();
   const [role, setRole] = useState<InviteRole>('agent');
-  const [expiry, setExpiry] = useState<string>('7');
   const [label, setLabel] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<CreatedInvite | null>(null);
 
   function reset() {
     setRole('agent');
-    setExpiry('7');
     setLabel('');
     setResult(null);
     setSubmitting(false);
@@ -110,7 +102,7 @@ export function InviteMemberDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           role,
-          expiresInDays: Number(expiry),
+          expiresInDays: 36500,
           label: trimmedLabel || undefined,
         }),
       });
@@ -176,7 +168,10 @@ export function InviteMemberDialog({
     // for users in multi-team contexts where "our wacrm account"
     // wouldn't be enough to disambiguate.
     const accountName = result?.accountName ?? t('fallbackAccountName');
-    const message = t('whatsappMessage', { accountName, expiresInDays: result?.expiresInDays ?? 0, url });
+    const isPermanent = (result?.expiresInDays ?? 0) >= 365;
+    const message = isPermanent
+      ? `Join ${accountName} on Leadnex using this invite link: ${url}`
+      : t('whatsappMessage', { accountName, expiresInDays: result?.expiresInDays ?? 0, url });
     return `https://wa.me/?text=${encodeURIComponent(message)}`;
   }
 
@@ -200,11 +195,18 @@ export function InviteMemberDialog({
                 {t('inviteCreated')}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                {t.rich('inviteCreatedDesc', {
-                  role: tRoles(result.role),
-                  days: result.expiresInDays,
-                  bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
-                })}
+                {result.expiresInDays >= 365 ? (
+                  <span>
+                    Share this permanent link with your new teammate. They can sign up or sign in to join as{' '}
+                    <strong className="text-foreground">{tRoles(result.role)}</strong>. Once joined, they remain a permanent member of your staff.
+                  </span>
+                ) : (
+                  t.rich('inviteCreatedDesc', {
+                    role: tRoles(result.role),
+                    days: result.expiresInDays,
+                    bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
+                  })
+                )}
               </DialogDescription>
             </DialogHeader>
 
@@ -298,23 +300,14 @@ export function InviteMemberDialog({
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('validForLabel')}</Label>
-                <Select
-                  value={expiry}
-                  onValueChange={(v) => v && setExpiry(v)}
-                >
-                  <SelectTrigger className="w-full bg-muted border-border text-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXPIRY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {t(opt.labelKey as Parameters<typeof t>[0])}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground flex items-center gap-1.5">
+                  <Sparkles className="size-3.5 text-primary" />
+                  Permanent Staff Link (Never Expires)
+                </p>
+                <p className="mt-1 text-muted-foreground/90">
+                  This invite link never expires. Once accepted, your staff member is permanently added to your team and will never be removed automatically.
+                </p>
               </div>
 
               <div className="space-y-2">
