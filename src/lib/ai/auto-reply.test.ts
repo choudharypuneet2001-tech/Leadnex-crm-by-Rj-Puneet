@@ -436,4 +436,42 @@ describe('Conversation history extraction helpers', () => {
     expect(isClinicCity('Mumbai')).toBe(false)
     expect(isClinicCity(null)).toBe(false)
   })
+
+  it('builds English-directive system prompt when customer writes in English', async () => {
+    const { buildSystemPrompt } = await import('./defaults')
+    const prompt = buildSystemPrompt({
+      userPrompt: null,
+      mode: 'auto_reply',
+      isEnglish: true,
+      latestUserMsg: 'Can you talk in english with me',
+    })
+
+    expect(prompt).toContain('ACTIVE LANGUAGE DIRECTIVE - ENGLISH REQUIRED')
+    expect(prompt).toContain('YOU MUST REPLY ENTIRELY IN POLITE, EMPATHETIC, PROFESSIONAL ENGLISH')
+    expect(prompt).toContain('In whose name would you like to book the appointment?')
+  })
+
+  it('builds Hindi-directive system prompt with gender-aware addressing', async () => {
+    const { buildSystemPrompt } = await import('./defaults')
+    const femalePrompt = buildSystemPrompt({
+      userPrompt: null,
+      mode: 'auto_reply',
+      contact: { name: 'Priya' },
+      isEnglish: false,
+    })
+
+    expect(femalePrompt).toContain("Priya Ma'am")
+    expect(femalePrompt).toContain('PATIENT GENDER: FEMALE')
+    expect(femalePrompt).toContain('आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं, कृपया उनका नाम बताएं?')
+
+    const malePrompt = buildSystemPrompt({
+      userPrompt: null,
+      mode: 'auto_reply',
+      contact: { name: 'Rajesh' },
+      isEnglish: false,
+    })
+
+    expect(malePrompt).toContain('Rajesh Sir')
+    expect(malePrompt).toContain('PATIENT GENDER: MALE')
+  })
 })

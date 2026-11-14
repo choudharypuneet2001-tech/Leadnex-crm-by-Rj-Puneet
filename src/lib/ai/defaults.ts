@@ -1,5 +1,5 @@
 import type { AiProvider } from './types'
-import { cleanDisplayName } from './query'
+import { cleanDisplayName, isLikelyFemaleName } from './query'
 
 // ============================================================
 // Tunables + prompt scaffold for the AI reply assistant.
@@ -104,8 +104,12 @@ export function buildSystemPrompt(args: {
     phone?: string | null
     concern?: string | null
   }
+  /** If the latest customer inbound is detected as English */
+  isEnglish?: boolean
+  /** The latest user message text */
+  latestUserMsg?: string
 }): string {
-  const { userPrompt, mode, knowledge, contact } = args
+  const { userPrompt, mode, knowledge, contact, isEnglish, latestUserMsg } = args
 
   const now = new Date()
   const istDateString = now.toLocaleDateString('en-IN', {
@@ -124,18 +128,25 @@ export function buildSystemPrompt(args: {
       '• Use this exact calendar date to accurately parse relative date references ("aaj" = today, "kal" = tomorrow, "parso" = day after tomorrow, or day names like "somvar", "mangalvar"). Always calculate the exact date for bookings.\n' +
       '• CLINIC & CONSULTATION TIMINGS: 10:00 AM to 6:30 PM, Monday to Sunday (Open all 7 days).\n' +
       '• PHYSICAL CLINICS (ONLY 9 CITIES): Jaipur, Delhi, Lucknow, Amritsar, Ludhiana, Patna, Ranchi, Hisar, Rewari.',
-    '1. STRICT LANGUAGE RULE - HINDI / DEVANAGARI PRIORITY:\n' +
-      '• CRITICAL MANDATORY RULE: Whenever a patient writes in Hindi OR in HINGLISH (Roman script Hindi, e.g. "Bikaner mein apka clinic hai", "Baccha nahi ho rha", "kal 2 baje", "mujhe doctor se milna hai"), YOU MUST ALWAYS REPLY IN PROPER HINDI (देवनागरी लिपि में ही जवाब देना है — हिंग्लिश में नहीं लिखना है!).\n' +
-      '  - Never reply in Hinglish when the customer is speaking Hindi or typing Roman Hinglish!\n' +
-      '  - Example: If patient says "Bikaner mein apka clinic hai", reply in Hindi: "नमस्ते! Gynocci Femtech में आपका स्वागत है। हमारे फिजिकल क्लीनिक इन 9 शहरों में हैं..."\n' +
-      '• Only if the patient writes in English, reply in English.\n' +
-      '• If the patient writes in another regional language (Bengali, Gujarati, Marathi), reply in that language.\n' +
-      '• Ensure respectful, natural, empathetic Hindi with accurate spellings and zero grammatical errors.',
+    isEnglish
+      ? '1. ACTIVE LANGUAGE DIRECTIVE - ENGLISH REQUIRED (STRICT RULE):\n' +
+        `• The patient just sent their message in English: "${latestUserMsg || ''}".\n` +
+        '• YOU MUST REPLY ENTIRELY IN POLITE, EMPATHETIC, PROFESSIONAL ENGLISH!\n' +
+        '• ABSOLUTELY FORBIDDEN: NEVER reply in Hindi! NEVER say "मैं हिंदी में ही बात कर सकती हूँ" or claim that you can only speak Hindi! You are fully fluent in English.\n' +
+        '• If this is an ongoing chat, DO NOT repeat the initial greeting ("Hello! Welcome to Gynocci Femtech"). Answer their query directly in English!\n' +
+        '• If they ask "Can you talk in english with me": Warmly confirm: "Yes, absolutely! I would be glad to assist you in English. How may I help you today? Could you please share your name, which city you are from, and what health concern you would like to consult our doctors about?"\n' +
+        '• For appointment booking in English, ask: "In whose name would you like to book the appointment? Please provide their name."'
+      : '1. ACTIVE LANGUAGE DIRECTIVE - HINDI (DEVANAGARI) PRIORITY:\n' +
+        '• CRITICAL MANDATORY RULE: Whenever a patient writes in Hindi OR in HINGLISH (Roman script Hindi, e.g. "Bikaner mein apka clinic hai", "Baccha nahi ho rha", "kal 2 baje", "mujhe doctor se milna hai"), YOU MUST ALWAYS REPLY IN PROPER HINDI (देवनागरी लिपि में ही जवाब देना है — हिंग्लिश में नहीं लिखना है!).\n' +
+        '  - Never reply in Hinglish when the customer is speaking Hindi or typing Roman Hinglish!\n' +
+        '  - Example: If patient says "Bikaner mein apka clinic hai", reply in Hindi: "नमस्ते! Gynocci Femtech में आपका स्वागत है। हमारे फिजिकल क्लीनिक इन 9 शहरों में हैं..."\n' +
+        '• If the patient writes in English, reply in English (never refuse English).\n' +
+        '• If the patient writes in another regional language (Bengali, Gujarati, Marathi), reply in that language.\n' +
+        '• Ensure respectful, natural, empathetic Hindi with accurate spellings and zero grammatical errors.',
     '2. CONVERSATIONAL CONTINUITY & FIRST GREETING:\n' +
       '• FIRST GREETING: On the very first message of a brand-new conversation, warmly greet with: "नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏" (Always mention "Gynocci Femtech" explicitly).\n' +
-      '  - If the patient\'s name is already verified, you may greet as "नमस्ते [Patient Name] जी!".\n' +
-      '  - If the patient\'s name is NOT yet known: NEVER write "[Name]", "[Name] जी", or empty "जी"! Simply say "नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏" and politely ask for their name: "बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम जान सकती हूँ?".\n' +
-      '• IN ONGOING CHATS: Never repeat "Namaste" or "Swagat hai". Jump directly to answering their question or showing empathy.\n' +
+      '  - If the patient\'s name is NOT yet known: NEVER write "[Name]", "[Name] जी", or empty "जी"! Simply say "नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏" and politely ask for their name & city: "बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम जान सकती हूँ? और आप किस शहर से हैं?".\n' +
+      '• IN ONGOING CHATS: ABSOLUTELY FORBIDDEN to repeat "नमस्ते! Gynocci Femtech में आपका स्वागत है।" or "Namaste" or "Swagat hai"! Even when switching languages mid-chat, jump directly to answering their question.\n' +
       '• ZERO REPETITION: NEVER re-ask for details the patient has already provided (such as their name, city, age, or problem).\n' +
       '• Keep replies warm, concise, and divided into 2-3 short bite-sized bubbles separated by "---" on a new line (max 25-45 words per bubble).',
     '3. CLINICAL EXPERTISE & DISEASES TREATED:\n' +
@@ -216,9 +227,14 @@ export function buildSystemPrompt(args: {
   }
 
   if (sanitizedName) {
+    const isFemale = isLikelyFemaleName(sanitizedName)
+    const title = isFemale ? "Ma'am" : 'Sir'
     parts.push(
       `6. PATIENT IDENTITY & KNOWN DETAILS (TRACED FROM CHAT HISTORY):\n` +
-        `• PATIENT NAME: "${sanitizedName}". Always address them respectfully as "${sanitizedName} जी" (or "${sanitizedName} Sir / Ma'am" as appropriate).\n` +
+        `• PATIENT NAME: "${sanitizedName}". Always address them respectfully as "${sanitizedName} ${title}" or "${sanitizedName} जी (${title})".\n` +
+        (isFemale
+          ? `  - PATIENT GENDER: FEMALE. Use respectful female Hindi grammar (e.g. "क्या आप ... चाहेंगी?", "आपकी स्वास्थ्य समस्या").\n`
+          : `  - PATIENT GENDER: MALE. Use respectful male Hindi grammar (e.g. "क्या आप ... चाहेंगे?", "आपकी स्वास्थ्य समस्या").\n`) +
         `  - ABSOLUTELY FORBIDDEN: NEVER call them "Puneet" or "Rj Puneet". Puneet is the workspace owner/admin, NOT the patient!\n` +
         `  - NEVER ask "Aapka naam kya hai" again, because their name is already known as "${sanitizedName}".\n` +
         (contact?.city
@@ -256,7 +272,8 @@ export function buildSystemPrompt(args: {
         (contact?.phone ? `• PATIENT PHONE: "${contact.phone}". Do not ask again.\n` : '') +
         (contact?.concern ? `• PATIENT CONCERN: "${contact.concern}". Do not ask again.\n` : '') +
         `• First greeting in new chat: "नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏"\n` +
-        `• In your reply, always politely ask: "बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम जान सकती हूँ?"\n` +
+        `• In your reply, always politely ask: "बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम जान सकती हूँ? और आप किस शहर से हैं?" (English: "Before we begin, may I please know your name and which city you are from?").\n` +
+        `• When the customer shares their name: If male (e.g. Rajesh, Rahul, Amit), address as "[Name] Sir" or "[Name] जी (Sir)" with male respectful grammar. If female (e.g. Priya, Pooja, Meenal), address as "[Name] Ma'am" or "[Name] जी (Ma'am)" with female respectful grammar.\n` +
         `• If the customer shares their name or city in their message (e.g. "Mera naam Rajesh hai, Kanpur se hu"):\n` +
         `  - Warmly acknowledge their actual provided name (e.g. "राजेश जी, Gynocci Femtech में आपका स्वागत है!") and address their query.\n` +
         `  - At the VERY END of your reply, ALWAYS append this hidden tag:\n` +
@@ -273,7 +290,7 @@ export function buildSystemPrompt(args: {
         `• STEP 1 - DETAILS INTAKE:\n` +
         `  When the customer agrees to consultation (e.g. "Ji", "Theek hai book kar do", "Book kar do", "Appointment book karna hai", "Yes", "Haa"):\n` +
         `  Collect any missing details:\n` +
-        `    1. Patient Name (Naam)\n` +
+        `    1. Patient Name: MANDATORY PHRASING -> "आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं, कृपया उनका नाम बताएं?" (English: "In whose name would you like to book the appointment? Please provide their name."). DO NOT just ask a blunt "Aapka naam kya hai"!\n` +
         `    2. Mobile Number (Phone)\n` +
         `    3. City / Shehar\n` +
         `    4. Age / Umar (Zaroori for doctor's case study)\n` +

@@ -6,7 +6,13 @@ import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
-import { latestUserMessage, isGreetingOrAdClick, cleanDisplayName } from './query'
+import {
+  latestUserMessage,
+  isGreetingOrAdClick,
+  cleanDisplayName,
+  isEnglishMessage,
+  isLikelyFemaleName,
+} from './query'
 import {
   engineSendText,
   loadAccountMetaCredentials,
@@ -214,6 +220,8 @@ export async function dispatchInboundToAiReply(
       userMsg,
     )
 
+    const isEnglish = isEnglishMessage(userMsg)
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
@@ -225,6 +233,8 @@ export async function dispatchInboundToAiReply(
         phone: effectivePhone,
         concern: tracedConcern,
       },
+      isEnglish,
+      latestUserMsg: userMsg,
     })
 
     const { text, handoff, usage, contactUpdate, bookingConfirmed } = await generateReply({
@@ -388,8 +398,11 @@ export async function dispatchInboundToAiReply(
     replyText = replyText.replace(/\[(?:Actual Phone|Phone|Mobile)\]/gi, finalPhone)
     replyText = replyText.replace(/\[(?:Actual City|City|आपका शहर|शहर)\]/gi, finalCity)
 
-    // Clean up any leaked [Name] / [Patient Name] placeholders
+    // Clean up any leaked [Name] / [Patient Name] placeholders and ensure gender-aware titles
     if (effectiveName) {
+      const isFemale = isLikelyFemaleName(effectiveName)
+      const honorific = isFemale ? "Ma'am" : 'Sir'
+      replyText = replyText.replace(/\[?(?:Name|Patient Name|Naam|Actual Name|Actual Patient Name|Patient)\]\s*(?:Sir\s*\/\s*Ma'am|Sir|Ma'am)/gi, `${effectiveName} ${honorific}`)
       replyText = replyText.replace(/\[?(?:Name|Patient Name|Naam|Actual Name|Actual Patient Name|Patient)\]\s*जी?/gi, `${effectiveName} जी`)
       replyText = replyText.replace(/\bName\s*जी\b/gi, `${effectiveName} जी`)
     } else {
@@ -400,6 +413,34 @@ export async function dispatchInboundToAiReply(
       replyText = replyText.replace(/धन्यवाद,\s*!/gi, 'धन्यवाद!')
       replyText = replyText.replace(/,\s*!/g, '!')
     }
+
+    // Ongoing chat: strip repeated first greeting if model emitted it mid-chat
+    const userMessagesCount = messages.filter((m) => m.role === 'user').length
+    if (userMessagesCount > 1) {
+      replyText = replyText.replace(
+        /^(?:नमस्ते!\s*Gynocci\s*Femtech\s*में\s*आपका\s*स्वागत\s*है।?\s*(?:🙏)?\s*(?:---\n*)?)/gi,
+        '',
+      )
+      replyText = replyText.replace(
+        /^(?:Hello!\s*Welcome\s*to\s*Gynocci\s*Femtech\.?\s*(?:🙏)?\s*(?:---\n*)?)/gi,
+        '',
+      )
+      replyText = replyText.trim()
+    }
+
+    // If English was requested or inbound was English, prevent refusal or Hindi fallback
+    if (isEnglish) {
+      replyText = replyText.replace(
+        /(?:मैं हिंदी में ही बात कर सकती हूँ|main hindi me hi baat kar sakti hoon|i can only speak hindi)[^.\n]*[.\n]?/gi,
+        'Yes, absolutely! I would be glad to assist you in English. How may I help you today?',
+      )
+    }
+
+    // Mandatory Appointment Booking Name Intake phrasing
+    replyText = replyText.replace(
+      /क्या मैं आपका शुभ नाम जान सकती हूँ\?\s*(?:ताकि मैं अपॉइंटमेंट बुक कर सकूँ)?/gi,
+      'आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं, कृपया उनका नाम बताएं?',
+    )
 
     // Strict City line cleanup in confirmation receipt
     if (finalCity) {

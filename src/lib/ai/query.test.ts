@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { latestUserMessage, isGreetingOnly, isGreetingOrAdClick, cleanDisplayName } from './query'
+import {
+  latestUserMessage,
+  isGreetingOnly,
+  isGreetingOrAdClick,
+  cleanDisplayName,
+  isEnglishMessage,
+  isLikelyFemaleName,
+} from './query'
 
 describe('latestUserMessage', () => {
   it('returns the most recent user turn', () => {
@@ -70,6 +77,57 @@ describe('cleanDisplayName', () => {
     expect(cleanDisplayName('+919588233263')).toBe(null)
     expect(cleanDisplayName('')).toBe(null)
     expect(cleanDisplayName(null)).toBe(null)
+  })
+})
+
+describe('isEnglishMessage', () => {
+  it('detects English requests and messages', () => {
+    expect(isEnglishMessage('Can you talk in engiish with me')).toBe(true)
+    expect(isEnglishMessage('Can you talk in english with me')).toBe(true)
+    expect(isEnglishMessage('Please speak in english')).toBe(true)
+    expect(isEnglishMessage('Where is your clinic?')).toBe(true)
+    expect(isEnglishMessage('What are the consultation fees?')).toBe(true)
+    expect(isEnglishMessage('I want to book an appointment for tomorrow')).toBe(true)
+    expect(isEnglishMessage('My wife has tubal blockage issue')).toBe(true)
+    expect(isEnglishMessage('Hello doctor, can you help me with pcod?')).toBe(true)
+    expect(isEnglishMessage('Yes please book for me')).toBe(true)
+    expect(isEnglishMessage('Is there any branch in Mumbai?')).toBe(true)
+  })
+
+  it('rejects Hindi / Roman Hinglish messages so they receive Hindi replies', () => {
+    expect(isEnglishMessage('Fees kab deni hai mujhe')).toBe(false)
+    expect(isEnglishMessage('Mein jaipur se hu')).toBe(false)
+    expect(isEnglishMessage('Doctor se kab mil sakte hain')).toBe(false)
+    expect(isEnglishMessage('Namaste, mujhe bikaner me clinic dekhna hai')).toBe(false)
+    expect(isEnglishMessage('Bikaner')).toBe(false)
+    expect(isEnglishMessage('Jaipur')).toBe(false)
+    expect(isEnglishMessage('Haa book kar do')).toBe(false)
+    expect(isEnglishMessage('Kya online consult ho sakta hai?')).toBe(false)
+    expect(isEnglishMessage('नमस्ते डॉक्टर')).toBe(false)
+  })
+})
+
+describe('isLikelyFemaleName', () => {
+  it('identifies common Indian female names', () => {
+    expect(isLikelyFemaleName('Priya')).toBe(true)
+    expect(isLikelyFemaleName('Pooja')).toBe(true)
+    expect(isLikelyFemaleName('Meenal')).toBe(true)
+    expect(isLikelyFemaleName('Mumtreen')).toBe(true)
+    expect(isLikelyFemaleName('Sunita')).toBe(true)
+    expect(isLikelyFemaleName('Anjali')).toBe(true)
+    expect(isLikelyFemaleName('Sheetal')).toBe(true)
+    expect(isLikelyFemaleName('Komal')).toBe(true)
+  })
+
+  it('identifies male names as false', () => {
+    expect(isLikelyFemaleName('Rajesh')).toBe(false)
+    expect(isLikelyFemaleName('Rahul')).toBe(false)
+    expect(isLikelyFemaleName('Amit')).toBe(false)
+    expect(isLikelyFemaleName('Rj Puneet')).toBe(false)
+    expect(isLikelyFemaleName('Abaan')).toBe(false)
+    expect(isLikelyFemaleName('Mohammad')).toBe(false)
+    expect(isLikelyFemaleName('Deepak')).toBe(false)
+    expect(isLikelyFemaleName('Ravi')).toBe(false)
   })
 })
 
