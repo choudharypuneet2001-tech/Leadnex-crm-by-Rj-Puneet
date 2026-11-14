@@ -102,11 +102,11 @@ describe("capability predicates", () => {
     expect(canEditSettings("viewer")).toBe(false);
   });
 
-  it("canSendMessages: agent+ only", () => {
+  it("canSendMessages: all roles (including viewer) can chat", () => {
     expect(canSendMessages("owner")).toBe(true);
     expect(canSendMessages("admin")).toBe(true);
     expect(canSendMessages("agent")).toBe(true);
-    expect(canSendMessages("viewer")).toBe(false);
+    expect(canSendMessages("viewer")).toBe(true);
   });
 
   it("canViewOnly: viewer only", () => {

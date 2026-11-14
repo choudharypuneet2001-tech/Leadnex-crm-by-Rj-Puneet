@@ -23,16 +23,8 @@ import {
 // dashboard's internal `{ error }` shape.
 export async function POST(request: Request) {
   try {
-    // Requires the 'agent' role, matching both `canSendMessages` and the
-    // `messages_modify` RLS policy (migration 017).
-    //
-    // Resolving `account_id` off the profile — which any 'viewer' has —
-    // was previously the only gate. RLS did block the message INSERT, but
-    // the send core calls Meta BEFORE it persists, so a viewer's request
-    // still delivered a real WhatsApp message to the customer and merely
-    // failed to record it (surfacing as "sent to Meta but failed to save
-    // to DB"). RLS can't un-send that, so the role check belongs here.
-    const { supabase, accountId, userId } = await requireRole('agent')
+    // Requires at least the 'viewer' role (all members can chat).
+    const { supabase, accountId, userId } = await requireRole('viewer')
 
     // Per-user rate limit. Bucket key is scoped to this route so
     // `/broadcast` has an independent budget.

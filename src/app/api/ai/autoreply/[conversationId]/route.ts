@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { supabaseAdmin } from '@/lib/flows/admin-client'
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -26,7 +27,8 @@ type Params = { params: Promise<{ conversationId: string }> }
  */
 export async function POST(request: Request, { params }: Params) {
   try {
-    const { supabase, accountId, userId } = await requireRole('agent')
+    // All account members (including viewers) can take over a thread and pause/resume AI.
+    const { supabase, accountId, userId } = await requireRole('viewer')
 
     // Reuse the send bucket: this is a cheap per-user inbox action and
     // toggling it in a tight loop has no legitimate use.
@@ -83,7 +85,8 @@ export async function POST(request: Request, { params }: Params) {
       update.ai_handoff_summary = null
     }
 
-    const { error: upErr } = await supabase
+    const adminDb = supabaseAdmin() ?? supabase
+    const { error: upErr } = await adminDb
       .from('conversations')
       .update(update)
       .eq('id', conversationId)

@@ -290,19 +290,13 @@ describe('POST /api/whatsapp/send — role enforcement', () => {
     vi.clearAllMocks()
   })
 
-  it('refuses a viewer with 403 and never reaches Meta', async () => {
-    // A viewer is read-only (`canSendMessages`). The route used to resolve
-    // account_id straight off the profile with no role check: RLS blocked
-    // the message INSERT, but the send core calls Meta first, so the
-    // customer still received a real WhatsApp message that RLS could not
-    // un-send. The gate has to come before any outbound call.
+  it('allows a viewer through to chat with customers', async () => {
     callerRole = 'viewer'
 
     const res = await postContactTemplate()
 
-    expect(res.status).toBe(403)
-    expect(sendTemplateMessage).not.toHaveBeenCalled()
-    expect(messageInserts).toHaveLength(0)
+    expect(res.status).toBe(200)
+    expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
   })
 
   it('allows an agent through', async () => {

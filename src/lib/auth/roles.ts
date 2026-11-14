@@ -112,12 +112,11 @@ export function canEditSettings(role: AccountRole): boolean {
 }
 
 /**
- * Owner / admin / agent: write operational data — send messages,
- * create contacts, move deals, run broadcasts, edit automations.
- * Viewers are read-only.
+ * Write operational chat data — send messages to patients, take over chats in inbox.
+ * Viewers, agents, admins, and owners can all chat with customers.
  */
 export function canSendMessages(role: AccountRole): boolean {
-  return hasMinRole(role, "agent");
+  return hasMinRole(role, "viewer");
 }
 
 /**

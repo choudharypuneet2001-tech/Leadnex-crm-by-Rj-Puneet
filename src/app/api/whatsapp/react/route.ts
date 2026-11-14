@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -20,11 +21,8 @@ import {
  */
 export async function POST(request: Request) {
   try {
-    // Reacting is a write operation (`canSendMessages`), and it pushes the
-    // reaction to Meta before mirroring it locally — so, as on /send, a
-    // missing role check let a read-only viewer put a visible reaction on
-    // the customer's message even though RLS blocked the local mirror.
-    const { supabase, accountId, userId } = await requireRole('agent');
+    // Reacting is supported for all account members (including viewers).
+    const { supabase, accountId, userId } = await requireRole('viewer');
 
     const limit = checkRateLimit(`react:${userId}`, RATE_LIMITS.react);
     if (!limit.success) {
@@ -125,9 +123,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mirror into DB. Empty emoji = removal.
+    // Mirror into DB using admin client to ensure clean persistence across all roles.
+    const adminDb = supabaseAdmin() ?? supabase;
     if (emoji === '') {
-      const { error: delError } = await supabase
+      const { error: delError } = await adminDb
         .from('message_reactions')
         .delete()
         .eq('message_id', targetMessage.id)
@@ -144,7 +143,7 @@ export async function POST(request: Request) {
     } else {
       // Upsert. The unique constraint (message_id, actor_type, actor_id)
       // lets us swap emoji in a single statement.
-      const { error: upsertError } = await supabase.from('message_reactions').upsert(
+      const { error: upsertError } = await adminDb.from('message_reactions').upsert(
         {
           message_id: targetMessage.id,
           conversation_id: targetMessage.conversation_id,

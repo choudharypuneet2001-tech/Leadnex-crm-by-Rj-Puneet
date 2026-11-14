@@ -446,14 +446,20 @@ export function MessageThread({
   // is 0 the condition is false, so no further UPDATE is issued.
   useEffect(() => {
     if (!conversationId || !hasUnread) return;
-    const supabase = createClient();
-    supabase
-      .from("conversations")
-      .update({ unread_count: 0 })
-      .eq("id", conversationId)
-      .then(({ error }) => {
-        if (error) console.error("Failed to reset unread_count:", error);
-      });
+    fetch(`/api/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unread_count: 0 }),
+    }).catch(() => {
+      const supabase = createClient();
+      supabase
+        .from('conversations')
+        .update({ unread_count: 0 })
+        .eq('id', conversationId)
+        .then(({ error }) => {
+          if (error) console.error('Failed to reset unread_count:', error);
+        });
+    });
   }, [conversationId, hasUnread]);
 
   // Auto-scroll to bottom on new messages
@@ -644,11 +650,19 @@ export function MessageThread({
     async (status: ConversationStatus) => {
       if (!conversation) return;
 
-      const supabase = createClient();
-      await supabase
-        .from("conversations")
-        .update({ status })
-        .eq("id", conversation.id);
+      try {
+        await fetch(`/api/conversations/${conversation.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+      } catch {
+        const supabase = createClient();
+        await supabase
+          .from('conversations')
+          .update({ status })
+          .eq('id', conversation.id);
+      }
 
       onStatusChange(conversation.id, status);
     },
@@ -845,16 +859,25 @@ export function MessageThread({
     async (agentId: string | null) => {
       if (!conversation) return;
 
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("conversations")
-        .update({ assigned_agent_id: agentId })
-        .eq("id", conversation.id);
+      try {
+        const res = await fetch(`/api/conversations/${conversation.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assigned_agent_id: agentId }),
+        });
+        if (!res.ok) throw new Error('Failed to update');
+      } catch {
+        const supabase = createClient();
+        const { error } = await supabase
+          .from('conversations')
+          .update({ assigned_agent_id: agentId })
+          .eq('id', conversation.id);
 
-      if (error) {
-        console.error("Failed to update assignment:", error);
-        toast.error(t("assignmentUpdateFailed"));
-        return;
+        if (error) {
+          console.error('Failed to update assignment:', error);
+          toast.error(t('assignmentUpdateFailed'));
+          return;
+        }
       }
 
       onAssignChange(conversation.id, agentId);
