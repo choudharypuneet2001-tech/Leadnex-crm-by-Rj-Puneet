@@ -310,6 +310,12 @@ export async function dispatchInboundToAiReply(
     replyText = replyText.replace(/\[(?:Actual Phone|Phone)\]/gi, contact?.phone || '')
     replyText = replyText.replace(/\[(?:Actual City|City)\]/gi, contact?.company || '')
 
+    // Strict label formatting as required by user
+    replyText = replyText.replace(/👤\s*मरीज का नाम:/gi, '👤 Patient Name:')
+    replyText = replyText.replace(/🏥\s*परामर्श का प्रकार:/gi, '🏥 Consultation Type:')
+    replyText = replyText.replace(/Ab main aapka appointment isi information ke saath book kar rahi hoon\.\s*Aapki booking successful hone ke baad,?\s*aapko confirmation detail mil jayegi\.\s*Ab thoda intezaar kijiye!?/gi, '')
+    replyText = replyText.replace(/Ab thoda intezaar kijiye!?/gi, '')
+
     if (!replyText) {
       if (handoff) {
         // The model explicitly asked for handoff with no text to send
