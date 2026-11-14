@@ -6,7 +6,7 @@ import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
-import { latestUserMessage, isGreetingOrAdClick } from './query'
+import { latestUserMessage, isGreetingOrAdClick, cleanDisplayName } from './query'
 import {
   engineSendText,
   loadAccountMetaCredentials,
@@ -160,6 +160,51 @@ export async function dispatchInboundToAiReply(
     const contact = contactRes.data
     const userMsg = latestUserMessage(messages)
 
+    // Trace details directly from accumulated chat history
+    const tracedCity = extractCityFromMessages(messages)
+    const tracedName = extractNameFromMessages(messages)
+    const tracedAge = extractAgeFromMessages(messages)
+    const tracedPhone = extractPhoneFromMessages(messages)
+    const tracedConcern = extractConcernFromMessages(messages)
+
+    // Effective patient name: prefer explicitly stated name from chat; clean profile handle otherwise
+    let effectiveName = tracedName || cleanDisplayName(contact?.name) || null
+    if (effectiveName && /puneet/i.test(effectiveName) && !tracedName) {
+      // Owner testing handle without stating actual patient name yet
+      effectiveName = null
+    }
+
+    // Effective city: prefer traced city from chat
+    let effectiveCity =
+      tracedCity ||
+      (contact?.company && !contact.company.includes('[') && !contact.company.includes('शहर')
+        ? contact.company
+        : null) ||
+      ((contact as any)?.city && !(contact as any).city.includes('[') ? (contact as any).city : null) ||
+      null
+
+    const effectivePhone = tracedPhone || contact?.phone || null
+
+    // Proactively persist extracted name / city to DB so contact profile stays clean & up-to-date
+    if (
+      (tracedName && tracedName !== contact?.name) ||
+      (tracedCity && tracedCity !== contact?.company)
+    ) {
+      try {
+        const updatePayload: Record<string, unknown> = {
+          updated_at: new Date().toISOString(),
+        }
+        if (tracedName) updatePayload.name = tracedName
+        if (tracedCity) {
+          updatePayload.company = tracedCity
+          updatePayload.city = tracedCity
+        }
+        await db.from('contacts').update(updatePayload).eq('id', contactId)
+      } catch (err) {
+        console.warn('[ai auto-reply] proactive contact update failed:', err)
+      }
+    }
+
     // Ground the reply in the account's knowledge base (best-effort).
     // Greetings and ad clicks automatically take the 0ms fast-path!
     const knowledge = await retrieveKnowledge(
@@ -174,8 +219,11 @@ export async function dispatchInboundToAiReply(
       mode: 'auto_reply',
       knowledge,
       contact: {
-        name: contact?.name,
-        city: contact?.company,
+        name: effectiveName,
+        city: effectiveCity,
+        age: tracedAge,
+        phone: effectivePhone,
+        concern: tracedConcern,
       },
     })
 
@@ -186,18 +234,20 @@ export async function dispatchInboundToAiReply(
     })
 
     // If contact name or city was extracted, update the contact record
-    const extractedName = contactUpdate?.name || bookingConfirmed?.patient_name
-    const extractedCity = contactUpdate?.city || bookingConfirmed?.city
+    const extractedName = contactUpdate?.name || bookingConfirmed?.patient_name || tracedName
+    const extractedCity = contactUpdate?.city || bookingConfirmed?.city || tracedCity
     if (extractedName || extractedCity) {
       try {
         const updatePayload: Record<string, unknown> = {
           updated_at: new Date().toISOString(),
         }
-        if (extractedName && (!contact?.name || contact.name.trim() === '')) {
+        if (extractedName && (!contact?.name || contact.name.trim() === '' || /puneet/i.test(contact.name))) {
           updatePayload.name = extractedName
+          effectiveName = extractedName
         }
-        if (extractedCity && (!contact?.company || contact.company.trim() === '')) {
+        if (extractedCity && (!contact?.company || contact.company.trim() === '' || contact.company.includes('['))) {
           updatePayload.company = extractedCity
+          effectiveCity = extractedCity
         }
         if (Object.keys(updatePayload).length > 1) {
           if (extractedCity) {
@@ -232,26 +282,37 @@ export async function dispatchInboundToAiReply(
         const queryId = assignedQueryId
 
         const patientName =
-          bookingConfirmed.patient_name?.trim() || contact?.name || 'Patient'
+          (bookingConfirmed.patient_name && !bookingConfirmed.patient_name.includes('['))
+            ? bookingConfirmed.patient_name.trim()
+            : (effectiveName || 'Patient')
+
         const phone =
-          bookingConfirmed.phone?.trim() || contact?.phone || ''
+          (bookingConfirmed.phone && !bookingConfirmed.phone.includes('['))
+            ? bookingConfirmed.phone.trim()
+            : (effectivePhone || '')
+
+        const rawCity = bookingConfirmed.city?.trim() || ''
         const city =
-          bookingConfirmed.city?.trim() || contact?.company || ''
+          rawCity && !rawCity.includes('[') && !rawCity.includes('शहर')
+            ? rawCity
+            : (effectiveCity || '')
+
         const preferredDate = normalizePreferredDate(bookingConfirmed.preferred_date)
         const preferredTime = bookingConfirmed.preferred_time?.trim() || ''
         const rawHealthConcern = bookingConfirmed.health_concern?.trim() || ''
         const healthConcern =
           rawHealthConcern && !rawHealthConcern.includes('[') && !rawHealthConcern.toLowerCase().includes('yahan')
             ? rawHealthConcern
-            : (contact?.ad_name ? `Consultation for ${contact.ad_name}` : 'Women Reproductive Health & Ayurvedic Care')
+            : (tracedConcern || (contact?.ad_name ? `Consultation for ${contact.ad_name}` : 'Women Reproductive Health & Ayurvedic Care'))
 
+        // If city is NOT one of the 9 clinic cities, consultationType MUST BE video_consultation!
         const consultationType =
-          bookingConfirmed.consultation_type?.toLowerCase().includes('clinic')
+          isClinicCity(city) && bookingConfirmed.consultation_type?.toLowerCase().includes('clinic')
             ? 'clinic_visit'
             : 'video_consultation'
 
-        const clinicLocation = bookingConfirmed.clinic_location?.trim() || null
-        const notes = bookingConfirmed.age ? `Age: ${bookingConfirmed.age}` : null
+        const clinicLocation = isClinicCity(city) ? (bookingConfirmed.clinic_location?.trim() || `${city} Clinic`) : null
+        const notes = bookingConfirmed.age || tracedAge ? `Age: ${bookingConfirmed.age || tracedAge}` : null
 
         const { error: bookingErr } = await db.from('bookings').insert({
           account_id: accountId,
@@ -296,6 +357,24 @@ export async function dispatchInboundToAiReply(
 
     let replyText = text?.trim() ?? ''
 
+    const finalPatientName =
+      (bookingConfirmed?.patient_name && !bookingConfirmed.patient_name.includes('['))
+        ? bookingConfirmed.patient_name.trim()
+        : (effectiveName || 'Patient')
+    const finalCity =
+      (bookingConfirmed?.city && !bookingConfirmed.city.includes('[') && !bookingConfirmed.city.includes('शहर'))
+        ? bookingConfirmed.city.trim()
+        : (effectiveCity || '')
+    const finalAge = bookingConfirmed?.age || tracedAge || ''
+    const finalPhone =
+      (bookingConfirmed?.phone && !bookingConfirmed.phone.includes('['))
+        ? bookingConfirmed.phone.trim()
+        : (effectivePhone || '')
+    const finalConcern =
+      (bookingConfirmed?.health_concern && !bookingConfirmed.health_concern.includes('['))
+        ? bookingConfirmed.health_concern.trim()
+        : (tracedConcern || contact?.ad_name || 'Ayurvedic Health Consultation')
+
     // If a booking was confirmed, ensure the reply text has the exact assigned sequential ID
     if (assignedQueryId) {
       replyText = replyText.replace(/#GYN-[A-Za-z0-9_-]+/gi, assignedQueryId)
@@ -303,12 +382,31 @@ export async function dispatchInboundToAiReply(
 
     // Clean up any stray template placeholders so patients never see developer notes
     replyText = replyText.replace(/\s*\(yahan aapka health concern[\s\S]*?\)/gi, '')
-    replyText = replyText.replace(/\[(?:Takleef|Concern|Takleef\/Concern|Health Concern|Actual Takleef|Actual Problem)\]/gi, contact?.ad_name || 'Ayurvedic Health Consultation')
-    replyText = replyText.replace(/\[(?:Patient Name|Naam|Actual Patient Name)\]/gi, contact?.name || 'Patient')
+    replyText = replyText.replace(/\[(?:Takleef|Concern|Takleef\/Concern|Health Concern|Actual Takleef|Actual Problem)\]/gi, finalConcern)
+    replyText = replyText.replace(/\[(?:Patient Name|Naam|Actual Patient Name)\]/gi, finalPatientName)
     replyText = replyText.replace(/\[(?:Random 4 digits|Random 4 Digits|\.\.\.|XXXX)\]/gi, (assignedQueryId || '#GYN-001').replace('#GYN-', ''))
-    replyText = replyText.replace(/\[(?:Actual Age \/ Umar|Actual Age|Age)\]/gi, bookingConfirmed?.age || '')
-    replyText = replyText.replace(/\[(?:Actual Phone|Phone)\]/gi, contact?.phone || '')
-    replyText = replyText.replace(/\[(?:Actual City|City)\]/gi, contact?.company || '')
+    replyText = replyText.replace(/\[(?:Actual Age \/ Umar|Actual Age|Age|Umar)\]/gi, finalAge)
+    replyText = replyText.replace(/\[(?:Actual Phone|Phone|Mobile)\]/gi, finalPhone)
+    replyText = replyText.replace(/\[(?:Actual City|City|आपका शहर|शहर)\]/gi, finalCity)
+
+    // Strict City line cleanup in confirmation receipt
+    if (finalCity) {
+      replyText = replyText.replace(/📍\s*City:\s*\[?(?:आपका शहर|शहर|Actual City|City)?\]?/gi, `📍 City: ${finalCity}`)
+    }
+
+    // If city is not a clinic city, make sure the consultation type in the receipt is video consultation
+    if (finalCity && !isClinicCity(finalCity)) {
+      replyText = replyText.replace(
+        /🏥\s*Consultation Type:\s*Clinic Visit[^\n]*/gi,
+        '🏥 Consultation Type: Online Video Consultation (45 Min Dedicated Session)',
+      )
+    }
+
+    // If patient stated their name (e.g. Rajesh), replace any wrongly output owner name in greeting or congrats
+    if (effectiveName && !/puneet/i.test(effectiveName)) {
+      replyText = replyText.replace(/Rj Puneet\s*जी/gi, `${effectiveName} जी`)
+      replyText = replyText.replace(/Puneet\s*जी/gi, `${effectiveName} जी`)
+    }
 
     // Strict label formatting as required by user
     replyText = replyText.replace(/👤\s*मरीज का नाम:/gi, '👤 Patient Name:')
@@ -539,4 +637,158 @@ export function normalizePreferredDate(inputDate?: string | null): string {
   }
 
   return trimmed
+}
+
+export const CLINIC_CITIES = [
+  'Jaipur',
+  'Delhi',
+  'Lucknow',
+  'Amritsar',
+  'Ludhiana',
+  'Patna',
+  'Ranchi',
+  'Hisar',
+  'Rewari',
+] as const
+
+export function isClinicCity(city?: string | null): boolean {
+  if (!city) return false
+  const c = city.trim().toLowerCase()
+  return CLINIC_CITIES.some(
+    (cc) => cc.toLowerCase() === c || (c === 'new delhi' && cc === 'Delhi'),
+  )
+}
+
+const KNOWN_INDIAN_CITIES = [
+  'Jaipur', 'Delhi', 'New Delhi', 'Lucknow', 'Amritsar', 'Ludhiana', 'Patna', 'Ranchi', 'Hisar', 'Rewari',
+  'Kanpur', 'Bikaner', 'Kota', 'Jodhpur', 'Udaipur', 'Ajmer', 'Sikar', 'Alwar', 'Agra', 'Bareilly',
+  'Varanasi', 'Meerut', 'Ghaziabad', 'Noida', 'Gurgaon', 'Gurugram', 'Faridabad', 'Chandigarh',
+  'Jalandhar', 'Bathinda', 'Rohtak', 'Panipat', 'Karnal', 'Sonipat', 'Indore', 'Bhopal', 'Gwalior',
+  'Jabalpur', 'Raipur', 'Bilaspur', 'Kolkata', 'Ahmedabad', 'Surat', 'Vadodara', 'Rajkot',
+  'Mumbai', 'Pune', 'Nagpur', 'Nashik', 'Hyderabad', 'Bengaluru', 'Bangalore', 'Chennai',
+  'Dehradun', 'Haridwar', 'Gaya', 'Muzaffarpur', 'Dhanbad', 'Jamshedpur', 'Prayagraj', 'Allahabad',
+  'Gorakhpur', 'Ayodhya', 'Mathura', 'Aligarh', 'Moradabad', 'Saharanpur', 'Jhansi',
+  'Ujjain', 'Bhilwara', 'Bharatpur', 'Pali', 'Tonk', 'Jhunjhunu', 'Churu', 'Sri Ganganagar'
+]
+
+export function extractCityFromMessages(messages: { role: string; content: string }[]): string | null {
+  const cityRegexes = [
+    /(?:mein\s+to\s+|hum\s+|main\s+|me\s+)?([a-zA-Z\u0900-\u097F]{3,20})\s+se\s+(?:hu|hoon|hai|h|hain|rehta|rehti)\b/i,
+    /(?:shehar|city|location|from)\s*(?::|=|-)?\s*([a-zA-Z\u0900-\u097F]{3,20})/i,
+    /\b([a-zA-Z\u0900-\u097F]{3,20})\s+se\b/i,
+  ]
+  const nonCities = new Set([
+    'aap', 'yaha', 'waha', 'ghar', 'subah', 'shaam', 'online', 'doctor', 'clinic', 'hospital',
+    'mein', 'hum', 'sir', 'maam', 'theek', 'kaha', 'kahan', 'hai', 'paas', 'sabse', 'kripya',
+    'shuru', 'bhi', 'kuch', 'bahut', 'pareshan', 'shadi', 'pehle', 'baad', 'conusltation', 'consultation'
+  ])
+
+  // Scan user messages in reverse chronological order
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'user') continue
+    const text = messages[i].content.trim()
+
+    // 1. Check known Indian cities with word boundary
+    for (const kc of KNOWN_INDIAN_CITIES) {
+      const wReg = new RegExp(`\\b${kc}\\b`, 'i')
+      if (wReg.test(text)) {
+        return kc
+      }
+    }
+
+    // 2. Check conversational patterns
+    for (const reg of cityRegexes) {
+      const match = text.match(reg)
+      if (match && match[1]) {
+        const candidate = match[1].trim()
+        if (!nonCities.has(candidate.toLowerCase()) && candidate.length >= 3) {
+          return candidate.charAt(0).toUpperCase() + candidate.slice(1)
+        }
+      }
+    }
+  }
+  return null
+}
+
+export function extractNameFromMessages(messages: { role: string; content: string }[]): string | null {
+  const nameRegexes = [
+    /(?:mera\s+naam|naam|patient\s+name|my\s+name\s+is)\s*(?::|=|-)?\s*([a-zA-Z\u0900-\u097F]+(?:\s+[a-zA-Z\u0900-\u097F]+)?)/i,
+  ]
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'user') continue
+    const text = messages[i].content.trim()
+    for (const reg of nameRegexes) {
+      const match = text.match(reg)
+      if (match && match[1]) {
+        let name = match[1].trim()
+        name = name.replace(/\s+(?:hai|hoon|hu|h|ji)$/i, '').trim()
+        if (name.length >= 2 && !/^(kya|bhi|nahi|hai|hu|hoon|theek)$/i.test(name)) {
+          return name.charAt(0).toUpperCase() + name.slice(1)
+        }
+      }
+    }
+  }
+  return null
+}
+
+export function extractAgeFromMessages(messages: { role: string; content: string }[]): string | null {
+  const ageRegexes = [
+    /\b(\d{2})\s*(?:saal|year|years|yr|yrs|umar|age)\b/i,
+    /(?:umar|age)\s*(?::|=|-)?\s*(\d{2})\b/i,
+    /\b(\d{2})\s*(?:ka\s+hu|ki\s+hu|saal\s+ka)\b/i,
+  ]
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'user') continue
+    const text = messages[i].content.trim()
+    for (const reg of ageRegexes) {
+      const match = text.match(reg)
+      if (match && match[1]) {
+        const ageNum = parseInt(match[1], 10)
+        if (ageNum >= 15 && ageNum <= 90) return match[1]
+      }
+    }
+  }
+  return null
+}
+
+export function extractPhoneFromMessages(messages: { role: string; content: string }[]): string | null {
+  const phoneRegex = /\b([6-9]\d{9})\b/
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'user') continue
+    const text = messages[i].content.trim()
+    const match = text.match(phoneRegex)
+    if (match && match[1]) return match[1]
+  }
+  return null
+}
+
+export function extractConcernFromMessages(messages: { role: string; content: string }[]): string | null {
+  const text = messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+    .join(' ')
+    .toLowerCase()
+
+  if (/\b(sperm|nil sperm|azoospermia|shukranu)\b/i.test(text)) {
+    if (/\b(baccha|conceive|pregnancy)\b/i.test(text)) {
+      return 'स्पर्म की कमी एवं गर्भधारण में समस्या (Male Infertility & Difficulty Conceiving)'
+    }
+    return 'लो स्पर्म काउंट / स्पर्म समस्या (Male Infertility & Low Sperm Count)'
+  }
+  if (/\b(tube block|tubal block|fallopian)\b/i.test(text)) {
+    return 'फैलोपियन ट्यूबल ब्लॉकेज (Fallopian Tubal Blockage)'
+  }
+  if (/\b(pcod|pcos|irregular period|period)\b/i.test(text)) {
+    return 'PCOD / अनियमित पीरियड्स (PCOD & Irregular Periods)'
+  }
+  if (/\b(miscarriage|garbhpaat|abortion)\b/i.test(text)) {
+    return 'बार-बार गर्भपात (Recurrent Miscarriage)'
+  }
+  if (/\b(low amh|amh)\b/i.test(text)) {
+    return 'लो एएमएच (Low AMH)'
+  }
+  if (/\b(baccha|conceive|infertility|pregnancy|santana)\b/i.test(text)) {
+    return 'गर्भधारण न होना / इनफर्टिलिटी (Difficulty Conceiving & Infertility)'
+  }
+  return null
 }

@@ -81,6 +81,12 @@ import {
   dispatchInboundToAiReply,
   getNextBookingQueryId,
   normalizePreferredDate,
+  extractCityFromMessages,
+  extractNameFromMessages,
+  extractAgeFromMessages,
+  extractPhoneFromMessages,
+  extractConcernFromMessages,
+  isClinicCity,
 } from './auto-reply'
 
 const ARGS = {
@@ -374,5 +380,60 @@ describe('normalizePreferredDate', () => {
 
   it('passes through specific explicit dates', () => {
     expect(normalizePreferredDate('25 December 2026')).toBe('25 December 2026')
+  })
+})
+
+describe('Conversation history extraction helpers', () => {
+  const sampleMessages = [
+    { role: 'user', content: 'Others' },
+    { role: 'assistant', content: 'नमस्ते! Gynocci Femtech में आपका स्वागत है।' },
+    { role: 'user', content: 'Kanpur se hu' },
+    { role: 'user', content: 'Aur mera sperm low hai aur meri wife ke baccha nahi ho rha' },
+    { role: 'assistant', content: 'Gynocci में हम प्राकृतिक आयुर्वेदिक उपचार प्रदान करते हैं।' },
+    { role: 'user', content: 'Acha to mein to kanpur se hu fir ab mein kya karu' },
+    { role: 'assistant', content: 'हम आपको 45 मिनट की ऑनलाइन वीडियो कंसल्टेशन प्रदान कर सकते हैं।' },
+    { role: 'user', content: 'Haa kar do' },
+    { role: 'assistant', content: 'कृपया अपनी जानकारी दें।' },
+    { role: 'user', content: 'Mera naam rajesh hai' },
+    { role: 'user', content: '9588233263' },
+    { role: 'user', content: '26 saal ka hu mein' },
+  ]
+
+  it('extracts city from conversational messages', () => {
+    expect(extractCityFromMessages(sampleMessages)).toBe('Kanpur')
+    expect(extractCityFromMessages([{ role: 'user', content: 'Hum Bikaner se hain' }])).toBe('Bikaner')
+    expect(extractCityFromMessages([{ role: 'user', content: 'City: Jaipur' }])).toBe('Jaipur')
+  })
+
+  it('extracts name from conversational messages', () => {
+    expect(extractNameFromMessages(sampleMessages)).toBe('Rajesh')
+    expect(extractNameFromMessages([{ role: 'user', content: 'Mera naam Priya Sharma hai ji' }])).toBe('Priya Sharma')
+  })
+
+  it('extracts age and phone correctly', () => {
+    expect(extractAgeFromMessages(sampleMessages)).toBe('26')
+    expect(extractPhoneFromMessages(sampleMessages)).toBe('9588233263')
+  })
+
+  it('extracts clinical concern from conversation', () => {
+    const concern = extractConcernFromMessages(sampleMessages)
+    expect(concern).toContain('स्पर्म')
+  })
+
+  it('correctly identifies 9 clinic cities vs outside cities', () => {
+    expect(isClinicCity('Jaipur')).toBe(true)
+    expect(isClinicCity('Delhi')).toBe(true)
+    expect(isClinicCity('Lucknow')).toBe(true)
+    expect(isClinicCity('Amritsar')).toBe(true)
+    expect(isClinicCity('Ludhiana')).toBe(true)
+    expect(isClinicCity('Patna')).toBe(true)
+    expect(isClinicCity('Ranchi')).toBe(true)
+    expect(isClinicCity('Hisar')).toBe(true)
+    expect(isClinicCity('Rewari')).toBe(true)
+
+    expect(isClinicCity('Kanpur')).toBe(false)
+    expect(isClinicCity('Bikaner')).toBe(false)
+    expect(isClinicCity('Mumbai')).toBe(false)
+    expect(isClinicCity(null)).toBe(false)
   })
 })

@@ -100,6 +100,9 @@ export function buildSystemPrompt(args: {
   contact?: {
     name?: string | null
     city?: string | null
+    age?: string | null
+    phone?: string | null
+    concern?: string | null
   }
 }): string {
   const { userPrompt, mode, knowledge, contact } = args
@@ -151,21 +154,37 @@ export function buildSystemPrompt(args: {
       '  - State: Consultation Fees ₹1,000 and Registration Fees ₹500.\n' +
       '  - Present the special ongoing offer immediately:\n' +
       '    "हमारी कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन [Name] जी (Sir/Ma\'am), अभी हमारी कंपनी ने एक स्पेशल ऑफर चलाया है जिसमें आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।"',
-    '5. CLINIC LOCATIONS VS VIDEO CONSULTATION PITCH (STRICT NEGATIVE CONSTRAINT):\n' +
-      '• Gynocci Physical Clinics exist ONLY in these 9 cities:\n' +
-      '  1. Jaipur: 45, Hanuman Vatika, Chitrakoot Marg, Tagore Nagar, Vaishali Nagar (Maps: https://maps.google.com/?q=Gynocci+Jaipur)\n' +
-      '  2. New Delhi: Rajouri Garden, Metro Pillar No. 388, Ground Floor, A-11, Block A2 (Maps: https://maps.google.com/?q=Gynocci+Rajouri+Garden+Delhi)\n' +
-      '  3. Lucknow: Gomti Nagar, DLF MyPAD, Titan Eye+ ke upar (Maps: https://maps.google.com/?q=Gynocci+Lucknow)\n' +
-      '  4. Amritsar: SCO 138, 2nd Floor, D Block, Ranjit Avenue (Maps: https://maps.google.com/?q=Gynocci+Amritsar)\n' +
-      '  5. Ludhiana: 1905, Circuit House Road, Gobind Nagar, Near PAU (Maps: https://maps.google.com/?q=Gynocci+Ludhiana)\n' +
-      '  6. Patna: Sai Swarnika, 3rd Floor, Kumhrar, Kankarbagh Main Road (Maps: https://maps.google.com/?q=Gynocci+Patna)\n' +
-      '  7. Ranchi: Mittal Height, 1st Floor, Kanke Road, Near CMPDI Gate (Maps: https://maps.google.com/?q=Gynocci+Ranchi)\n' +
-      '  8. Hisar: DSS 234P, 1st Floor, Sector 14, Pocket-A (Maps: https://maps.google.com/?q=Gynocci+Hisar)\n' +
-      '  9. Rewari: 112 L, Model Town (Maps: https://maps.google.com/?q=Gynocci+Rewari)\n' +
-      '• STRICT RULE FOR ALL OTHER CITIES (Bikaner, Kota, Jodhpur, Udaipur, Ajmer, Sikar, Mumbai, etc.):\n' +
-      '  - NEVER ask or suggest a clinic visit in a city where Gynocci does NOT have a clinic! (e.g. NEVER say "Kya aap Bikaner mein clinic visit karna chahenge?").\n' +
-      '  - Clearly inform them: "[Name] Sir/Ma\'am, Gynocci का फिजिकल क्लीनिक अभी आपके शहर [City] में उपलब्ध नहीं है, इसलिए हम आपको हमारे सीनियर एक्सपर्ट डॉक्टर के साथ 45 मिनट की ऑनलाइन वीडियो कंसल्टेशन (Online Video Consultation) प्रदान करेंगे जिसमें डॉक्टर आपकी कंडीशन और रिपोर्ट्स को विस्तार से समझकर उचित मार्गदर्शन देंगे।"\n' +
-      '• If patient asks for clinic location/address for any of the 9 cities, provide the exact address and Google Maps link above.',
+    '5. CLINIC LOCATIONS VS VIDEO CONSULTATION PITCH (TWO-STEP CLINIC INQUIRY RULE):\n' +
+      '• STEP 1 - WHEN PATIENT ASKS WHERE CLINICS ARE ("Aapki clinic kahan hai", "Clinics kahan kahan hain", "Where are your clinics", etc.):\n' +
+      '  - DO NOT SEND FULL ADDRESSES OR GOOGLE MAP LINKS FOR ALL 9 CITIES!\n' +
+      '  - ONLY list the names of the 9 cities in Hindi, and ask which city\'s clinic they want to visit:\n' +
+      '    "Gynocci के फिजिकल क्लीनिक इन 9 शहरों में उपलब्ध हैं:\n' +
+      '    1. जयपुर (Jaipur)\n' +
+      '    2. दिल्ली (Delhi)\n' +
+      '    3. लखनऊ (Lucknow)\n' +
+      '    4. अमृतसर (Amritsar)\n' +
+      '    5. लुधियाना (Ludhiana)\n' +
+      '    6. पटना (Patna)\n' +
+      '    7. रांची (Ranchi)\n' +
+      '    8. हिसार (Hisar)\n' +
+      '    9. रेवाड़ी (Rewari)\n' +
+      '    ---\n' +
+      '    अगर आप इनमें से किसी शहर के क्लीनिक में विज़िट करना चाहते हैं, तो कृपया हमें उस शहर का नाम बताएं। हम आपको वहां के क्लीनिक का पूरा पता और गूगल मैप (Google Map) लोकेशन भेज देंगे।"\n' +
+      '• STEP 2 - WHEN PATIENT SPECIFIES A CITY:\n' +
+      '  - IF IT IS ONE OF THE 9 CLINIC CITIES (Jaipur, Delhi, Lucknow, Amritsar, Ludhiana, Patna, Ranchi, Hisar, Rewari):\n' +
+      '    Provide THAT specific clinic\'s address and Google Maps link:\n' +
+      '    • Jaipur: 45, हनुमान वाटिका, चित्रकूट मार्ग, वैशाली नगर (Maps: https://maps.google.com/?q=Gynocci+Jaipur)\n' +
+      '    • Delhi: राजौरी गार्डन, मेट्रो पिलर 388, A-11, ब्लॉक A2 (Maps: https://maps.google.com/?q=Gynocci+Rajouri+Garden+Delhi)\n' +
+      '    • Lucknow: गोमती नगर, DLF MyPAD, टाइटन आई+ के ऊपर (Maps: https://maps.google.com/?q=Gynocci+Lucknow)\n' +
+      '    • Amritsar: SCO 138, 2nd Floor, D Block, रंजीत एवेन्यू (Maps: https://maps.google.com/?q=Gynocci+Amritsar)\n' +
+      '    • Ludhiana: 1905, सर्किट हाउस रोड, गोबिंद नगर, PAU के पास (Maps: https://maps.google.com/?q=Gynocci+Ludhiana)\n' +
+      '    • Patna: साईं स्वर्णिका, 3rd Floor, कुम्हरार, कंकड़बाग Main Road (Maps: https://maps.google.com/?q=Gynocci+Patna)\n' +
+      '    • Ranchi: मित्तल हाइट, 1st Floor, कांके रोड, CMPDI Gate ke paas (Maps: https://maps.google.com/?q=Gynocci+Ranchi)\n' +
+      '    • Hisar: DSS 234P, 1st Floor, सेक्टर 14, Pocket-A (Maps: https://maps.google.com/?q=Gynocci+Hisar)\n' +
+      '    • Rewari: 112 L, मॉडल टाउन (Maps: https://maps.google.com/?q=Gynocci+Rewari)\n' +
+      '  - IF IT IS ANY OTHER CITY (e.g. Kanpur, Bikaner, Kota, Jodhpur, Udaipur, Ajmer, Mumbai, etc.):\n' +
+      '    NEVER offer or suggest a clinic visit in that city! Clearly state in Hindi:\n' +
+      '    "[Name] जी, Gynocci का फिजिकल क्लीनिक अभी आपके शहर [City] में उपलब्ध नहीं है। लेकिन हमारे सीनियर एक्सपर्ट डॉक्टर के साथ 45 मिनट की ऑनलाइन वीडियो कंसल्टेशन (Online Video Consultation) उपलब्ध है, जिसमें डॉक्टर आपकी रिपोर्ट्स और समस्या को गहराई से समझकर संपूर्ण प्राकृतिक आयुर्वेदिक मार्गदर्शन प्रदान करेंगे। क्या मैं आपका वीडियो कंसल्टेशन अपॉइंटमेंट बुक कर दूँ?"',
     '6. META ADS CTA AUTOMATED HANDLING:\n' +
       '• City Selection CTA (Jaipur, Delhi, Amritsar, Lucknow, Other):\n' +
       '  - If preferred city: welcome them, note clinic/video options, and ask for their concern.\n' +
@@ -180,36 +199,56 @@ export function buildSystemPrompt(args: {
   ]
 
   const sanitizedName = cleanDisplayName(contact?.name)
+  const isClinicCityName = (c?: string | null) => {
+    if (!c) return false
+    const l = c.trim().toLowerCase()
+    return ['jaipur', 'delhi', 'new delhi', 'lucknow', 'amritsar', 'ludhiana', 'patna', 'ranchi', 'hisar', 'rewari'].includes(l)
+  }
+
   if (sanitizedName) {
     parts.push(
-      `6. PATIENT / CUSTOMER IDENTITY (CRITICAL & STRICT):\n` +
-        `• The customer/patient is verified as "${sanitizedName}".\n` +
-        `• You MUST address them ONLY as "${sanitizedName} ji".\n` +
-        `• ABSOLUTELY FORBIDDEN: NEVER call them "Puneet" or any name other than "${sanitizedName}". Puneet is the business owner/admin, NOT the patient!\n` +
-        `• GENDER & RESPECTFUL GRAMMAR: Match your address and language to the patient's identity. If the patient has a female name (e.g. Reena, Priya, Pooja, Sunita, Anjali, Rekha), address them with respectful female grammar (e.g. "${sanitizedName} ji, mujhe aapki takleef samajh aati hai", "aap pareshan na hon"). Never misgender or call them by another person's name.${
-          contact?.city ? ` They are contacting from ${contact.city}.` : ''
-        }\n` +
-        `• Since their name is already known, NEVER ask "Aapka naam kya hai" or "Aap apna naam batayein".`,
+      `6. PATIENT IDENTITY & KNOWN DETAILS (TRACED FROM CHAT HISTORY):\n` +
+        `• PATIENT NAME: "${sanitizedName}". Always address them respectfully as "${sanitizedName} जी" (or "${sanitizedName} Sir / Ma'am" as appropriate).\n` +
+        `  - ABSOLUTELY FORBIDDEN: NEVER call them "Puneet" or "Rj Puneet". Puneet is the workspace owner/admin, NOT the patient!\n` +
+        `  - NEVER ask "Aapka naam kya hai" again, because their name is already known as "${sanitizedName}".\n` +
+        (contact?.city
+          ? `• PATIENT CITY: "${contact.city}". The patient has already stated their city is ${contact.city}.\n` +
+            `  - CRITICAL: NEVER ask them for their city or shehar again!\n` +
+            `  - IN THE BOOKING CONFIRMATION RECEIPT, YOU MUST FILL: "📍 City: ${contact.city}". NEVER output "[आपका शहर]" or "[City]"!\n` +
+            (isClinicCityName(contact.city)
+              ? `  - Since ${contact.city} is one of our 9 clinic cities, they may choose between Clinic Visit in ${contact.city} or Online Video Consultation.\n`
+              : `  - STRICT: Gynocci does NOT have a physical clinic in ${contact.city}! Consultation Type MUST BE "Online Video Consultation (45 Min Dedicated Session)". NEVER offer a clinic visit in ${contact.city}!\n`)
+          : '') +
+        (contact?.age
+          ? `• PATIENT AGE: "${contact.age}" years. Age is already known. NEVER ask for age/umar again!\n`
+          : '') +
+        (contact?.phone
+          ? `• PATIENT PHONE: "${contact.phone}". Phone is already known. NEVER ask for phone again!\n`
+          : '') +
+        (contact?.concern
+          ? `• PATIENT HEALTH CONCERN: "${contact.concern}". Concern is already known. NEVER ask "Aapko kya takleef hai" again!\n`
+          : ''),
     )
   } else {
     parts.push(
       `6. PATIENT WELCOME & IDENTITY:\n` +
-        `• The customer's name is not yet registered in the system.\n` +
-        `• ABSOLUTELY FORBIDDEN: NEVER call the customer "Puneet" or invent any name! Puneet is the business owner, NOT the customer.\n` +
-        `• When the conversation begins or whenever the customer sends a greeting (or ad click / first inquiry), warmly welcome them with:\n` +
-        `  नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏\n` +
-        `  ---\n` +
-        `  आप कैसे हैं? बताइए मैं आपकी क्या सहायता कर सकती हूँ?\n` +
-        `  ---\n` +
-        `  बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम और आप किस शहर (City) से हैं यह जान सकती हूँ?\n` +
-        `• If the customer already mentioned their medical concern in their first message (e.g. IVF fail, baccha nahi ho raha):\n` +
-        `  - Do NOT say "Aap apni takleef batayein" because they already told you!\n` +
-        `  - Show sincere empathy first, explain Ayurvedic support, and politely ask for their name and city so the doctor can review their case.\n` +
-        `• When the customer shares their name or city in their message (e.g. "Mera naam Anjali hai, Jaipur se"):\n` +
-        `  - Warmly acknowledge their actual provided name (e.g. "[Naam] ji, Gynocci Femtech mein aapka swagat hai!") and address their query.\n` +
+        `• The patient's name is not yet registered in this chat.\n` +
+        `• ABSOLUTELY FORBIDDEN: NEVER call the customer "Puneet" or "Rj Puneet"! Puneet is the business owner, NOT the patient.\n` +
+        (contact?.city
+          ? `• PATIENT CITY: "${contact.city}". The patient already stated their city is ${contact.city}. NEVER ask for city again! In booking receipt, write "📍 City: ${contact.city}".\n` +
+            (isClinicCityName(contact.city)
+              ? `  - Since ${contact.city} is a clinic city, they can choose Clinic Visit or Video Consultation.\n`
+              : `  - STRICT: Gynocci has NO clinic in ${contact.city}. Consultation Type MUST BE Online Video Consultation.\n`)
+          : '') +
+        (contact?.age ? `• PATIENT AGE: "${contact.age}". Do not ask again.\n` : '') +
+        (contact?.phone ? `• PATIENT PHONE: "${contact.phone}". Do not ask again.\n` : '') +
+        (contact?.concern ? `• PATIENT CONCERN: "${contact.concern}". Do not ask again.\n` : '') +
+        `• First greeting in new chat: "नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏"\n` +
+        `• If the customer shares their name or city in their message (e.g. "Mera naam Rajesh hai, Kanpur se hu"):\n` +
+        `  - Warmly acknowledge their actual provided name (e.g. "[Naam] जी, Gynocci Femtech में आपका स्वागत है!") and address their query.\n` +
         `  - At the VERY END of your reply, ALWAYS append this hidden tag:\n` +
         `    [[UPDATE_CONTACT: {"name": "Extracted Name", "city": "Extracted City"}]]\n` +
-        `    (Example: [[UPDATE_CONTACT: {"name": "Anjali", "city": "Jaipur"}]]). Only include fields they actually provided.`,
+        `    (Example: [[UPDATE_CONTACT: {"name": "Rajesh", "city": "Kanpur"}]]). Only include fields they actually provided.`,
     )
   }
 
