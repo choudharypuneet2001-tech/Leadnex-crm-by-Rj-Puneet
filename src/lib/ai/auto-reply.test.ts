@@ -405,9 +405,25 @@ describe('Conversation history extraction helpers', () => {
     expect(extractCityFromMessages([{ role: 'user', content: 'City: Jaipur' }])).toBe('Jaipur')
   })
 
-  it('extracts name from conversational messages', () => {
+  it('extracts name from conversational messages and answers to booking inquiries', () => {
     expect(extractNameFromMessages(sampleMessages)).toBe('Rajesh')
     expect(extractNameFromMessages([{ role: 'user', content: 'Mera naam Priya Sharma hai ji' }])).toBe('Priya Sharma')
+
+    // Direct answer to booking name inquiry
+    const bookingChat = [
+      { role: 'assistant', content: 'आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं, कृपया उनका नाम बताएं?' },
+      { role: 'user', content: 'Rauf' },
+    ]
+    expect(extractNameFromMessages(bookingChat)).toBe('Rauf')
+
+    // "Mere hi naam se kar do" tracing back to earlier name
+    const mereNaamChat = [
+      { role: 'assistant', content: 'बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम जान सकती हूँ?' },
+      { role: 'user', content: 'Puneet' },
+      { role: 'assistant', content: 'आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं, कृपया उनका नाम बताएं?' },
+      { role: 'user', content: 'Mere hi naam se kar do' },
+    ]
+    expect(extractNameFromMessages(mereNaamChat)).toBe('Puneet')
   })
 
   it('extracts age and phone correctly', () => {

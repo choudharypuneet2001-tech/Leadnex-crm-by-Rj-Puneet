@@ -291,10 +291,14 @@ export async function dispatchInboundToAiReply(
         assignedQueryId = await getNextBookingQueryId(db, accountId)
         const queryId = assignedQueryId
 
-        const patientName =
+        let patientName =
           (bookingConfirmed.patient_name && !bookingConfirmed.patient_name.includes('['))
             ? bookingConfirmed.patient_name.trim()
             : (effectiveName || 'Patient')
+
+        if (effectiveName && /^[a-zA-Z\s.]+$/.test(effectiveName) && /[\u0900-\u097F]/.test(patientName)) {
+          patientName = effectiveName
+        }
 
         const phone =
           (bookingConfirmed.phone && !bookingConfirmed.phone.includes('['))
@@ -367,10 +371,14 @@ export async function dispatchInboundToAiReply(
 
     let replyText = text?.trim() ?? ''
 
-    const finalPatientName =
+    let finalPatientName =
       (bookingConfirmed?.patient_name && !bookingConfirmed.patient_name.includes('['))
         ? bookingConfirmed.patient_name.trim()
         : (effectiveName || 'Patient')
+
+    if (effectiveName && /^[a-zA-Z\s.]+$/.test(effectiveName) && /[\u0900-\u097F]/.test(finalPatientName)) {
+      finalPatientName = effectiveName
+    }
     const finalCity =
       (bookingConfirmed?.city && !bookingConfirmed.city.includes('[') && !bookingConfirmed.city.includes('शहर'))
         ? bookingConfirmed.city.trim()
@@ -436,10 +444,14 @@ export async function dispatchInboundToAiReply(
       )
     }
 
-    // Mandatory Appointment Booking Name Intake phrasing
+    // Fees payment timing correction: fees must be paid BEFORE consultation begins
     replyText = replyText.replace(
-      /क्या मैं आपका शुभ नाम जान सकती हूँ\?\s*(?:ताकि मैं अपॉइंटमेंट बुक कर सकूँ)?/gi,
-      'आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं, कृपया उनका नाम बताएं?',
+      /आपको\s*(?:ऑनलाइन\s*)?(?:वीडियो\s*)?कंसल्टेशन\s*का\s*भुगतान\s*अपॉइंटमेंट\s*के\s*समय\s*ही\s*करना\s*होगा[^\n]*/gi,
+      'कंसल्टेशन फीस का भुगतान आपको परामर्श (Consultation) शुरू होने से पहले करना होगा, जिसकी पूरी जानकारी और भुगतान विवरण हमारी सीनियर एक्सपर्ट टीम अपॉइंटमेंट से पहले आपके साथ साझा करेगी।',
+    )
+    replyText = replyText.replace(
+      /आपकी\s*कंसल्टेशन\s*के\s*दौरान\s*हमारी\s*टीम\s*आपको\s*भुगतान\s*की\s*प्रक्रिया\s*के\s*बारे\s*में\s*जानकारी\s*देगी[^\n]*/gi,
+      'भुगतान की पूरी जानकारी और प्रक्रिया हमारी सीनियर एक्सपर्ट टीम कंसल्टेशन से पहले आपके साथ साझा करेगी।',
     )
 
     // Strict City line cleanup in confirmation receipt
@@ -775,24 +787,73 @@ export function extractCityFromMessages(messages: { role: string; content: strin
   return null
 }
 
+const NON_NAME_WORDS = new Set([
+  'kya', 'bhi', 'nahi', 'nahin', 'hai', 'hu', 'hoon', 'h', 'theek', 'thik',
+  'yes', 'no', 'ha', 'haa', 'haan', 'han', 'ok', 'okay', 'ji', 'sir', 'maam', 'mam',
+  'pcod', 'pcos', 'tubal', 'blockage', 'sperm', 'infertility', 'periods',
+  'jaipur', 'delhi', 'lucknow', 'aligarh', 'amritsar', 'ludhiana', 'patna', 'ranchi', 'hisar', 'rewari', 'kanpur', 'bikaner', 'kota',
+  'today', 'tomorrow', 'aaj', 'kal', 'parso', 'clinic', 'video', 'consultation', 'doctor'
+])
+
+const ASST_NAME_ASK_REGEX = /(?:शुभ\s*नाम|shubh\s*naam|aapka\s*naam|आपका\s*नाम|kiske\s*naam|किसके\s*नाम|उनका\s*नाम|unka\s*naam|patient\s*name|know\s*your\s*name|provide\s*their\s*name)/i
+
 export function extractNameFromMessages(messages: { role: string; content: string }[]): string | null {
-  const nameRegexes = [
-    /(?:mera\s+naam|naam|patient\s+name|my\s+name\s+is)\s*(?::|=|-)?\s*([a-zA-Z\u0900-\u097F]+(?:\s+[a-zA-Z\u0900-\u097F]+)?)/i,
-  ]
+  const isMereNaamPhrase = (text: string) =>
+    /\b(mere\s+hi\s+naam|mere\s+naam|apne\s+naam|jo\s+pehle\s+bataya|jo\s+bataya\s+tha|mene\s+jo\s+bataya|mera\s+hi|same\s+name|my\s+name|mere\s+se)\b/i.test(text) ||
+    /(?:मेरे\s*ही\s*नाम|मेरे\s*नाम|अपने\s*नाम|जो\s*पहले\s*बताया|मेरा\s*ही)/.test(text)
+
+  function cleanCandidate(raw?: string | null): string | null {
+    if (!raw) return null
+    let s = raw.trim().replace(/^[:=\-\s]+/, '').replace(/\s+(?:hai|hoon|hu|h|ji|sir|maam)$/i, '').trim()
+    const words = s.split(/\s+/)
+    if (words.length > 3 || words.length === 0) return null
+    if (words.some((w) => NON_NAME_WORDS.has(w.toLowerCase()))) return null
+    if (!/^[a-zA-Z\u0900-\u097F\s.]+$/.test(s)) return null
+    if (s.length < 2 || s.length > 30) return null
+    return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+  }
+
+  // Check from newest to oldest
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role !== 'user') continue
     const text = messages[i].content.trim()
-    for (const reg of nameRegexes) {
-      const match = text.match(reg)
-      if (match && match[1]) {
-        let name = match[1].trim()
-        name = name.replace(/\s+(?:hai|hoon|hu|h|ji)$/i, '').trim()
-        if (name.length >= 2 && !/^(kya|bhi|nahi|hai|hu|hoon|theek)$/i.test(name)) {
-          return name.charAt(0).toUpperCase() + name.slice(1)
+
+    // Check if user said "mere hi naam se kar do"
+    if (isMereNaamPhrase(text)) {
+      // Find the earlier name stated by the user
+      for (let j = 0; j < i; j++) {
+        if (messages[j].role !== 'user') continue
+        const earlierText = messages[j].content.trim()
+        const explicitMatch = earlierText.match(/(?:mera\s+naam|naam|patient\s+name|my\s+name\s+is)\s*(?::|=|-)?\s*([a-zA-Z\u0900-\u097F]+(?:\s+[a-zA-Z\u0900-\u097F]+)?)/i)
+        if (explicitMatch && explicitMatch[1]) {
+          const c = cleanCandidate(explicitMatch[1])
+          if (c) return c
+        }
+        if (j > 0 && messages[j - 1].role === 'assistant') {
+          if (ASST_NAME_ASK_REGEX.test(messages[j - 1].content)) {
+            const c = cleanCandidate(earlierText)
+            if (c) return c
+          }
         }
       }
     }
+
+    // Direct answer to assistant asking for name (e.g. "kiske naam se appointment book karwana chahte hain" -> "Rauf")
+    if (i > 0 && messages[i - 1].role === 'assistant') {
+      if (ASST_NAME_ASK_REGEX.test(messages[i - 1].content)) {
+        const c = cleanCandidate(text)
+        if (c) return c
+      }
+    }
+
+    // Explicit name pattern: "Mera naam Rauf hai", "Name: Priya Sharma"
+    const explicitMatch = text.match(/(?:mera\s+naam|patient\s+name|my\s+name\s+is|naam\s+hai)\s*(?::|=|-)?\s*([a-zA-Z\u0900-\u097F]+(?:\s+[a-zA-Z\u0900-\u097F]+)?)/i)
+    if (explicitMatch && explicitMatch[1]) {
+      const c = cleanCandidate(explicitMatch[1])
+      if (c) return c
+    }
   }
+
   return null
 }
 
