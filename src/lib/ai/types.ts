@@ -64,6 +64,7 @@ export interface BookingConfirmedExtracted {
   patient_name?: string
   phone?: string
   city?: string
+  age?: string
   preferred_date?: string
   preferred_time?: string
   health_concern?: string

@@ -223,14 +223,13 @@ export async function dispatchInboundToAiReply(
       }
     }
 
+    let assignedQueryId: string | null = null
+
     // If an appointment booking was confirmed by the assistant, save it to `bookings`
     if (bookingConfirmed) {
       try {
-        const randomDigits = Math.floor(1000 + Math.random() * 9000).toString()
-        const queryId =
-          bookingConfirmed.booking_query_id && bookingConfirmed.booking_query_id.startsWith('#')
-            ? bookingConfirmed.booking_query_id
-            : `#GYN-${randomDigits}`
+        assignedQueryId = await getNextBookingQueryId(db, accountId)
+        const queryId = assignedQueryId
 
         const patientName =
           bookingConfirmed.patient_name?.trim() || contact?.name || 'Patient'
@@ -238,7 +237,7 @@ export async function dispatchInboundToAiReply(
           bookingConfirmed.phone?.trim() || contact?.phone || ''
         const city =
           bookingConfirmed.city?.trim() || contact?.company || ''
-        const preferredDate = bookingConfirmed.preferred_date?.trim() || ''
+        const preferredDate = normalizePreferredDate(bookingConfirmed.preferred_date)
         const preferredTime = bookingConfirmed.preferred_time?.trim() || ''
         const rawHealthConcern = bookingConfirmed.health_concern?.trim() || ''
         const healthConcern =
@@ -252,6 +251,7 @@ export async function dispatchInboundToAiReply(
             : 'video_consultation'
 
         const clinicLocation = bookingConfirmed.clinic_location?.trim() || null
+        const notes = bookingConfirmed.age ? `Age: ${bookingConfirmed.age}` : null
 
         const { error: bookingErr } = await db.from('bookings').insert({
           account_id: accountId,
@@ -268,6 +268,7 @@ export async function dispatchInboundToAiReply(
           clinic_location: clinicLocation,
           ad_name: contact?.ad_name || null,
           ad_id: contact?.ad_id || null,
+          notes: notes,
           status: 'confirmed',
         })
 
@@ -295,11 +296,19 @@ export async function dispatchInboundToAiReply(
 
     let replyText = text?.trim() ?? ''
 
+    // If a booking was confirmed, ensure the reply text has the exact assigned sequential ID
+    if (assignedQueryId) {
+      replyText = replyText.replace(/#GYN-[A-Za-z0-9_-]+/gi, assignedQueryId)
+    }
+
     // Clean up any stray template placeholders so patients never see developer notes
     replyText = replyText.replace(/\s*\(yahan aapka health concern[\s\S]*?\)/gi, '')
-    replyText = replyText.replace(/\[(?:Takleef|Concern|Takleef\/Concern|Health Concern)\]/gi, contact?.ad_name || 'Ayurvedic Health Consultation')
-    replyText = replyText.replace(/\[(?:Patient Name|Naam)\]/gi, contact?.name || 'Patient')
-    replyText = replyText.replace(/\[(?:Random 4 digits|Random 4 Digits)\]/gi, Math.floor(1000 + Math.random() * 9000).toString())
+    replyText = replyText.replace(/\[(?:Takleef|Concern|Takleef\/Concern|Health Concern|Actual Takleef|Actual Problem)\]/gi, contact?.ad_name || 'Ayurvedic Health Consultation')
+    replyText = replyText.replace(/\[(?:Patient Name|Naam|Actual Patient Name)\]/gi, contact?.name || 'Patient')
+    replyText = replyText.replace(/\[(?:Random 4 digits|Random 4 Digits|\.\.\.|XXXX)\]/gi, (assignedQueryId || '#GYN-001').replace('#GYN-', ''))
+    replyText = replyText.replace(/\[(?:Actual Age \/ Umar|Actual Age|Age)\]/gi, bookingConfirmed?.age || '')
+    replyText = replyText.replace(/\[(?:Actual Phone|Phone)\]/gi, contact?.phone || '')
+    replyText = replyText.replace(/\[(?:Actual City|City)\]/gi, contact?.company || '')
 
     if (!replyText) {
       if (handoff) {
@@ -418,4 +427,110 @@ async function showTypingIndicator(
   } catch (err) {
     console.warn('[ai auto-reply] typing indicator failed (continuing):', err)
   }
+}
+
+/**
+ * Calculates the next sequential booking query ID for an account, e.g. #GYN-001, #GYN-002...
+ */
+export async function getNextBookingQueryId(
+  db: ReturnType<typeof supabaseAdmin>,
+  accountId: string,
+): Promise<string> {
+  try {
+    const { data } = await db
+      .from('bookings')
+      .select('booking_query_id')
+      .eq('account_id', accountId)
+
+    let maxNum = 0
+    if (data && data.length > 0) {
+      for (const b of data) {
+        const qId = b.booking_query_id || ''
+        const match = qId.match(/^#GYN-(\d+)$/i)
+        if (match) {
+          const n = parseInt(match[1], 10)
+          // Exclude legacy static test placeholder IDs like 1234 or 1492 if we are in series mode
+          if (n !== 1234 && n !== 1492 && n < 1000) {
+            if (n > maxNum) maxNum = n
+          }
+        }
+      }
+      if (maxNum === 0) {
+        maxNum = data.length
+      }
+    }
+    const nextNum = maxNum + 1
+    return `#GYN-${String(nextNum).padStart(3, '0')}`
+  } catch (err) {
+    console.warn('[ai auto-reply] error computing next booking ID:', err)
+    return `#GYN-001`
+  }
+}
+
+/**
+ * Normalizes relative conversational dates like "aaj", "kal", "parso" into real calendar dates in IST.
+ */
+export function normalizePreferredDate(inputDate?: string | null): string {
+  if (!inputDate || !inputDate.trim()) return ''
+  const trimmed = inputDate.trim()
+  const lower = trimmed.toLowerCase()
+
+  // Asia/Kolkata date
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  })
+  const parts = formatter.formatToParts(now)
+  let year = now.getFullYear()
+  let month = now.getMonth() + 1
+  let day = now.getDate()
+  for (const p of parts) {
+    if (p.type === 'year') year = parseInt(p.value, 10)
+    if (p.type === 'month') month = parseInt(p.value, 10)
+    if (p.type === 'day') day = parseInt(p.value, 10)
+  }
+  const todayIST = new Date(year, month - 1, day)
+
+  const MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ]
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+  const formatDate = (d: Date) => {
+    return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} (${DAYS[d.getDay()]})`
+  }
+
+  if (lower === 'aaj' || lower === 'today') {
+    return `${formatDate(todayIST)} - Aaj`
+  }
+  if (lower === 'kal' || lower === 'tomorrow') {
+    const tom = new Date(todayIST)
+    tom.setDate(tom.getDate() + 1)
+    return `${formatDate(tom)} - Kal`
+  }
+  if (lower === 'parso' || lower === 'parson' || lower === 'day after tomorrow') {
+    const parso = new Date(todayIST)
+    parso.setDate(parso.getDate() + 2)
+    return `${formatDate(parso)} - Parso`
+  }
+
+  if (/\bparso\b/i.test(lower)) {
+    const parso = new Date(todayIST)
+    parso.setDate(parso.getDate() + 2)
+    return `${formatDate(parso)} (${trimmed})`
+  }
+  if (/\bkal\b/i.test(lower) && !/\baaj\b/i.test(lower)) {
+    const tom = new Date(todayIST)
+    tom.setDate(tom.getDate() + 1)
+    return `${formatDate(tom)} (${trimmed})`
+  }
+  if (/\baaj\b/i.test(lower)) {
+    return `${formatDate(todayIST)} (${trimmed})`
+  }
+
+  return trimmed
 }

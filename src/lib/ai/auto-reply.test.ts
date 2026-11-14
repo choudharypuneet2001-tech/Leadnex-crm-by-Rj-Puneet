@@ -77,7 +77,11 @@ vi.mock('./admin-client', () => ({
   }),
 }))
 
-import { dispatchInboundToAiReply } from './auto-reply'
+import {
+  dispatchInboundToAiReply,
+  getNextBookingQueryId,
+  normalizePreferredDate,
+} from './auto-reply'
 
 const ARGS = {
   accountId: 'acct-1',
@@ -318,5 +322,57 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+  })
+})
+
+describe('getNextBookingQueryId (#GYN-001 series)', () => {
+  it('starts at #GYN-001 when there are no existing bookings', async () => {
+    const mockDb = {
+      from: () => ({
+        select: () => ({
+          eq: () => Promise.resolve({ data: [] }),
+        }),
+      }),
+    } as any
+
+    const nextId = await getNextBookingQueryId(mockDb, 'acc-1')
+    expect(nextId).toBe('#GYN-001')
+  })
+
+  it('increments sequentially from existing #GYN-00X series', async () => {
+    const mockDb = {
+      from: () => ({
+        select: () => ({
+          eq: () =>
+            Promise.resolve({
+              data: [
+                { booking_query_id: '#GYN-001' },
+                { booking_query_id: '#GYN-002' },
+                { booking_query_id: '#GYN-003' },
+              ],
+            }),
+        }),
+      }),
+    } as any
+
+    const nextId = await getNextBookingQueryId(mockDb, 'acc-1')
+    expect(nextId).toBe('#GYN-004')
+  })
+})
+
+describe('normalizePreferredDate', () => {
+  it('normalizes "kal" to tomorrow with weekday in IST', () => {
+    const result = normalizePreferredDate('kal')
+    expect(result).toContain('Kal')
+    expect(result).toMatch(/\d{1,2}\s+[A-Za-z]+\s+\d{4}/)
+  })
+
+  it('normalizes "parso" to day after tomorrow', () => {
+    const result = normalizePreferredDate('parso')
+    expect(result).toContain('Parso')
+  })
+
+  it('passes through specific explicit dates', () => {
+    expect(normalizePreferredDate('25 December 2026')).toBe('25 December 2026')
   })
 })

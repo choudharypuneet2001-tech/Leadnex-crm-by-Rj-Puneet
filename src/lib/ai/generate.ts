@@ -122,6 +122,12 @@ export function parseGeneration(
             typeof parsed.city === 'string' && parsed.city.trim()
               ? parsed.city.trim()
               : undefined,
+          age:
+            typeof parsed.age === 'string' && parsed.age.trim()
+              ? parsed.age.trim()
+              : typeof parsed.age === 'number'
+                ? String(parsed.age)
+                : undefined,
           preferred_date:
             typeof parsed.preferred_date === 'string' && parsed.preferred_date.trim()
               ? parsed.preferred_date.trim()

@@ -495,9 +495,8 @@ describe('inbound webhook: template quick-reply buttons (#478)', () => {
       (call) => (call[0] as { triggerType: string }).triggerType,
     )
     expect(triggers).toContain('interactive_reply')
-    // The AI auto-reply must stay out of it — a button tap is not a
-    // free-text question.
-    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+    // An unconsumed button tap is dispatched to AI auto-reply so lead CTA selections get answered.
+    expect(h.dispatchInboundToAiReply).toHaveBeenCalled()
   })
 
   it('falls back to the label when the template button carries no payload', async () => {
