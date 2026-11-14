@@ -233,11 +233,15 @@ export function Step2SelectAudience({
     const result = parseBroadcastCsv(await selected.text());
 
     if (!result.ok) {
-      toast.error(
-        result.error === 'missing_phone_column'
-          ? t('selectAudience.errorCsvMissingPhone')
-          : t('selectAudience.errorCsvParse'),
-      );
+      if (result.error === 'scientific_notation_detected') {
+        toast.error(
+          'Excel scientific notation detected (e.g. 9.17E+11). Please format phone numbers as Text in Excel or use the clean CSV.'
+        );
+      } else if (result.error === 'missing_phone_column') {
+        toast.error(t('selectAudience.errorCsvMissingPhone'));
+      } else {
+        toast.error(t('selectAudience.errorCsvParse'));
+      }
       // Clear the input so re-picking the same corrected file still
       // fires `change` (the browser suppresses it for an identical value).
       e.target.value = '';

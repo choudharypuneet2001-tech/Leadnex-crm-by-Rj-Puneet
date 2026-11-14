@@ -32,7 +32,9 @@ export type BroadcastCsvError =
   /** No `phone` header — the one column we can't work without. */
   | 'missing_phone_column'
   /** Header was fine, but not one row carried a usable number. */
-  | 'no_valid_rows';
+  | 'no_valid_rows'
+  /** Numbers were exported from Excel as scientific notation (e.g. 9.17E+11). */
+  | 'scientific_notation_detected';
 
 export type ParseBroadcastCsvResult =
   | {
@@ -53,6 +55,11 @@ export function parseBroadcastCsv(text: string): ParseBroadcastCsvResult {
   const { rows, hasPhoneColumn } = parseContactCsv(text);
 
   if (!hasPhoneColumn) return { ok: false, error: 'missing_phone_column' };
+
+  const hasScientific = rows.some((r) => /[0-9]+\.[0-9]+[eE]\+[0-9]+/.test(r.phone));
+  if (hasScientific) {
+    return { ok: false, error: 'scientific_notation_detected' };
+  }
 
   const { unique, duplicates, invalid } = dedupeByPhone(rows);
   if (unique.length === 0) return { ok: false, error: 'no_valid_rows' };

@@ -120,6 +120,13 @@ describe('parseBroadcastCsv', () => {
     });
   });
 
+  it('reports scientific_notation_detected when numbers are corrupted by Excel', () => {
+    expect(parseBroadcastCsv('phone,name\n9.17043E+11,preeti')).toEqual({
+      ok: false,
+      error: 'scientific_notation_detected',
+    });
+  });
+
   it('handles CRLF line endings and a trailing newline', () => {
     const result = parseBroadcastCsv(
       'phone,name\r\n+15551230000,Ada\r\n+15559990000,Grace\r\n'

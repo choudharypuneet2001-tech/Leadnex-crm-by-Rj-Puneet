@@ -642,3 +642,4 @@ export function BroadcastPatientSearch({
     </div>
   );
 }
+
