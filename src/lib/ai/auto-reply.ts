@@ -454,6 +454,33 @@ export async function dispatchInboundToAiReply(
       'भुगतान की पूरी जानकारी और प्रक्रिया हमारी सीनियर एक्सपर्ट टीम कंसल्टेशन से पहले आपके साथ साझा करेगी।',
     )
 
+    // Intercept payment after consultation requests and ensure senior team explanation is included
+    if (
+      replyText.includes('हमारी नीतियों के अनुसार') &&
+      !replyText.includes('सीनियर Gynocci टीम')
+    ) {
+      replyText +=
+        '\n---\nजल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment Process) और आपको किस तरह डॉक्टर से कंसल्ट करना है, यह पूरी तरह समझा देगी। क्या आप इस तरीके से आगे बढ़ना चाहेंगे?'
+    }
+
+    // Clean up hallucinated fake payment links or bank account detail placeholders
+    if (
+      replyText.includes('gynocci.com/pay') ||
+      replyText.includes('[आपके बैंक का नाम]') ||
+      replyText.includes('[आपका खाता नंबर]') ||
+      replyText.includes('बैंक विवरण:') ||
+      replyText.includes('अभ्यास करते समय')
+    ) {
+      replyText =
+        'जल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान का प्रोसेस (QR Code / Scanner / Payment Link) और आपको किस तरह डॉक्टर से कंसल्ट करना है, यह पूरी तरह समझा देगी। 🙏'
+    }
+
+    // Never transliterate Latin names into Hindi Devanagari in replies
+    if (effectiveName && /^[a-zA-Z\s.]+$/.test(effectiveName)) {
+      replyText = replyText.replace(/रऊफ\s*जी?/gi, `${effectiveName} जी`)
+      replyText = replyText.replace(/पुनीत\s*जी?/gi, `${effectiveName} जी`)
+    }
+
     // Strict City line cleanup in confirmation receipt
     if (finalCity) {
       replyText = replyText.replace(/📍\s*City:\s*\[?(?:आपका शहर|शहर|Actual City|City)?\]?/gi, `📍 City: ${finalCity}`)

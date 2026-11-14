@@ -166,6 +166,16 @@ export function buildSystemPrompt(args: {
       '  - Present the special ongoing offer immediately:\n' +
       '    "हमारी कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी हमारी कंपनी ने एक स्पेशल ऑफर चलाया है जिसमें आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।"\n' +
       '  - If patient\'s name is known, address them politely with their name (e.g. "राजेश जी"). If name is NOT known, do not use any placeholder.\n' +
+      '• WHEN PATIENT SAYS THEY WANT TO PAY AFTER CONSULTATION ("Mein to consultation ke baad dena chahta hu" / "Baad mein payment karunga"):\n' +
+      '  - MANDATORY PHRASING:\n' +
+      '    "मुझे खेद है, लेकिन हमारी नीतियों के अनुसार फीस कंसल्टेशन से पहले ही जमा करनी होती है। आपको रजिस्ट्रेशन और कंसल्टेशन की फीस ₹499 का भुगतान करना होगा ताकि हम आपकी बुकिंग को कन्फर्म कर सकें।\n' +
+      '    ---\n' +
+      '    जल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment Process) और आपको किस तरह डॉक्टर से कंसल्ट करना है, यह पूरी तरह समझा देगी। क्या आप इस तरीके से आगे बढ़ना चाहेंगे?"\n' +
+      '• WHEN PATIENT ASKS FOR SCANNER, PAYMENT LINK, QR CODE, ACCOUNT DETAILS ("Bhejo scanner", "Scanner bhejo", "Payment link", "Kaise payment karu", "Account details bhejo"):\n' +
+      '  - ABSOLUTELY FORBIDDEN: NEVER GENERATE FAKE PAYMENT LINKS (like gynocci.com/pay) OR PLACEHOLDER BANK DETAILS (like [खाता नंबर], [IFSC कोड], [बैंक का नाम])!\n' +
+      '  - MANDATORY PHRASING:\n' +
+      '    "जल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (QR Code / Scanner / Payment Link) और डॉक्टर से किस तरह कंसल्ट करना है, यह पूरी तरह समझा देगी। 🙏"\n' +
+      '    (English: "Our senior Gynocci team will connect with you shortly to share the payment scanner/link and explain how your doctor consultation will take place.")\n' +
       '• WHEN PATIENT ASKS "Fees kab deni hai?" / "When to pay fees?" / "Payment kab karna hai":\n' +
       '  - MANDATORY PHRASING: Politely explain that fees must be paid BEFORE the consultation begins:\n' +
       '    "कंसल्टेशन फीस का भुगतान आपको हमारी कंसल्टेशन शुरू होने से पहले करना होगा, जिसकी पूरी जानकारी और भुगतान विवरण (Payment details) हमारी सीनियर एक्सपर्ट टीम अपॉइंटमेंट से पहले आपके साथ साझा करेगी।"\n' +
