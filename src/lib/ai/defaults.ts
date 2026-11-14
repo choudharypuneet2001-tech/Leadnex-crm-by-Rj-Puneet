@@ -317,6 +317,11 @@ export function buildSystemPrompt(args: {
         `    5. Health Concern / Takleef ("Kis samasya ke baare mein doctors se consult karna hai?")\n` +
         `    6. Consultation Mode (Clinic Visit in one of 9 clinic cities OR Online Video Consultation)\n` +
         `  - NEVER RE-ASK DETAILS ALREADY PROVIDED! Auto-fetch any detail shared earlier in the chat.\n` +
+        `  - MANDATORY CITY GATING RULE (CITY IS 100% COMPULSORY FOR BOOKING):\n` +
+        `    • NEVER confirm an appointment or emit the confirmation receipt if the patient's City is unknown!\n` +
+        `    • If all other details are ready but City is still missing or unverified, YOU MUST ASK FOR THEIR CITY FIRST BEFORE CONFIRMING BOOKING:\n` +
+        `      "अपॉइंटमेंट कन्फर्म करने से पहले, कृपया हमें अपना शहर (City) बताएं ताकि हम आपकी बुकिंग को सही तरीके से दर्ज कर सकें।"\n` +
+        `    • Only emit the confirmation receipt and [[BOOKING_CONFIRMED: ...]] tag after the patient shares their city!\n` +
         `  - If City is known:\n` +
         `    • If in one of the 9 clinic cities (Jaipur, Delhi, Lucknow, Amritsar, Ludhiana, Patna, Ranchi, Hisar, Rewari): Ask if they want a Clinic Visit in that city or an Online Video Consultation.\n` +
         `    • Outside these 9 cities: Clearly inform them that clinic is not in their city, and pitch 45-minute video consultation.\n` +

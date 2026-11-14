@@ -183,10 +183,10 @@ export async function dispatchInboundToAiReply(
     // Effective city: prefer traced city from chat
     let effectiveCity =
       tracedCity ||
-      (contact?.company && !contact.company.includes('[') && !contact.company.includes('शहर')
+      (contact?.company && !contact.company.includes('[') && !contact.company.includes('शहर') && contact.company.toLowerCase() !== 'naam' && contact.company.toLowerCase() !== 'patient'
         ? contact.company
         : null) ||
-      ((contact as any)?.city && !(contact as any).city.includes('[') ? (contact as any).city : null) ||
+      ((contact as any)?.city && !(contact as any).city.includes('[') && (contact as any).city.toLowerCase() !== 'naam' && (contact as any).city.toLowerCase() !== 'patient' ? (contact as any).city : null) ||
       null
 
     const effectivePhone = tracedPhone || contact?.phone || null
@@ -307,7 +307,7 @@ export async function dispatchInboundToAiReply(
 
         const rawCity = bookingConfirmed.city?.trim() || ''
         const city =
-          rawCity && !rawCity.includes('[') && !rawCity.includes('शहर')
+          rawCity && !rawCity.includes('[') && !rawCity.includes('शहर') && rawCity.toLowerCase() !== 'naam' && rawCity.toLowerCase() !== 'patient'
             ? rawCity
             : (effectiveCity || '')
 
@@ -328,29 +328,33 @@ export async function dispatchInboundToAiReply(
         const clinicLocation = isClinicCity(city) ? (bookingConfirmed.clinic_location?.trim() || `${city} Clinic`) : null
         const notes = bookingConfirmed.age || tracedAge ? `Age: ${bookingConfirmed.age || tracedAge}` : null
 
-        const { error: bookingErr } = await db.from('bookings').insert({
-          account_id: accountId,
-          contact_id: contactId,
-          conversation_id: conversationId,
-          booking_query_id: queryId,
-          patient_name: patientName,
-          phone: phone,
-          city: city,
-          preferred_date: preferredDate,
-          preferred_time: preferredTime,
-          health_concern: healthConcern,
-          consultation_type: consultationType,
-          clinic_location: clinicLocation,
-          ad_name: contact?.ad_name || null,
-          ad_id: contact?.ad_id || null,
-          notes: notes,
-          status: 'confirmed',
-        })
+        if (city && city.toLowerCase() !== 'naam' && city.toLowerCase() !== 'patient') {
+          const { error: bookingErr } = await db.from('bookings').insert({
+            account_id: accountId,
+            contact_id: contactId,
+            conversation_id: conversationId,
+            booking_query_id: queryId,
+            patient_name: patientName,
+            phone: phone,
+            city: city,
+            preferred_date: preferredDate,
+            preferred_time: preferredTime,
+            health_concern: healthConcern,
+            consultation_type: consultationType,
+            clinic_location: clinicLocation,
+            ad_name: contact?.ad_name || null,
+            ad_id: contact?.ad_id || null,
+            notes: notes,
+            status: 'confirmed',
+          })
 
-        if (bookingErr) {
-          console.error('[ai auto-reply] failed to record booking:', bookingErr)
+          if (bookingErr) {
+            console.error('[ai auto-reply] failed to record booking:', bookingErr)
+          } else {
+            console.log(`[ai auto-reply] recorded booking ${queryId} for contact ${contactId}`)
+          }
         } else {
-          console.log(`[ai auto-reply] recorded booking ${queryId} for contact ${contactId}`)
+          console.log(`[ai auto-reply] booking confirmation delayed — city is missing or invalid for contact ${contactId}`)
         }
       } catch (bookingSaveErr) {
         console.warn('[ai auto-reply] booking save exception:', bookingSaveErr)
@@ -380,7 +384,7 @@ export async function dispatchInboundToAiReply(
       finalPatientName = effectiveName
     }
     const finalCity =
-      (bookingConfirmed?.city && !bookingConfirmed.city.includes('[') && !bookingConfirmed.city.includes('शहर'))
+      (bookingConfirmed?.city && !bookingConfirmed.city.includes('[') && !bookingConfirmed.city.includes('शहर') && bookingConfirmed.city.toLowerCase() !== 'naam' && bookingConfirmed.city.toLowerCase() !== 'patient')
         ? bookingConfirmed.city.trim()
         : (effectiveCity || '')
     const finalAge = bookingConfirmed?.age || tracedAge || ''
@@ -406,6 +410,14 @@ export async function dispatchInboundToAiReply(
     replyText = replyText.replace(/\[(?:Actual Phone|Phone|Mobile)\]/gi, finalPhone)
     replyText = replyText.replace(/\[(?:Actual City|City|आपका शहर|शहर)\]/gi, finalCity)
 
+    // City Gating Rule: If booking was triggered without a valid city, prompt for city instead of emitting receipt
+    if (!finalCity || finalCity.toLowerCase() === 'naam' || finalCity.toLowerCase() === 'patient') {
+      if (replyText.includes('Booking ID:') || replyText.includes('सफलतापूर्वक दर्ज')) {
+        replyText =
+          'अपॉइंटमेंट कन्फर्म करने से पहले, कृपया हमें अपना शहर (City) बताएं ताकि हम आपकी बुकिंग में शहर की सही जानकारी दर्ज कर सकें।'
+      }
+    }
+
     // Clean up any leaked [Name] / [Patient Name] placeholders and ensure gender-aware titles
     if (effectiveName) {
       const isFemale = isLikelyFemaleName(effectiveName)
@@ -426,18 +438,22 @@ export async function dispatchInboundToAiReply(
     const userMessagesCount = messages.filter((m) => m.role === 'user').length
     if (userMessagesCount > 1) {
       replyText = replyText.replace(
-        /^(?:नमस्ते!\s*Gynocci\s*Femtech\s*में\s*आपका\s*स्वागत\s*है।?\s*(?:🙏)?\s*(?:---\n*)?)/gi,
+        /^(?:नमस्ते!\s*Gynocci\s*Femtech\s*में\s*आपका\s*स्वागत\s*है।?\s*(?:🙏)?\s*(?:---\s*)?\n*)+/gi,
         '',
       )
       replyText = replyText.replace(
-        /^(?:Hello!\s*Welcome\s*to\s*Gynocci\s*Femtech\.?\s*(?:🙏)?\s*(?:---\n*)?)/gi,
+        /^(?:Hello!\s*Welcome\s*to\s*Gynocci\s*Femtech\.?\s*(?:🙏)?\s*(?:---\s*)?\n*)+/gi,
         '',
       )
       replyText = replyText.trim()
     }
 
     // If English was requested or inbound was English, prevent refusal or Hindi fallback
-    if (isEnglish) {
+    const isExplicitEnglishRequest = /\b(?:talk\s+in\s+eng[li]+sh|speak\s+in\s+eng[li]+sh|in\s+eng[li]+sh\s+please|can\s+we\s+talk\s+in\s+eng[li]+sh|can\s+you\s+talk\s+in\s+eng[li]+sh)\b/i.test(userMsg)
+    if (isExplicitEnglishRequest) {
+      replyText =
+        'Yes, absolutely! I would be glad to assist you in English. How may I help you today? Could you please share your name, which city you are from, and what health concern you would like to consult our doctors about?'
+    } else if (isEnglish) {
       replyText = replyText.replace(
         /(?:मैं हिंदी में ही बात कर सकती हूँ|main hindi me hi baat kar sakti hoon|i can only speak hindi)[^.\n]*[.\n]?/gi,
         'Yes, absolutely! I would be glad to assist you in English. How may I help you today?',
@@ -463,16 +479,21 @@ export async function dispatchInboundToAiReply(
         '\n---\nजल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment Process) और आपको किस तरह डॉक्टर से कंसल्ट करना है, यह पूरी तरह समझा देगी। क्या आप इस तरीके से आगे बढ़ना चाहेंगे?'
     }
 
-    // Clean up hallucinated fake payment links or bank account detail placeholders
+    // Clean up hallucinated fake payment links, scanner requests or bank account detail placeholders
+    const isAskingScannerOrPayment = /\b(?:scanner|scaneer|scaner|qr\s*code|qr|payment\s*link|pay\s*link|bhejo\s*scanner|scanner\s*bhejo|bank\s*details|account\s*number)\b/i.test(userMsg)
     if (
+      isAskingScannerOrPayment ||
       replyText.includes('gynocci.com/pay') ||
       replyText.includes('[आपके बैंक का नाम]') ||
       replyText.includes('[आपका खाता नंबर]') ||
       replyText.includes('बैंक विवरण:') ||
-      replyText.includes('अभ्यास करते समय')
+      replyText.includes('अभ्यास करते समय') ||
+      /\[(?:खाता नंबर|IFSC|बैंक का नाम|Account Number|IFSC Code|Bank Name|आपका खाता नंबर|आपके बैंक का नाम|आपका IFSC कोड)\]/i.test(replyText) ||
+      /https?:\/\/(?:www\.)?gynocci\.com\/pay/i.test(replyText)
     ) {
-      replyText =
-        'जल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान का प्रोसेस (QR Code / Scanner / Payment Link) और आपको किस तरह डॉक्टर से कंसल्ट करना है, यह पूरी तरह समझा देगी। 🙏'
+      replyText = isEnglish
+        ? 'Our senior Gynocci team will connect with you shortly to share the payment details (QR Code / Scanner / Payment Link) and guide you on how your doctor consultation will take place. 🙏'
+        : 'जल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान का प्रोसेस (QR Code / Scanner / Payment Link) और डॉक्टर से किस तरह कंसल्ट करना है, यह पूरी तरह समझा देगी। 🙏'
     }
 
     // Never transliterate Latin names into Hindi Devanagari in replies
@@ -482,7 +503,8 @@ export async function dispatchInboundToAiReply(
     }
 
     // Strict City line cleanup in confirmation receipt
-    if (finalCity) {
+    if (finalCity && finalCity.toLowerCase() !== 'naam' && finalCity.toLowerCase() !== 'patient') {
+      replyText = replyText.replace(/📍\s*City:\s*([^\n]+)/gi, `📍 City: ${finalCity}`)
       replyText = replyText.replace(/📍\s*City:\s*\[?(?:आपका शहर|शहर|Actual City|City)?\]?/gi, `📍 City: ${finalCity}`)
     }
 
@@ -763,44 +785,119 @@ export function isClinicCity(city?: string | null): boolean {
   )
 }
 
-const KNOWN_INDIAN_CITIES = [
-  'Jaipur', 'Delhi', 'New Delhi', 'Lucknow', 'Amritsar', 'Ludhiana', 'Patna', 'Ranchi', 'Hisar', 'Rewari',
-  'Kanpur', 'Bikaner', 'Kota', 'Jodhpur', 'Udaipur', 'Ajmer', 'Sikar', 'Alwar', 'Agra', 'Bareilly',
-  'Varanasi', 'Meerut', 'Ghaziabad', 'Noida', 'Gurgaon', 'Gurugram', 'Faridabad', 'Chandigarh',
-  'Jalandhar', 'Bathinda', 'Rohtak', 'Panipat', 'Karnal', 'Sonipat', 'Indore', 'Bhopal', 'Gwalior',
-  'Jabalpur', 'Raipur', 'Bilaspur', 'Kolkata', 'Ahmedabad', 'Surat', 'Vadodara', 'Rajkot',
-  'Mumbai', 'Pune', 'Nagpur', 'Nashik', 'Hyderabad', 'Bengaluru', 'Bangalore', 'Chennai',
-  'Dehradun', 'Haridwar', 'Gaya', 'Muzaffarpur', 'Dhanbad', 'Jamshedpur', 'Prayagraj', 'Allahabad',
-  'Gorakhpur', 'Ayodhya', 'Mathura', 'Aligarh', 'Moradabad', 'Saharanpur', 'Jhansi',
-  'Ujjain', 'Bhilwara', 'Bharatpur', 'Pali', 'Tonk', 'Jhunjhunu', 'Churu', 'Sri Ganganagar'
+const KNOWN_INDIAN_CITIES: { name: string; aliases: string[] }[] = [
+  { name: 'Jaipur', aliases: ['jaipur', 'जयपुर'] },
+  { name: 'Delhi', aliases: ['delhi', 'new delhi', 'दिल्ली', 'नई दिल्ली'] },
+  { name: 'Lucknow', aliases: ['lucknow', 'लखनऊ'] },
+  { name: 'Amritsar', aliases: ['amritsar', 'अमृतसर'] },
+  { name: 'Ludhiana', aliases: ['ludhiana', 'लुधियाना'] },
+  { name: 'Patna', aliases: ['patna', 'पटना'] },
+  { name: 'Ranchi', aliases: ['ranchi', 'रांची'] },
+  { name: 'Hisar', aliases: ['hisar', 'हिसार'] },
+  { name: 'Rewari', aliases: ['rewari', 'रेवाड़ी'] },
+  { name: 'Kanpur', aliases: ['kanpur', 'कानपुर'] },
+  { name: 'Bikaner', aliases: ['bikaner', 'बीकानेर'] },
+  { name: 'Kota', aliases: ['kota', 'कोटा'] },
+  { name: 'Jodhpur', aliases: ['jodhpur', 'जोधपुर'] },
+  { name: 'Udaipur', aliases: ['udaipur', 'उदयपुर'] },
+  { name: 'Ajmer', aliases: ['ajmer', 'अजमेर'] },
+  { name: 'Sikar', aliases: ['sikar', 'सीकर'] },
+  { name: 'Alwar', aliases: ['alwar', 'अलवर'] },
+  { name: 'Agra', aliases: ['agra', 'आगरा'] },
+  { name: 'Bareilly', aliases: ['bareilly', 'बरेली'] },
+  { name: 'Varanasi', aliases: ['varanasi', 'बनारस', 'वाराणसी', 'kashi'] },
+  { name: 'Meerut', aliases: ['meerut', 'मेरठ'] },
+  { name: 'Ghaziabad', aliases: ['ghaziabad', 'गाजियाबाद'] },
+  { name: 'Noida', aliases: ['noida', 'नोएडा'] },
+  { name: 'Gurgaon', aliases: ['gurgaon', 'gurugram', 'गुड़गांव', 'गुरुग्राम'] },
+  { name: 'Faridabad', aliases: ['faridabad', 'फरीदाबाद'] },
+  { name: 'Chandigarh', aliases: ['chandigarh', 'चंडीगढ़'] },
+  { name: 'Jalandhar', aliases: ['jalandhar', 'जालंधर'] },
+  { name: 'Bathinda', aliases: ['bathinda', 'बठिंडा'] },
+  { name: 'Rohtak', aliases: ['rohtak', 'रोहतक'] },
+  { name: 'Panipat', aliases: ['panipat', 'पानीपत'] },
+  { name: 'Karnal', aliases: ['karnal', 'करनाल'] },
+  { name: 'Sonipat', aliases: ['sonipat', 'सोनीपत'] },
+  { name: 'Indore', aliases: ['indore', 'इंदौर'] },
+  { name: 'Bhopal', aliases: ['bhopal', 'भोपाल'] },
+  { name: 'Gwalior', aliases: ['gwalior', 'ग्वालियर'] },
+  { name: 'Jabalpur', aliases: ['jabalpur', 'जबलपुर'] },
+  { name: 'Raipur', aliases: ['raipur', 'रायपुर'] },
+  { name: 'Bilaspur', aliases: ['bilaspur', 'बिलासपुर'] },
+  { name: 'Kolkata', aliases: ['kolkata', 'calcutta', 'कोलकाता'] },
+  { name: 'Ahmedabad', aliases: ['ahmedabad', 'अहमदाबाद'] },
+  { name: 'Surat', aliases: ['surat', 'सूरत'] },
+  { name: 'Vadodara', aliases: ['vadodara', 'baroda', 'वडोदरा'] },
+  { name: 'Rajkot', aliases: ['rajkot', 'राजकोट'] },
+  { name: 'Mumbai', aliases: ['mumbai', 'bombay', 'मुंबई'] },
+  { name: 'Pune', aliases: ['pune', 'poona', 'पुणे'] },
+  { name: 'Nagpur', aliases: ['nagpur', 'नागपुर'] },
+  { name: 'Nashik', aliases: ['nashik', 'नासिक'] },
+  { name: 'Hyderabad', aliases: ['hyderabad', 'हैदराबाद'] },
+  { name: 'Bengaluru', aliases: ['bengaluru', 'bangalore', 'बेंगलुरु', 'बैंगलोर'] },
+  { name: 'Chennai', aliases: ['chennai', 'madras', 'चेन्नई'] },
+  { name: 'Dehradun', aliases: ['dehradun', 'देहरादून'] },
+  { name: 'Haridwar', aliases: ['haridwar', 'हरिद्वार'] },
+  { name: 'Gaya', aliases: ['gaya', 'गया'] },
+  { name: 'Muzaffarpur', aliases: ['muzaffarpur', 'मुजफ्फरपुर'] },
+  { name: 'Dhanbad', aliases: ['dhanbad', 'धनबाद'] },
+  { name: 'Jamshedpur', aliases: ['jamshedpur', 'जमशेदपुर'] },
+  { name: 'Prayagraj', aliases: ['prayagraj', 'allahabad', 'प्रयागराज', 'इलाहाबाद'] },
+  { name: 'Gorakhpur', aliases: ['gorakhpur', 'गोरखपुर'] },
+  { name: 'Ayodhya', aliases: ['ayodhya', 'अयोध्या'] },
+  { name: 'Mathura', aliases: ['mathura', 'मथुरा'] },
+  { name: 'Aligarh', aliases: ['aligarh', 'अलीगढ़'] },
+  { name: 'Moradabad', aliases: ['moradabad', 'मुरादाबाद'] },
+  { name: 'Saharanpur', aliases: ['saharanpur', 'सहारनपुर'] },
+  { name: 'Jhansi', aliases: ['jhansi', 'झांसी'] },
+  { name: 'Ujjain', aliases: ['ujjain', 'उज्जैन'] },
+  { name: 'Bhilwara', aliases: ['bhilwara', 'भीलवाड़ा'] },
+  { name: 'Bharatpur', aliases: ['bharatpur', 'भरतपुर'] },
+  { name: 'Pali', aliases: ['pali', 'पाली'] },
+  { name: 'Tonk', aliases: ['tonk', 'टोंक'] },
+  { name: 'Jhunjhunu', aliases: ['jhunjhunu', 'झुंझुनू'] },
+  { name: 'Churu', aliases: ['churu', 'चूरू'] },
+  { name: 'Sri Ganganagar', aliases: ['sri ganganagar', 'ganganagar', 'गंगानगर'] },
 ]
 
 export function extractCityFromMessages(messages: { role: string; content: string }[]): string | null {
-  const cityRegexes = [
-    /(?:mein\s+to\s+|hum\s+|main\s+|me\s+)?([a-zA-Z\u0900-\u097F]{3,20})\s+se\s+(?:hu|hoon|hai|h|hain|rehta|rehti)\b/i,
-    /(?:shehar|city|location|from)\s*(?::|=|-)?\s*([a-zA-Z\u0900-\u097F]{3,20})/i,
-    /\b([a-zA-Z\u0900-\u097F]{3,20})\s+se\b/i,
-  ]
   const nonCities = new Set([
     'aap', 'yaha', 'waha', 'ghar', 'subah', 'shaam', 'online', 'doctor', 'clinic', 'hospital',
     'mein', 'hum', 'sir', 'maam', 'theek', 'kaha', 'kahan', 'hai', 'paas', 'sabse', 'kripya',
-    'shuru', 'bhi', 'kuch', 'bahut', 'pareshan', 'shadi', 'pehle', 'baad', 'conusltation', 'consultation'
+    'shuru', 'bhi', 'kuch', 'bahut', 'pareshan', 'shadi', 'pehle', 'baad', 'conusltation', 'consultation',
+    'naam', 'name', 'kiske', 'apne', 'apna', 'apni', 'mere', 'mera', 'meri', 'wife', 'husband',
+    'pati', 'patni', 'bache', 'bacha', 'dil', 'dawa', 'dawai', 'ilaaj', 'treatment', 'madhyam',
+    'tarah', 'rupaye', 'rupees', 'fees', 'paise', 'humare', 'hamare', 'unke', 'inka', 'sab',
+    'yeh', 'ye', 'woh', 'wo', 'aise', 'baat', 'start', 'kare', 'karna', 'karein', 'patient',
+    'kisse', 'isse', 'usse', 'kaise', 'karo', 'karen', 'dena', 'deni', 'lena', 'leni'
   ])
 
-  // Scan user messages in reverse chronological order
+  // PASS 1: Check known Indian cities (newest user message to oldest)
+  // Ensures recognized cities like Surat, Aligarh, Jaipur ALWAYS win over accidental regex matches!
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role !== 'user') continue
     const text = messages[i].content.trim()
 
-    // 1. Check known Indian cities with word boundary
     for (const kc of KNOWN_INDIAN_CITIES) {
-      const wReg = new RegExp(`\\b${kc}\\b`, 'i')
-      if (wReg.test(text)) {
-        return kc
+      for (const alias of kc.aliases) {
+        const wReg = new RegExp(`(^|[^a-zA-Z\u0900-\u097F])${alias}([^a-zA-Z\u0900-\u097F]|$)`, 'i')
+        if (wReg.test(text)) {
+          return kc.name
+        }
       }
     }
+  }
 
-    // 2. Check conversational patterns
+  // PASS 2: Conversational patterns for any other unlisted city
+  const cityRegexes = [
+    /(?:mein\s+to\s+|hum\s+|main\s+|me\s+|rehta\s+|rehti\s+)?([a-zA-Z\u0900-\u097F]{3,20})\s+se(?:\s+(?:hu|hoon|hai|h|hain|rehta|rehti|aaya|aayi))?\b/i,
+    /(?:shehar|city|location|from)\s*(?::|=|-)?\s*([a-zA-Z\u0900-\u097F]{3,20})/i,
+  ]
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'user') continue
+    const text = messages[i].content.trim()
+
     for (const reg of cityRegexes) {
       const match = text.match(reg)
       if (match && match[1]) {
@@ -811,6 +908,7 @@ export function extractCityFromMessages(messages: { role: string; content: strin
       }
     }
   }
+
   return null
 }
 
@@ -819,6 +917,7 @@ const NON_NAME_WORDS = new Set([
   'yes', 'no', 'ha', 'haa', 'haan', 'han', 'ok', 'okay', 'ji', 'sir', 'maam', 'mam',
   'pcod', 'pcos', 'tubal', 'blockage', 'sperm', 'infertility', 'periods',
   'jaipur', 'delhi', 'lucknow', 'aligarh', 'amritsar', 'ludhiana', 'patna', 'ranchi', 'hisar', 'rewari', 'kanpur', 'bikaner', 'kota',
+  'surat', 'mumbai', 'pune', 'indore', 'bhopal', 'agra', 'ahmedabad', 'vadodara', 'rajkot', 'meerut', 'ghaziabad', 'noida', 'gurgaon', 'gurugram',
   'today', 'tomorrow', 'aaj', 'kal', 'parso', 'clinic', 'video', 'consultation', 'doctor'
 ])
 

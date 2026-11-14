@@ -490,4 +490,47 @@ describe('Conversation history extraction helpers', () => {
     expect(malePrompt).toContain('Rajesh Sir')
     expect(malePrompt).toContain('PATIENT GENDER: MALE')
   })
+
+  it('extracts Surat correctly when user said Surat earlier and naam se later', async () => {
+    const { extractCityFromMessages } = await import('./auto-reply')
+    const messages = [
+      { role: 'user', content: 'Puneet' },
+      { role: 'assistant', content: 'नमस्ते! आप किस शहर से हैं?' },
+      { role: 'user', content: 'Surat' },
+      { role: 'assistant', content: 'आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं?' },
+      { role: 'user', content: 'Meri wife ke naam se kar do' },
+    ]
+    expect(extractCityFromMessages(messages)).toBe('Surat')
+  })
+
+  it('extracts Aligarh when user corrects city from Jaipur to Aligarh', async () => {
+    const { extractCityFromMessages } = await import('./auto-reply')
+    const messages = [
+      { role: 'user', content: 'Jaipur' },
+      { role: 'assistant', content: 'बहुत अच्छा!' },
+      { role: 'user', content: 'Nahi nahi' },
+      { role: 'user', content: 'Mein aligarh se' },
+    ]
+    expect(extractCityFromMessages(messages)).toBe('Aligarh')
+  })
+
+  it('does not extract false positive phrases like naam se or doctor se as city', async () => {
+    const { extractCityFromMessages } = await import('./auto-reply')
+    const messages = [
+      { role: 'user', content: 'Mere naam se kar do' },
+      { role: 'user', content: 'Doctor se kab milenge' },
+    ]
+    expect(extractCityFromMessages(messages)).toBeNull()
+  })
+
+  it('enforces mandatory city gating rule in system prompt', async () => {
+    const { buildSystemPrompt } = await import('./defaults')
+    const prompt = buildSystemPrompt({
+      userPrompt: null,
+      mode: 'auto_reply',
+      isEnglish: false,
+    })
+    expect(prompt).toContain('MANDATORY CITY GATING RULE')
+    expect(prompt).toContain('अपॉइंटमेंट कन्फर्म करने से पहले, कृपया हमें अपना शहर (City) बताएं')
+  })
 })
