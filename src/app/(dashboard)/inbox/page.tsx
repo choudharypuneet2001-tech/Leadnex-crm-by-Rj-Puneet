@@ -38,10 +38,11 @@ function InboxPageInner() {
   const searchParams = useSearchParams();
   /**
    * `?c=<id>` deep-link support. Used when landing here from the
-   * dashboard's recent-conversations list so the right thread opens
-   * automatically instead of showing the empty center panel.
+   * dashboard's recent-conversations list or Bookings page so the right
+   * thread opens automatically instead of showing the empty center panel.
    */
-  const deepLinkConvId = searchParams.get("c");
+  const deepLinkConvId = searchParams.get("c") || searchParams.get("conversationId");
+  const deepLinkContactId = searchParams.get("contactId");
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] =
@@ -409,30 +410,23 @@ function InboxPageInner() {
       // via the ref, so realtime refreshes of the list can't snap the
       // user back to the deep-linked thread after they've navigated.
       if (
-        deepLinkConvId &&
-        autoSelectedForDeepLinkRef.current !== deepLinkConvId &&
+        (deepLinkConvId || deepLinkContactId) &&
+        autoSelectedForDeepLinkRef.current !== (deepLinkConvId || deepLinkContactId) &&
         loaded.length > 0
       ) {
-        autoSelectedForDeepLinkRef.current = deepLinkConvId;
-        // If the deep-linked conversation is already the active one
-        // (e.g. because the user clicked it in the list and we
-        // router.replace()'d the URL, which made the ConversationList
-        // refetch and land us back here), do NOT re-apply it. Doing so
-        // would setMessages([]) on a thread whose messages have
-        // already been loaded by MessageThread — and because
-        // conversationId didn't change, MessageThread wouldn't
-        // refetch. The thread would read "No messages yet" until a
-        // full page reload rehydrated state from scratch.
-        if (activeConversation?.id === deepLinkConvId) return;
-        const match = loaded.find((c) => c.id === deepLinkConvId);
+        autoSelectedForDeepLinkRef.current = deepLinkConvId || deepLinkContactId;
+        if (deepLinkConvId && activeConversation?.id === deepLinkConvId) return;
+        const match = deepLinkConvId
+          ? loaded.find((c) => c.id === deepLinkConvId)
+          : loaded.find(
+              (c) =>
+                c.contact_id === deepLinkContactId ||
+                c.contact?.id === deepLinkContactId,
+            );
         if (match) {
           setActiveConversation(match);
           setActiveContact(match.contact ?? null);
           setMessages([]);
-          // Mirror the optimistic unread reset that handleSelectConversation
-          // does — the user just deep-linked into this conv, treat that the
-          // same as a click. Leaves activeConversation.unread_count alone so
-          // the MessageThread reset effect still fires the server UPDATE.
           if (match.unread_count > 0) {
             setConversations((prev) =>
               prev.map((c) =>
@@ -443,7 +437,7 @@ function InboxPageInner() {
         }
       }
     },
-    [deepLinkConvId, activeConversation?.id]
+    [deepLinkConvId, deepLinkContactId, activeConversation?.id]
   );
 
   const handleSelectConversation = useCallback(

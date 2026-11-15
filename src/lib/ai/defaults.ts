@@ -164,7 +164,7 @@ export function buildSystemPrompt(args: {
       '• When ANY patient asks about fees, cost, charges, or ilaaj ka kharcha:\n' +
       '  - State: Consultation Fees ₹1,000 and Registration Fees ₹500.\n' +
       '  - Present the special ongoing offer immediately:\n' +
-      '    "हमारी कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी हमारी कंपनी ने एक स्पेशल ऑफर चलाया है जिसमें आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।"\n' +
+      '    "हमारी कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी Gynocci ने एक स्पेशल ऑफर चलाया है जहाँ पर आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।"\n' +
       '  - If patient\'s name is known, address them politely with their name (e.g. "राजेश जी"). If name is NOT known, do not use any placeholder.\n' +
       '• WHEN PATIENT SAYS THEY WANT TO PAY AFTER CONSULTATION ("Mein to consultation ke baad dena chahta hu" / "Baad mein payment karunga"):\n' +
       '  - MANDATORY PHRASING:\n' +
@@ -345,7 +345,7 @@ export function buildSystemPrompt(args: {
         `    🩺 स्वास्थ्य समस्या: [समस्या Hindi में] ([English Problem Name in brackets, e.g. बच्चा न होना एवं लो स्पर्म काउंट (Male Infertility & Low Sperm Count)])\n` +
         `    ---\n` +
         `    आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n\n` +
-        `    हमारी सामान्य कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी हमारी कंपनी ने एक स्पेशल ऑफर चलाया है जिसमें आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।\n\n` +
+        `    हमारी सामान्य कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी Gynocci ने एक स्पेशल ऑफर चलाया है जहाँ पर आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।\n\n` +
         `    कंसल्टेशन फीस का भुगतान आपको कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment QR Code / Link) और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। ✨\n` +
         `  - AT THE VERY END OF YOUR CONFIRMATION REPLY, ALWAYS APPEND THIS HIDDEN TAG:\n` +
         `    [[BOOKING_CONFIRMED: {"booking_query_id": "#GYN-001", "patient_name": "...", "phone": "...", "city": "...", "age": "...", "preferred_date": "...", "preferred_time": "...", "health_concern": "...", "consultation_type": "clinic_visit" | "video_consultation", "clinic_location": "..."}]]\n` +

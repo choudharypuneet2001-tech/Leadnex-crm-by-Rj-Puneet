@@ -264,6 +264,67 @@ export default function BookingsPage() {
     toast.success('Bookings exported to CSV');
   };
 
+  const handleOpenInbox = async (b: Booking) => {
+    // 1. Direct conversation_id from booking record
+    if (b.conversation_id) {
+      router.push(`/inbox?c=${b.conversation_id}`);
+      return;
+    }
+
+    // 2. Lookup by contact_id if conversation_id was not populated
+    if (b.contact_id) {
+      try {
+        const { data: conv } = await supabase
+          .from('conversations')
+          .select('id')
+          .eq('contact_id', b.contact_id)
+          .order('last_message_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (conv?.id) {
+          router.push(`/inbox?c=${conv.id}`);
+          return;
+        }
+      } catch (err) {
+        console.warn('[bookings] conversation lookup by contact_id failed:', err);
+      }
+    }
+
+    // 3. Fallback: Lookup by phone number
+    if (b.phone) {
+      try {
+        const digits = b.phone.replace(/\D/g, '');
+        const last10 = digits.slice(-10);
+        const { data: contacts } = await supabase
+          .from('contacts')
+          .select('id')
+          .ilike('phone', `%${last10}%`)
+          .limit(1);
+
+        if (contacts && contacts[0]) {
+          const { data: conv } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('contact_id', contacts[0].id)
+            .order('last_message_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (conv?.id) {
+            router.push(`/inbox?c=${conv.id}`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[bookings] conversation lookup by phone failed:', err);
+      }
+    }
+
+    // 4. Default fallback to general inbox
+    router.push('/inbox');
+  };
+
   // Filtered list
   const filteredBookings = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -516,13 +577,27 @@ export default function BookingsPage() {
 
                       {/* Patient Details */}
                       <TableCell>
-                        <div className="space-y-0.5">
+                        <div className="space-y-1">
                           <div className="font-medium text-foreground text-sm flex items-center gap-1.5">
                             <User className="h-3.5 w-3.5 text-muted-foreground" />
                             {b.patient_name}
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             <span>{formatPhoneDisplay(b.phone)}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-[11px] gap-1 font-semibold text-primary border-primary/30 bg-primary/5 hover:bg-primary/15 transition-all shadow-2xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenInbox(b);
+                              }}
+                              title="Open chat in CRM Inbox"
+                            >
+                              <MessageSquare className="h-3 w-3 text-primary" />
+                              Inbox
+                            </Button>
                             <a
                               href={waUrl}
                               target="_blank"
@@ -530,7 +605,6 @@ export default function BookingsPage() {
                               onClick={(e) => e.stopPropagation()}
                               className="text-emerald-600 hover:text-emerald-700 font-medium inline-flex items-center gap-0.5"
                             >
-                              <MessageSquare className="h-3 w-3" />
                               WhatsApp
                             </a>
                             <a
@@ -689,63 +763,68 @@ export default function BookingsPage() {
 
                       {/* Actions */}
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            }
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2 gap-1 text-xs text-primary hover:text-primary hover:bg-primary/10 font-medium"
+                            onClick={() => handleOpenInbox(b)}
+                            title="Open conversation in CRM Inbox"
                           >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedBooking(b);
-                                setDetailOpen(true);
-                              }}
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Inbox</span>
+                          </Button>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              }
                             >
-                              View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                if (b.conversation_id) {
-                                  router.push(`/inbox?conversationId=${b.conversation_id}`);
-                                } else {
-                                  router.push('/inbox');
-                                }
-                              }}
-                            >
-                              <MessageSquare className="h-4 w-4 mr-2 text-primary" />
-                              Open Inbox Chat
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleCopy(b.booking_query_id, b.id)}
-                            >
-                              <Copy className="h-4 w-4 mr-2" />
-                              Copy Query ID
-                            </DropdownMenuItem>
-                            {(accountRole === 'owner' || accountRole === 'admin') && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-rose-600 dark:text-rose-400"
-                                  onClick={() => {
-                                    setDeleteTarget(b);
-                                    setDeleteOpen(true);
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedBooking(b);
+                                  setDetailOpen(true);
+                                }}
+                              >
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenInbox(b)}>
+                                <MessageSquare className="h-4 w-4 mr-2 text-primary" />
+                                Open Inbox Chat
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleCopy(b.booking_query_id, b.id)}
+                              >
+                                <Copy className="h-4 w-4 mr-2" />
+                                Copy Query ID
+                              </DropdownMenuItem>
+                              {(accountRole === 'owner' || accountRole === 'admin') && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-rose-600 dark:text-rose-400"
+                                    onClick={() => {
+                                      setDeleteTarget(b);
+                                      setDeleteOpen(true);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -887,20 +966,30 @@ export default function BookingsPage() {
               )}
 
               {/* Quick Actions */}
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex flex-col sm:flex-row items-center gap-2 pt-2">
                 <Button
-                  className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  className="w-full sm:flex-1 gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+                  onClick={() => {
+                    handleOpenInbox(selectedBooking);
+                  }}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Open in CRM Inbox
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full sm:flex-1 gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
                   onClick={() => {
                     const digits = selectedBooking.phone.replace(/\D/g, '');
                     window.open(`https://wa.me/${digits}`, '_blank');
                   }}
                 >
-                  <MessageSquare className="h-4 w-4" />
-                  Chat on WhatsApp
+                  <MessageSquare className="h-4 w-4 text-emerald-600" />
+                  WhatsApp
                 </Button>
                 <Button
                   variant="outline"
-                  className="flex-1 gap-1.5"
+                  className="w-full sm:flex-1 gap-1.5"
                   onClick={() => {
                     window.location.href = `tel:${selectedBooking.phone}`;
                   }}
