@@ -292,15 +292,52 @@ export async function dispatchInboundToAiReply(
 
     let assignedQueryId: string | null = null
 
+    // Fallback: If model generated a booking receipt in text but bookingConfirmed tag was missing or truncated
+    let effectiveBooking = bookingConfirmed
+    if (!effectiveBooking && /सफलतापूर्वक दर्ज|Booking ID:\s*#GYN/i.test(text || '')) {
+      const extractReceiptField = (pattern: RegExp) => {
+        const m = (text || '').match(pattern)
+        return m && m[1] ? m[1].trim() : undefined
+      }
+
+      const receiptName = extractReceiptField(/👤\s*Patient Name:\s*([^\n]+)/i) || effectiveName || undefined
+      const receiptPhone = extractReceiptField(/📱\s*Mobile No:\s*([^\n]+)/i) || effectivePhone || undefined
+      const receiptCity = extractReceiptField(/📍\s*City:\s*([^\n]+)/i) || effectiveCity || undefined
+      const receiptAge = extractReceiptField(/🎂\s*Age:\s*([^\n]+)/i) || tracedAge || undefined
+      const receiptDateTime = extractReceiptField(/🗓️\s*Preferred Date & Time:\s*([^\n]+)/i) || undefined
+      const receiptConcern = extractReceiptField(/🩺\s*स्वास्थ्य समस्या:\s*([^\n]+)/i) || tracedConcern || undefined
+      const receiptType = extractReceiptField(/🏥\s*Consultation Type:\s*([^\n]+)/i) || undefined
+
+      let pDate = receiptDateTime
+      let pTime = undefined
+      if (receiptDateTime && receiptDateTime.includes(',')) {
+        const [d, ...t] = receiptDateTime.split(',')
+        pDate = d.trim()
+        pTime = t.join(',').trim()
+      }
+
+      effectiveBooking = {
+        booking_query_id: '#GYN-001',
+        patient_name: receiptName,
+        phone: receiptPhone,
+        city: receiptCity,
+        age: receiptAge,
+        preferred_date: pDate,
+        preferred_time: pTime,
+        health_concern: receiptConcern,
+        consultation_type: receiptType && receiptType.toLowerCase().includes('clinic') ? 'clinic_visit' : 'video_consultation',
+      }
+    }
+
     // If an appointment booking was confirmed by the assistant, save it to `bookings`
-    if (bookingConfirmed) {
+    if (effectiveBooking) {
       try {
         assignedQueryId = await getNextBookingQueryId(db, accountId)
         const queryId = assignedQueryId
 
         let patientName =
-          (bookingConfirmed.patient_name && !bookingConfirmed.patient_name.includes('['))
-            ? bookingConfirmed.patient_name.trim()
+          (effectiveBooking.patient_name && !effectiveBooking.patient_name.includes('['))
+            ? effectiveBooking.patient_name.trim()
             : (effectiveName || 'Patient')
 
         if (effectiveName && /^[a-zA-Z\s.]+$/.test(effectiveName) && /[\u0900-\u097F]/.test(patientName)) {
@@ -308,19 +345,19 @@ export async function dispatchInboundToAiReply(
         }
 
         const phone =
-          (bookingConfirmed.phone && !bookingConfirmed.phone.includes('['))
-            ? bookingConfirmed.phone.trim()
+          (effectiveBooking.phone && !effectiveBooking.phone.includes('['))
+            ? effectiveBooking.phone.trim()
             : (effectivePhone || '')
 
-        const rawCity = bookingConfirmed.city?.trim() || ''
+        const rawCity = effectiveBooking.city?.trim() || ''
         const city =
           rawCity && !rawCity.includes('[') && !rawCity.includes('शहर') && rawCity.toLowerCase() !== 'naam' && rawCity.toLowerCase() !== 'patient'
             ? rawCity
             : (effectiveCity || '')
 
-        const preferredDate = normalizePreferredDate(bookingConfirmed.preferred_date)
-        const preferredTime = bookingConfirmed.preferred_time?.trim() || ''
-        const rawHealthConcern = bookingConfirmed.health_concern?.trim() || ''
+        const preferredDate = normalizePreferredDate(effectiveBooking.preferred_date)
+        const preferredTime = effectiveBooking.preferred_time?.trim() || ''
+        const rawHealthConcern = effectiveBooking.health_concern?.trim() || ''
         const healthConcern =
           rawHealthConcern && !rawHealthConcern.includes('[') && !rawHealthConcern.toLowerCase().includes('yahan')
             ? rawHealthConcern
@@ -328,12 +365,12 @@ export async function dispatchInboundToAiReply(
 
         // If city is NOT one of the 9 clinic cities, consultationType MUST BE video_consultation!
         const consultationType =
-          isClinicCity(city) && bookingConfirmed.consultation_type?.toLowerCase().includes('clinic')
+          isClinicCity(city) && effectiveBooking.consultation_type?.toLowerCase().includes('clinic')
             ? 'clinic_visit'
             : 'video_consultation'
 
-        const clinicLocation = isClinicCity(city) ? (bookingConfirmed.clinic_location?.trim() || `${city} Clinic`) : null
-        const notes = bookingConfirmed.age || tracedAge ? `Age: ${bookingConfirmed.age || tracedAge}` : null
+        const clinicLocation = isClinicCity(city) ? (effectiveBooking.clinic_location?.trim() || `${city} Clinic`) : null
+        const notes = effectiveBooking.age || tracedAge ? `Age: ${effectiveBooking.age || tracedAge}` : null
 
         if (city && city.toLowerCase() !== 'naam' && city.toLowerCase() !== 'patient') {
           const { error: bookingErr } = await db.from('bookings').insert({
@@ -383,25 +420,25 @@ export async function dispatchInboundToAiReply(
     let replyText = text?.trim() ?? ''
 
     let finalPatientName =
-      (bookingConfirmed?.patient_name && !bookingConfirmed.patient_name.includes('['))
-        ? bookingConfirmed.patient_name.trim()
+      (effectiveBooking?.patient_name && !effectiveBooking.patient_name.includes('['))
+        ? effectiveBooking.patient_name.trim()
         : (effectiveName || 'Patient')
 
     if (effectiveName && /^[a-zA-Z\s.]+$/.test(effectiveName) && /[\u0900-\u097F]/.test(finalPatientName)) {
       finalPatientName = effectiveName
     }
     const finalCity =
-      (bookingConfirmed?.city && !bookingConfirmed.city.includes('[') && !bookingConfirmed.city.includes('शहर') && bookingConfirmed.city.toLowerCase() !== 'naam' && bookingConfirmed.city.toLowerCase() !== 'patient')
-        ? bookingConfirmed.city.trim()
+      (effectiveBooking?.city && !effectiveBooking.city.includes('[') && !effectiveBooking.city.includes('शहर') && effectiveBooking.city.toLowerCase() !== 'naam' && effectiveBooking.city.toLowerCase() !== 'patient')
+        ? effectiveBooking.city.trim()
         : (effectiveCity || '')
-    const finalAge = bookingConfirmed?.age || tracedAge || ''
+    const finalAge = effectiveBooking?.age || tracedAge || ''
     const finalPhone =
-      (bookingConfirmed?.phone && !bookingConfirmed.phone.includes('['))
-        ? bookingConfirmed.phone.trim()
+      (effectiveBooking?.phone && !effectiveBooking.phone.includes('['))
+        ? effectiveBooking.phone.trim()
         : (effectivePhone || '')
     const finalConcern =
-      (bookingConfirmed?.health_concern && !bookingConfirmed.health_concern.includes('['))
-        ? bookingConfirmed.health_concern.trim()
+      (effectiveBooking?.health_concern && !effectiveBooking.health_concern.includes('['))
+        ? effectiveBooking.health_concern.trim()
         : (tracedConcern || contact?.ad_name || 'Ayurvedic Health Consultation')
 
     // If a booking was confirmed, ensure the reply text has the exact assigned sequential ID

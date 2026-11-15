@@ -56,6 +56,14 @@ vi.mock('./admin-client', () => ({
           }),
         }
       }
+      if (table === 'bookings') {
+        return {
+          select: () => ({
+            eq: () => Promise.resolve({ data: [], error: null }),
+          }),
+          insert: () => Promise.resolve({ data: null, error: null }),
+        }
+      }
       // conversations
       return {
         select: () => ({
@@ -581,5 +589,29 @@ describe('Conversation history extraction helpers', () => {
     expect(callText).not.toContain('[खाता नंबर]')
     expect(callText).toContain('सीनियर Gynocci टीम')
     expect(callText).toContain('₹499')
+  })
+
+  it('automatically falls back to record booking from receipt text even if bookingConfirmed tag was missing', async () => {
+    h.engineSendText.mockClear()
+    h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_reply_count: 0 }
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyEnabled: true, systemPrompt: null }))
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Aaj 4 baje book kar do' },
+    ])
+    h.retrieveKnowledge.mockResolvedValue([])
+    h.generateReply.mockResolvedValue({
+      text: '🎉 आपकी बुकिंग सफलतापूर्वक दर्ज कर ली गई है। 🙏\n---\n📋 Booking ID: #GYN-001\n👤 Patient Name: Shikha\n🎂 Age: 24\n📱 Mobile No: 918979608851\n📍 City: Delhi\n🏥 Consultation Type: Video Consultation\n🗓️ Preferred Date & Time: 15 November 2026, 4:00 PM\n🩺 स्वास्थ्य समस्या: PCOD',
+      handoff: false,
+      usage: null,
+      contactUpdate: null,
+      bookingConfirmed: null, // Model forgot or truncated the tag!
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalled()
+    const callText = h.engineSendText.mock.calls[0][0].text
+    expect(callText).toContain('सफलतापूर्वक दर्ज')
+    expect(callText).not.toContain('[[BOOKING_CONFIRMED')
   })
 })
