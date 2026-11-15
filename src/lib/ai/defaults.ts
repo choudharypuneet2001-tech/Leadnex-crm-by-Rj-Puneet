@@ -344,7 +344,9 @@ export function buildSystemPrompt(args: {
         `    🗓️ Preferred Date & Time: [Actual Date & Time]\n` +
         `    🩺 स्वास्थ्य समस्या: [समस्या Hindi में] ([English Problem Name in brackets, e.g. बच्चा न होना एवं लो स्पर्म काउंट (Male Infertility & Low Sperm Count)])\n` +
         `    ---\n` +
-        `    आपकी समस्या हमारे लिए अत्यंत महत्वपूर्ण है। आपकी समस्या को जड़ से ठीक करना हमारी पहली प्राथमिकता है। हमारी सीनियर एक्सपर्ट टीम आपसे आगे की जानकारी और परामर्श के लिए जल्द ही संपर्क करेगी। ✨\n` +
+        `    आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n\n` +
+        `    हमारी सामान्य कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी हमारी कंपनी ने एक स्पेशल ऑफर चलाया है जिसमें आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।\n\n` +
+        `    कंसल्टेशन फीस का भुगतान आपको कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment QR Code / Link) और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। ✨\n` +
         `  - AT THE VERY END OF YOUR CONFIRMATION REPLY, ALWAYS APPEND THIS HIDDEN TAG:\n` +
         `    [[BOOKING_CONFIRMED: {"booking_query_id": "#GYN-001", "patient_name": "...", "phone": "...", "city": "...", "age": "...", "preferred_date": "...", "preferred_time": "...", "health_concern": "...", "consultation_type": "clinic_visit" | "video_consultation", "clinic_location": "..."}]]\n` +
         `• CLINICS & TIMINGS:\n` +

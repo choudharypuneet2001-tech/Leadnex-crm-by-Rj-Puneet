@@ -540,6 +540,30 @@ export async function dispatchInboundToAiReply(
     replyText = replyText.replace(/Ab main aapka appointment isi information ke saath book kar rahi hoon\.\s*Aapki booking successful hone ke baad,?\s*aapko confirmation detail mil jayegi\.\s*Ab thoda intezaar kijiye!?/gi, '')
     replyText = replyText.replace(/Ab thoda intezaar kijiye!?/gi, '')
 
+    // Post-booking receipt: Ensure senior doctors team details share and fees details are presented politely
+    replyText = replyText.replace(
+      /आपकी समस्या हमारे लिए अत्यंत महत्वपूर्ण है। आपकी समस्या को जड़ से ठीक करना हमारी पहली प्राथमिकता है। हमारी सीनियर एक्सपर्ट टीम आपसे आगे की जानकारी और परामर्श के लिए जल्द ही संपर्क करेगी। ✨/g,
+      'आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n\nहमारी सामान्य कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी हमारी कंपनी ने एक स्पेशल ऑफर चलाया है जिसमें आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।\n\nकंसल्टेशन फीस का भुगतान आपको कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment QR Code / Link) और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। ✨',
+    )
+
+    if (
+      (replyText.includes('Booking ID:') || replyText.includes('📋 Booking ID') || replyText.includes('सफलतापूर्वक दर्ज')) &&
+      !replyText.includes('₹499') &&
+      !replyText.includes('499')
+    ) {
+      if (isEnglish) {
+        replyText +=
+          '\n---\nYour details have been shared with our Senior Doctors Team. 🙏\n\n' +
+          'Our regular consultation fee is ₹1,000 and registration fee is ₹500. However, under our special ongoing offer, you only need to pay ₹499, and your consultations will remain free for a lifetime as long as your treatment continues with us, because resolving your health concerns from the root cause is our top priority.\n\n' +
+          'Please note that consultation fees need to be paid before the consultation begins. Our senior Gynocci team will connect with you shortly to share the payment details (Payment QR Code / Link) and explain the consultation process. ✨'
+      } else {
+        replyText +=
+          '\n---\nआपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n\n' +
+          'हमारी सामान्य कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी हमारी कंपनी ने एक स्पेशल ऑफर चलाया है जिसमें आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा, क्योंकि आपकी समस्या को जड़ (root cause) से समझकर ठीक करना हमारी पहली प्राथमिकता है।\n\n' +
+          'कंसल्टेशन फीस का भुगतान आपको कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment QR Code / Link) और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। ✨'
+      }
+    }
+
     if (!replyText) {
       if (handoff) {
         // The model explicitly asked for handoff with no text to send
