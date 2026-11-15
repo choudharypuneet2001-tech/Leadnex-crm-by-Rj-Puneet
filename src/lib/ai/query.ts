@@ -219,8 +219,9 @@ const COMMON_ENGLISH_WORDS = new Set([
 ])
 
 /**
- * Detects if an incoming customer message is in English (or an explicit request for English).
- * Distinguishes true English messages from Roman Hinglish ("Mein jaipur se hu", "Fees kab deni hai mujhe").
+ * Detects if an incoming customer message is an EXPLICIT request to communicate in English.
+ * Business Rule: Do NOT switch to English unless the customer explicitly asks to talk/speak in English!
+ * By default, always communicate in Hindi (Devanagari script).
  */
 export function isEnglishMessage(text?: string | null): boolean {
   if (!text) return false
@@ -228,39 +229,10 @@ export function isEnglishMessage(text?: string | null): boolean {
   if (/[\u0900-\u0D7F]/.test(trimmed)) return false // Indic script is not English
 
   // Explicit English request (even with common typos like "engiish")
-  if (
-    /\b(in\s+english|talk\s+in\s+english|speak\s+in\s+english|chat\s+in\s+english|reply\s+in\s+english|english\s+please|can\s+we\s+speak\s+in\s+english|can\s+you\s+talk\s+in\s+eng[li]{1,2}sh|prefer\s+english)\b/i.test(
-      trimmed,
-    )
-  ) {
-    return true
-  }
-
-  const words = trimmed.toLowerCase().match(/[a-z]+/g) || []
-  if (words.length === 0) return false
-
-  let hinglishCount = 0
-  let englishCount = 0
-
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i]
-    // Special handling for 'me': in Hindi it means in/inside, in English it is the pronoun 'me'
-    if (w === 'me') {
-      const prev = i > 0 ? words[i - 1] : ''
-      if (['with', 'for', 'to', 'help', 'tell', 'call', 'give', 'ask', 'guide', 'contact'].includes(prev)) {
-        englishCount++
-        continue
-      }
-    }
-    if (HINGLISH_MARKERS.has(w)) {
-      hinglishCount++
-    } else if (COMMON_ENGLISH_WORDS.has(w)) {
-      englishCount++
-    }
-  }
-
-  if (hinglishCount > 0) return false
-  return englishCount >= 2 || (words.length === 1 && ['english', 'yes', 'okay', 'ok', 'sure', 'hello', 'hi', 'thanks', 'thankyou'].includes(words[0]))
+  // e.g. "talk with me in english", "english mein baat kar", "can you talk in english with me", "speak in english"
+  return /\b(?:talk\s+(?:with\s+me\s+)?in\s+eng[li]{1,2}sh|speak\s+in\s+eng[li]{1,2}sh|chat\s+in\s+eng[li]{1,2}sh|reply\s+in\s+eng[li]{1,2}sh|english\s+mein\s+baat|english\s+me\s+baat|can\s+you\s+talk\s+in\s+eng[li]{1,2}sh|can\s+we\s+talk\s+in\s+eng[li]{1,2}sh|can\s+we\s+speak\s+in\s+eng[li]{1,2}sh|please\s+(?:talk|speak)\s+in\s+eng[li]{1,2}sh|in\s+english\s+please|english\s+please|prefer\s+english)\b/i.test(
+    trimmed,
+  )
 }
 
 const KNOWN_FEMALE_NAMES = new Set([

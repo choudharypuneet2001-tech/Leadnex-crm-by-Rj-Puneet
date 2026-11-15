@@ -81,20 +81,19 @@ describe('cleanDisplayName', () => {
 })
 
 describe('isEnglishMessage', () => {
-  it('detects English requests and messages', () => {
+  it('detects explicit English requests', () => {
     expect(isEnglishMessage('Can you talk in engiish with me')).toBe(true)
     expect(isEnglishMessage('Can you talk in english with me')).toBe(true)
     expect(isEnglishMessage('Please speak in english')).toBe(true)
-    expect(isEnglishMessage('Where is your clinic?')).toBe(true)
-    expect(isEnglishMessage('What are the consultation fees?')).toBe(true)
-    expect(isEnglishMessage('I want to book an appointment for tomorrow')).toBe(true)
-    expect(isEnglishMessage('My wife has tubal blockage issue')).toBe(true)
-    expect(isEnglishMessage('Hello doctor, can you help me with pcod?')).toBe(true)
-    expect(isEnglishMessage('Yes please book for me')).toBe(true)
-    expect(isEnglishMessage('Is there any branch in Mumbai?')).toBe(true)
+    expect(isEnglishMessage('talk with me in english')).toBe(true)
+    expect(isEnglishMessage('english mein baat karo')).toBe(true)
+    expect(isEnglishMessage('english please')).toBe(true)
   })
 
-  it('rejects Hindi / Roman Hinglish messages so they receive Hindi replies', () => {
+  it('rejects general English or Hinglish text so the AI defaults to Hindi as per business rule', () => {
+    expect(isEnglishMessage('Where is your clinic?')).toBe(false)
+    expect(isEnglishMessage('What are the consultation fees?')).toBe(false)
+    expect(isEnglishMessage('I want to book an appointment for tomorrow')).toBe(false)
     expect(isEnglishMessage('Fees kab deni hai mujhe')).toBe(false)
     expect(isEnglishMessage('Mein jaipur se hu')).toBe(false)
     expect(isEnglishMessage('Doctor se kab mil sakte hain')).toBe(false)
