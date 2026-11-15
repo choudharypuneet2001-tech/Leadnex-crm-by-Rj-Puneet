@@ -228,10 +228,15 @@ export function isEnglishMessage(text?: string | null): boolean {
   const trimmed = text.trim()
   if (/[\u0900-\u0D7F]/.test(trimmed)) return false // Indic script is not English
 
-  // Explicit English request (even with common typos like "engiish")
-  // e.g. "talk with me in english", "english mein baat kar", "can you talk in english with me", "speak in english"
-  return /\b(?:talk\s+(?:with\s+me\s+)?in\s+eng[li]{1,2}sh|speak\s+in\s+eng[li]{1,2}sh|chat\s+in\s+eng[li]{1,2}sh|reply\s+in\s+eng[li]{1,2}sh|english\s+mein\s+baat|english\s+me\s+baat|can\s+you\s+talk\s+in\s+eng[li]{1,2}sh|can\s+we\s+talk\s+in\s+eng[li]{1,2}sh|can\s+we\s+speak\s+in\s+eng[li]{1,2}sh|please\s+(?:talk|speak)\s+in\s+eng[li]{1,2}sh|in\s+english\s+please|english\s+please|prefer\s+english)\b/i.test(
-    trimmed,
+  // Explicit English request (even with common typos like "engiish", "engish", "englis")
+  return (
+    /\b(?:talk|speak|chat|reply|write|converse)\s+(?:with\s+me\s+|to\s+me\s+)?in\s+eng[li]{1,3}sh?\b/i.test(trimmed) ||
+    /\bcan\s+(?:you|we)\s+(?:please\s+)?(?:talk|speak|chat|reply)\s+(?:with\s+me\s+|to\s+me\s+)?in\s+eng[li]{1,3}sh?\b/i.test(trimmed) ||
+    /\beng[li]{1,3}sh?\s*(?:mein|me|mai)\s*baat\b/i.test(trimmed) ||
+    /\b(?:in\s+)?eng[li]{1,3}sh?\s+please\b/i.test(trimmed) ||
+    /\bprefer\s+eng[li]{1,3}sh?\b/i.test(trimmed) ||
+    /\beng[li]{1,3}sh?\s+language\b/i.test(trimmed) ||
+    /\bdo\s+you\s+speak\s+eng[li]{1,3}sh?\b/i.test(trimmed)
   )
 }
 

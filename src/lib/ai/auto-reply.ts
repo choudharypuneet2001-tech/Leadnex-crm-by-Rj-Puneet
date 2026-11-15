@@ -20,6 +20,13 @@ import {
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { splitIntoWhatsAppChunks } from './split-messages'
+import {
+  GYNOCCI_CLINICS,
+  findClinicByCity,
+  formatClinicCard,
+  formatAllClinicsList,
+  formatNoClinicCityMessage,
+} from './clinics'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -449,7 +456,11 @@ export async function dispatchInboundToAiReply(
     }
 
     // If English was requested or inbound was English, prevent refusal or Hindi fallback
-    const isExplicitEnglishRequest = /\b(?:talk\s+in\s+eng[li]+sh|speak\s+in\s+eng[li]+sh|in\s+eng[li]+sh\s+please|can\s+we\s+talk\s+in\s+eng[li]+sh|can\s+you\s+talk\s+in\s+eng[li]+sh)\b/i.test(userMsg)
+    const isExplicitEnglishRequest =
+      /\b(?:talk\s+(?:with\s+me\s+)?in\s+eng[li]{1,3}sh?|speak\s+(?:in\s+)?eng[li]{1,3}sh?|chat\s+(?:in\s+)?eng[li]{1,3}sh?|reply\s+(?:in\s+)?eng[li]{1,3}sh?|in\s+eng[li]{1,3}sh?\s+please|eng[li]{1,3}sh?\s+please|can\s+(?:we|you)\s+(?:please\s+)?talk\s+(?:with\s+me\s+)?in\s+eng[li]{1,3}sh?|can\s+(?:we|you)\s+speak\s+in\s+eng[li]{1,3}sh?|english\s+(?:mein|me|mai)\s+baat)\b/i.test(
+        userMsg,
+      )
+
     if (isExplicitEnglishRequest) {
       replyText =
         'Yes, absolutely! I would be glad to assist you in English. How may I help you today? Could you please share your name, which city you are from, and what health concern you would like to consult our doctors about?'
@@ -458,6 +469,44 @@ export async function dispatchInboundToAiReply(
         /(?:मैं हिंदी में ही बात कर सकती हूँ|main hindi me hi baat kar sakti hoon|i can only speak hindi)[^.\n]*[.\n]?/gi,
         'Yes, absolutely! I would be glad to assist you in English. How may I help you today?',
       )
+    }
+
+    // Dedicated Clinic Location & Google Maps Handler:
+    const isAskingAllClinics =
+      /\b(?:kahan\s+kahan|sab\s+clinic|all\s+clinic|list\s+of\s+clinic|kaha\s+kaha|where\s+are\s+your\s+clinics|all\s+locations|saari\s+clinic)\b/i.test(userMsg) ||
+      /(?:कहाँ\s*कहाँ|कहा\s*कहा|सब\s*क्लीनिक|क्लीनिक\s*कहाँ\s*कहाँ|कहाँ\s*पर\s*हैं)/.test(userMsg)
+
+    const isAskingClinicLocation =
+      isAskingAllClinics ||
+      /\b(?:location|locaiton|map|address|pata|kahan\s+hai|kahan\s+h|kidhar\s+hai|kidhar\s+h|clinic\s+kahan|kaha\s+hai|google\s+map|google\s+maps|kahan\s+par\s+hai|where\s+is)\b/i.test(userMsg) ||
+      /(?:लोकेशन|पता|कहाँ|कहा|कहाँ\s*है|कहा\s*है|गूगल\s*मैप|एड्रेस)/.test(userMsg)
+
+    if (isAskingClinicLocation) {
+      if (isAskingAllClinics) {
+        replyText = formatAllClinicsList(isEnglish)
+      } else {
+        const cityInMsg = extractCityFromMessages([{ role: 'user', content: userMsg }])
+        const targetCity = cityInMsg || finalCity || tracedCity
+        const clinic = findClinicByCity(targetCity)
+
+        if (clinic) {
+          replyText = formatClinicCard(clinic.city, isEnglish)
+        } else if (targetCity && !isClinicCity(targetCity)) {
+          replyText = formatNoClinicCityMessage(targetCity, isEnglish)
+        } else {
+          replyText = formatAllClinicsList(isEnglish)
+        }
+      }
+    }
+
+    // Ensure any broken or hallucinated Google Maps links are replaced with verified official URLs
+    for (const clinic of Object.values(GYNOCCI_CLINICS)) {
+      if (replyText.includes(clinic.city) || replyText.includes(clinic.hindiCity)) {
+        replyText = replyText.replace(
+          /https?:\/\/(?:www\.)?(?:maps\.google\.com|goo\.gl\/maps|gynocci\.com)[^\s)]+/gi,
+          clinic.googleMapsUrl,
+        )
+      }
     }
 
     // Fees payment timing correction: fees must be paid BEFORE consultation begins
@@ -480,7 +529,10 @@ export async function dispatchInboundToAiReply(
     }
 
     // Clean up hallucinated fake payment links, scanner requests or bank account detail placeholders
-    const isAskingScannerOrPayment = /\b(?:scanner|scaneer|scaner|qr\s*code|qr|payment\s*link|pay\s*link|bhejo\s*scanner|scanner\s*bhejo|bank\s*details|account\s*number)\b/i.test(userMsg)
+    const isAskingScannerOrPayment =
+      /\b(?:scanner|scaneer|scaner|qr\s*code|qr|payment\s*link|pay\s*link|bhejo\s*scanner|scanner\s*bhejo|bank\s*details|account\s*number|online\s*krunga|online\s*payment|link\s*kaam\s*nahi|kaam\s*hi\s*nahi|link\s*not\s*working)\b/i.test(userMsg) ||
+      /(?:स्कैनर|क्यूआर|पेमेंट\s*लिंक|बैंक\s*विवरण|खाता\s*नंबर)/.test(userMsg)
+
     if (
       isAskingScannerOrPayment ||
       replyText.includes('gynocci.com/pay') ||
@@ -492,8 +544,8 @@ export async function dispatchInboundToAiReply(
       /https?:\/\/(?:www\.)?gynocci\.com\/pay/i.test(replyText)
     ) {
       replyText = isEnglish
-        ? 'Our senior Gynocci team will connect with you shortly to share the payment details (QR Code / Scanner / Payment Link) and guide you on how your doctor consultation will take place. 🙏'
-        : 'जल्द ही हमारी सीनियर Gynocci टीम आपसे संपर्क करके आपको आगे का फीस भुगतान का प्रोसेस (QR Code / Scanner / Payment Link) और डॉक्टर से किस तरह कंसल्ट करना है, यह पूरी तरह समझा देगी। 🙏'
+        ? 'Our senior Gynocci team will connect with you shortly to share the official payment details (QR Code / Scanner / Payment Link) and guide you on how your doctor consultation will take place. 🙏'
+        : 'कंसल्टेशन फीस (₹499) के सुरक्षित भुगतान के लिए हमारी सीनियर Gynocci टीम जल्द ही (कुछ ही देर में) आपसे संपर्क करके आपको ऑफिशियल Payment QR Code / Link भेज देगी और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। कृपया थोड़ा सा इंतज़ार करें। 🙏'
     }
 
     // Never transliterate Latin names into Hindi Devanagari in replies
@@ -518,7 +570,19 @@ export async function dispatchInboundToAiReply(
         /उसके आधार पर,\s*मैं आपको ऑनलाइन वीडियो कंसल्टेशन की व्यवस्था कर दूंगी\.?/gi,
         `ताकि हम आपको उचित क्लीनिक विज़िट अथवा ऑनलाइन परामर्श की सुविधा दे सकें।`,
       )
+      replyText = replyText.replace(
+        /आपके द्वारा बताया गया शहर ([^\s।]+) है। आपको किस स्वास्थ्य समस्या के लिए सलाह लेनी है\? इसके बाद मैं आपकी ऑनलाइन वीडियो कंसल्टेशन की व्यवस्था कर दूंगी।?/gi,
+        `बहुत अच्छा! $1 में हमारा क्लीनिक उपलब्ध है। आपको किस स्वास्थ्य समस्या के लिए सलाह लेनी है? क्या आप क्लीनिक विज़िट करके हमारे सीनियर डॉक्टर से मिलना चाहेंगे या ऑनलाइन परामर्श लेना चाहेंगे?`,
+      )
     }
+
+    // Clean up "कंपनी ने" -> "Gynocci ने" and "हमारी कंपनी" -> "Gynocci"
+    replyText = replyText.replace(/(?:हमारी\s*)?कंपनी\s*ने/gi, 'Gynocci ने')
+    replyText = replyText.replace(/हमारी\s*कंपनी/gi, 'Gynocci')
+
+    // Clean up [Name] जी when name is unknown
+    replyText = replyText.replace(/धन्यवाद,?\s*\[?(?:Name|Patient Name|Naam|Actual Name)\]?\s*जी?!?/gi, 'धन्यवाद!')
+    replyText = replyText.replace(/\[?(?:Name|Patient Name|Naam|Actual Name)\]?\s*जी?!?/gi, '')
 
     // If city is not a clinic city, make sure the consultation type in the receipt is video consultation
     if (finalCity && !isClinicCity(finalCity)) {

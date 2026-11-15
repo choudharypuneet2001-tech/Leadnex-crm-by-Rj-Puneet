@@ -533,4 +533,53 @@ describe('Conversation history extraction helpers', () => {
     expect(prompt).toContain('MANDATORY CITY GATING RULE')
     expect(prompt).toContain('अपॉइंटमेंट कन्फर्म करने से पहले, कृपया हमें अपना शहर (City) बताएं')
   })
+
+  it('delivers verified clinic card with official Google Maps link when patient asks for location', async () => {
+    h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_reply_count: 0 }
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyEnabled: true, systemPrompt: null }))
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Jaipur clinic ki location bhejo' },
+    ])
+    h.retrieveKnowledge.mockResolvedValue([])
+    h.generateReply.mockResolvedValue({
+      text: 'Yeh rahi location',
+      handoff: false,
+      usage: null,
+      contactUpdate: null,
+      bookingConfirmed: null,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalled()
+    const firstCallText = h.engineSendText.mock.calls[0][0].text
+    expect(firstCallText).toContain('Gynocci Clinic - जयपुर (Head Office)')
+    expect(firstCallText).toContain('https://maps.google.com/?q=Gynocci+Tagore+Nagar+Vaishali+Nagar+Jaipur')
+  })
+
+  it('intercepts scanner request and never provides fake links or bank placeholders', async () => {
+    h.engineSendText.mockClear()
+    h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_reply_count: 0 }
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyEnabled: true, systemPrompt: null }))
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Bhejo scaneer' },
+    ])
+    h.retrieveKnowledge.mockResolvedValue([])
+    h.generateReply.mockResolvedValue({
+      text: 'Please pay at https://www.gynocci.com/pay or account [खाता नंबर]',
+      handoff: false,
+      usage: null,
+      contactUpdate: null,
+      bookingConfirmed: null,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalled()
+    const callText = h.engineSendText.mock.calls[0][0].text
+    expect(callText).not.toContain('gynocci.com/pay')
+    expect(callText).not.toContain('[खाता नंबर]')
+    expect(callText).toContain('सीनियर Gynocci टीम')
+    expect(callText).toContain('₹499')
+  })
 })

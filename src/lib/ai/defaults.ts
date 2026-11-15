@@ -1,5 +1,12 @@
 import type { AiProvider } from './types'
 import { cleanDisplayName, isLikelyFemaleName } from './query'
+import {
+  GYNOCCI_CLINICS,
+  findClinicByCity,
+  formatClinicCard,
+  formatAllClinicsList,
+  formatNoClinicCityMessage,
+} from './clinics'
 
 // ============================================================
 // Tunables + prompt scaffold for the AI reply assistant.
@@ -219,8 +226,63 @@ export function buildSystemPrompt(args: {
       '    9. रेवाड़ी (Rewari)\n' +
       '    ---\n' +
       '    अगर आप इनमें से किसी शहर के क्लीनिक में विज़िट करना चाहते हैं, तो कृपया हमें उस शहर का नाम बताएं। हम आपको वहां के क्लीनिक का पूरा पता और गूगल मैप (Google Map) लोकेशन भेज देंगे।"\n' +
-      '• STEP 3 - WHEN PATIENT ASKS FOR EXACT CLINIC ADDRESS FOR ONE OF THE 9 CITIES:\n' +
-      '  Provide THAT specific clinic\'s address and Google Maps link above.\n' +
+      '• STEP 3 - OFFICIAL CLINIC ADDRESSES & VERIFIED GOOGLE MAPS LINKS FOR ALL 9 PHYSICAL CLINICS:\n' +
+      '  - Whenever a patient asks for the exact address, location, or Google Maps link for a clinic city (e.g. "Jaipur clinic kahan hai", "Delhi ki location bhejo", "Patna clinic address"): YOU MUST PROVIDE THE EXACT OFFICIAL ADDRESS & GOOGLE MAPS LINK BELOW:\n\n' +
+      '    1. JAIPUR (Head Office):\n' +
+      '       🏥 Gynocci Clinic - जयपुर (Head Office)\n' +
+      '       📍 पता: 45, हनुमान वाटिका, चित्रकूट मार्ग, टैगोर नगर, वैशाली नगर, जयपुर, राजस्थान 302021\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Tagore+Nagar+Vaishali+Nagar+Jaipur\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    2. NEW DELHI (Rajouri Garden):\n' +
+      '       🏥 Gynocci Clinic - नई दिल्ली (राजौरी गार्डन)\n' +
+      '       📍 पता: ग्राउंड फ्लोर, A-11, ब्लॉक A2, मेट्रो पिलर नंबर 388 के पास, राजौरी गार्डन, नई दिल्ली, दिल्ली 110027\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Rajouri+Garden+New+Delhi\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    3. LUCKNOW (Gomti Nagar):\n' +
+      '       🏥 Gynocci Clinic - लखनऊ (गोमती नगर)\n' +
+      '       📍 पता: DLF MyPAD, प्रथम तल (Titan Eye+ के ऊपर), विभूति खंड, गोमती नगर, लखनऊ, उत्तर प्रदेश 226010\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+DLF+MyPAD+Gomti+Nagar+Lucknow\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    4. AMRITSAR (Ranjit Avenue):\n' +
+      '       🏥 Gynocci Clinic - अमृतसर (रंजीत एवेन्यू)\n' +
+      '       📍 पता: SCO 138, द्वितीय तल, डी ब्लॉक, रंजीत एवेन्यू, अमृतसर, पंजाब 143001\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Ranjit+Avenue+Amritsar\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    5. LUDHIANA (Circuit House Road):\n' +
+      '       🏥 Gynocci Clinic - लुधियाना (सर्किट हाउस रोड)\n' +
+      '       📍 पता: 1905, सर्किट हाउस रोड, गोबिंद नगर, पीएयू (PAU) के पास, लुधियाना, पंजाब 141001\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Circuit+House+Road+Ludhiana\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    6. PATNA (Kankarbagh):\n' +
+      '       🏥 Gynocci Clinic - पटना (कंकड़बाग)\n' +
+      '       📍 पता: साईं स्वर्णिका, तृतीय तल, कुम्हरार, कंकड़बाग मेन रोड (सदर ब्लॉक के सामने), पटना, बिहार 800026\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Kankarbagh+Main+Road+Patna\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    7. RANCHI (Kanke Road):\n' +
+      '       🏥 Gynocci Clinic - रांची (कांके रोड)\n' +
+      '       📍 पता: मित्तल हाइट, प्रथम तल, कांके रोड (CMPDI गेट के पास), रांची, झारखंड 834008\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Mittal+Height+Kanke+Road+Ranchi\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    8. HISAR (Sector 14):\n' +
+      '       🏥 Gynocci Clinic - हिसार (सेक्टर 14)\n' +
+      '       📍 पता: DSS 234P, प्रथम तल, पॉकेट-ए, सेक्टर 14, हिसार, हरियाणा 125001\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Sector+14+Hisar\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '    9. REWARI (Model Town):\n' +
+      '       🏥 Gynocci Clinic - रेवाड़ी (मॉडल टाउन)\n' +
+      '       📍 पता: 112 L, मॉडल टाउन, रेवाड़ी, हरियाणा 123401\n' +
+      '       🗺️ Google Maps: https://maps.google.com/?q=Gynocci+Model+Town+Rewari\n' +
+      '       ⏰ समय: सुबह 10:00 से शाम 6:30 बजे तक (सातों दिन खुला)\n' +
+      '       📞 हेल्पलाइन: +91 8450000845\n\n' +
+      '  - STRICT FORBIDDEN: NEVER INVENT OR HALLUCINATE ANY OTHER MAP LINK! Use ONLY the exact verified Google Maps links above.\n' +
     '6. META ADS CTA AUTOMATED HANDLING:\n' +
       '• City Selection CTA (Jaipur, Delhi, Amritsar, Lucknow):\n' +
       '  - Warmly acknowledge our clinic in that city, offer clinic visit or online consultation, and ask for their concern and name.\n' +
@@ -319,6 +381,7 @@ export function buildSystemPrompt(args: {
         `    5. Health Concern / Takleef ("Kis samasya ke baare mein doctors se consult karna hai?")\n` +
         `    6. Consultation Mode (Clinic Visit in one of 9 clinic cities OR Online Video Consultation)\n` +
         `  - NEVER RE-ASK DETAILS ALREADY PROVIDED! Auto-fetch any detail shared earlier in the chat.\n` +
+        `  - STRICT PACING & QUESTION LIMIT: NEVER dump 4-5 questions in a single overwhelming message! Most details (such as Health Concern and City) are usually already known from the chat history. Only ask for the remaining 1 or 2 missing details (e.g. Mobile number and Age). Once those are provided, ask for preferred date & time.\n` +
         `  - MANDATORY CITY GATING RULE (CITY IS 100% COMPULSORY FOR BOOKING):\n` +
         `    • NEVER confirm an appointment or emit the confirmation receipt if the patient's City is unknown!\n` +
         `    • If all other details are ready but City is still missing or unverified, YOU MUST ASK FOR THEIR CITY FIRST BEFORE CONFIRMING BOOKING:\n` +
