@@ -9,7 +9,7 @@
  *
  * Guarantees between 1 and `maxChunks` (default 4) short, clean messages.
  */
-export function splitIntoWhatsAppChunks(text: string, maxChunks = 4): string[] {
+export function splitIntoWhatsAppChunks(text: string, maxChunks = 8): string[] {
   const trimmed = text.trim()
   if (!trimmed) return []
 

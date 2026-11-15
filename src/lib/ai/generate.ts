@@ -151,12 +151,39 @@ export function parseGeneration(
         }
       }
     } catch {
-      // Malformed JSON - ignore gracefully
+      // Malformed JSON - fall through to fallback regex below
+    }
+  }
+
+  // Fallback extraction if tag was truncated at output boundary before closing ]]
+  if (!bookingConfirmed && /\[\[(?:BOOKING_CONFIRMED|APPOINTMENT_BOOKED)/i.test(raw)) {
+    const extractField = (key: string) => {
+      const m = raw.match(new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`, 'i'))
+      return m && m[1] ? m[1].trim() : undefined
+    }
+    const patient_name = extractField('patient_name')
+    if (patient_name) {
+      bookingConfirmed = {
+        booking_query_id: extractField('booking_query_id'),
+        patient_name,
+        phone: extractField('phone'),
+        city: extractField('city'),
+        age: extractField('age'),
+        preferred_date: extractField('preferred_date'),
+        preferred_time: extractField('preferred_time'),
+        health_concern: extractField('health_concern'),
+        consultation_type: extractField('consultation_type'),
+        clinic_location: extractField('clinic_location'),
+      }
     }
   }
 
   let cleanRaw = raw.replace(CONTACT_UPDATE_REGEX, '')
   cleanRaw = cleanRaw.replace(BOOKING_CONFIRMED_REGEX, '')
+  cleanRaw = cleanRaw.replace(/\[\[(?:BOOKING_CONFIRMED|APPOINTMENT_BOOKED)[\s\S]*?(?:\]\]|$)/gi, '')
+  cleanRaw = cleanRaw.replace(/\[\[(?:UPDATE_CONTACT|CONTACT_UPDATE)[\s\S]*?(?:\]\]|$)/gi, '')
+  // General failsafe: strip any unclosed [[ tag at the end of the text
+  cleanRaw = cleanRaw.replace(/\[\[[^\]]*$/gi, '')
   const handoff = cleanRaw.includes(HANDOFF_SENTINEL)
   const text = cleanRaw.split(HANDOFF_SENTINEL).join('').trim()
   const result: GenerateResult = { text, handoff, usage }

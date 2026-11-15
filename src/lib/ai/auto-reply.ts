@@ -554,10 +554,10 @@ export async function dispatchInboundToAiReply(
       replyText = replyText.replace(/पुनीत\s*जी?/gi, `${effectiveName} जी`)
     }
 
-    // Strict City line cleanup in confirmation receipt
+    // Strict City line cleanup in confirmation receipt (single clean city name, never duplicated)
     if (finalCity && finalCity.toLowerCase() !== 'naam' && finalCity.toLowerCase() !== 'patient') {
-      replyText = replyText.replace(/📍\s*City:\s*([^\n]+)/gi, `📍 City: ${finalCity}`)
-      replyText = replyText.replace(/📍\s*City:\s*\[?(?:आपका शहर|शहर|Actual City|City)?\]?/gi, `📍 City: ${finalCity}`)
+      replyText = replyText.replace(/📍\s*City:\s*[^\n]+/gi, `📍 City: ${finalCity}`)
+      replyText = replyText.replace(/📍\s*City:\s*([A-Za-z]+)\1/gi, '📍 City: $1')
     }
 
     // If city is a clinic city (e.g. Jaipur), ensure we NEVER unilaterally pitch video consultation
@@ -604,13 +604,21 @@ export async function dispatchInboundToAiReply(
     replyText = replyText.replace(/Ab main aapka appointment isi information ke saath book kar rahi hoon\.\s*Aapki booking successful hone ke baad,?\s*aapko confirmation detail mil jayegi\.\s*Ab thoda intezaar kijiye!?/gi, '')
     replyText = replyText.replace(/Ab thoda intezaar kijiye!?/gi, '')
 
-    // Post-booking receipt: Ensure senior doctors team details share, emotional health connection, and fees details are presented politely
+    // Post-booking receipt: Ensure senior doctors team details share, emotional health connection, and fees details are presented politely as separate, short messages
     const emotionalFeesHindi =
-      'आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n\n' +
-      'हमारी सामान्य कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी Gynocci ने एक स्पेशल ऑफर चलाया है जहाँ पर आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा।\n\n' +
-      'फीस से कहीं ज्यादा मायने आपकी सेहत रखती है। समस्या के आगे चलकर बड़े संकट और भारी खर्च में बदलने से पहले, समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है। बाकी आपका शरीर है और आपकी सेहत — हम आपको सही डॉक्टरी सलाह दे सकते हैं, लेकिन समय पर सही फैसला लेना ही आपके स्वस्थ जीवन की शुरुआत है।\n\n' +
-      'कंसल्टेशन फीस का भुगतान आपको कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment QR Code / Link) और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। ✨'
+      'आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n' +
+      '---\n' +
+      'हमारी सामान्य कंसल्टेशन फीस ₹1,000 और रजिस्ट्रेशन फीस ₹500 है। लेकिन अभी Gynocci के एक स्पेशल ऑफर में आपको सिर्फ ₹499 पे करने होंगे, और लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा। ✨\n' +
+      '---\n' +
+      'फीस से कहीं ज्यादा मायने आपकी सेहत रखती है — समस्या के आगे बढ़ने से पहले समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है।\n' +
+      '---\n' +
+      'कंसल्टेशन फीस का भुगतान कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके पेमेंट QR Code / Link और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। 🙏'
 
+    // Replace old long paragraphs with crisp, separated WhatsApp bubbles
+    replyText = replyText.replace(
+      /आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं।[\s\S]*?(?:प्रक्रिया समझा देगी।?\s*(?:✨|🙏)?)/gi,
+      emotionalFeesHindi,
+    )
     replyText = replyText.replace(
       /आपकी समस्या हमारे लिए अत्यंत महत्वपूर्ण है। आपकी समस्या को जड़ से ठीक करना हमारी पहली प्राथमिकता है। हमारी सीनियर एक्सपर्ट टीम आपसे आगे की जानकारी और परामर्श के लिए जल्द ही संपर्क करेगी। ✨/g,
       emotionalFeesHindi,
@@ -627,14 +635,20 @@ export async function dispatchInboundToAiReply(
     ) {
       if (isEnglish) {
         replyText +=
-          '\n---\nYour details have been shared with our Senior Doctors Team. 🙏\n\n' +
-          'Our regular consultation fee is ₹1,000 and registration fee is ₹500. However, Gynocci has introduced a special ongoing offer where you only need to pay ₹499, and your consultations will remain free for a lifetime as long as your treatment continues with us.\n\n' +
-          'Your health matters far more than fees. Rather than waiting for an untreated issue to escalate into serious complications and heavy expenses, curing it from the root cause in a timely manner is our highest priority. Ultimately, your body and your health are in your hands — we are here to provide sincere medical guidance, but making the right decision in time is the key to a healthy life.\n\n' +
-          'Please note that consultation fees need to be paid before the consultation begins. Our senior Gynocci team will connect with you shortly to share the payment details (Payment QR Code / Link) and explain the consultation process. ✨'
+          '\n---\nYour details have been shared with our Senior Doctors Team. 🙏\n' +
+          '---\nOur regular consultation fee is ₹1,000 and registration fee is ₹500. However, under Gynocci\'s special offer, you only need to pay ₹499, and your consultations will remain free for a lifetime as long as your treatment continues with us. ✨\n' +
+          '---\nYour health matters far more than fees — addressing and resolving the root cause in time is our highest priority.\n' +
+          '---\nPlease note that consultation fees need to be paid before the consultation begins. Our senior Gynocci team will connect with you shortly to share the payment details (QR Code / Link) and explain the consultation process. 🙏'
       } else {
         replyText += '\n---\n' + emotionalFeesHindi
       }
     }
+
+    // Absolute guarantee: Never leak [[BOOKING_CONFIRMED... or any hidden meta-tags to WhatsApp
+    replyText = replyText.replace(/\[\[(?:BOOKING_CONFIRMED|APPOINTMENT_BOOKED)[\s\S]*?(?:\]\]|$)/gi, '')
+    replyText = replyText.replace(/\[\[(?:UPDATE_CONTACT|CONTACT_UPDATE)[\s\S]*?(?:\]\]|$)/gi, '')
+    replyText = replyText.replace(/\[\[[\s\S]*$/gi, '')
+    replyText = replyText.trim()
 
     if (!replyText) {
       if (handoff) {
@@ -698,9 +712,9 @@ export async function dispatchInboundToAiReply(
     }
     if (claimed !== true) return // lost the per-conversation cap race
 
-    // Split large paragraphs into 1-4 short, bite-sized messages ("tukde")
+    // Split large replies into short, bite-sized messages ("tukde")
     // for natural, easy-to-read WhatsApp chatting.
-    const chunks = splitIntoWhatsAppChunks(replyText, 4)
+    const chunks = splitIntoWhatsAppChunks(replyText, 8)
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]
       if (i > 0) {

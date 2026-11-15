@@ -72,6 +72,21 @@ describe('parseGeneration', () => {
       },
     })
   })
+
+  it('detects and strips complete and truncated booking confirmed tags', () => {
+    const rawComplete = 'Booking confirmed! [[BOOKING_CONFIRMED: {"booking_query_id": "#GYN-001", "patient_name": "Shikha", "city": "Delhi"}]]'
+    const res1 = parseGeneration(rawComplete)
+    expect(res1.text).toBe('Booking confirmed!')
+    expect(res1.bookingConfirmed?.patient_name).toBe('Shikha')
+    expect(res1.bookingConfirmed?.city).toBe('Delhi')
+
+    // Truncated at output boundary without closing ]]
+    const rawTruncated = 'Booking confirmed! [[BOOKING_CONFIRMED: {"booking_query_id": "#GYN-001", "patient_name": "Shikha", "phone": "918979608851", "city": "Delhi", "age": "24", "preferred_date": "2026-11-15", "preferred_time": "16:'
+    const res2 = parseGeneration(rawTruncated)
+    expect(res2.text).toBe('Booking confirmed!')
+    expect(res2.bookingConfirmed?.patient_name).toBe('Shikha')
+    expect(res2.bookingConfirmed?.city).toBe('Delhi')
+  })
 })
 
 describe('generateReply — OpenAI', () => {

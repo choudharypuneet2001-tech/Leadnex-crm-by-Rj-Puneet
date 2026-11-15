@@ -73,7 +73,7 @@ export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
-export const MAX_OUTPUT_TOKENS = 512
+export const MAX_OUTPUT_TOKENS = 1024
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
@@ -409,10 +409,13 @@ export function buildSystemPrompt(args: {
         `    🗓️ Preferred Date & Time: [Actual Date & Time]\n` +
         `    🩺 स्वास्थ्य समस्या: [समस्या Hindi में] ([English Problem Name in brackets, e.g. बच्चा न होना एवं लो स्पर्म काउंट (Male Infertility & Low Sperm Count)])\n` +
         `    ---\n` +
-        `    आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n\n` +
-        `    हमारी सामान्य कंसल्टेशन फीस ₹1,000 है और रजिस्ट्रेशन फीस ₹500। लेकिन अभी Gynocci ने एक स्पेशल ऑफर चलाया है जहाँ पर आपको सिर्फ ₹499 पे करने होंगे और आपको लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा।\n\n` +
-        `    फीस से कहीं ज्यादा मायने आपकी सेहत रखती है। समस्या के आगे चलकर बड़े संकट और भारी खर्च में बदलने से पहले, समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है। बाकी आपका शरीर है और आपकी सेहत — हम आपको सही डॉक्टरी सलाह दे सकते हैं, लेकिन समय पर सही फैसला लेना ही आपके स्वस्थ जीवन की शुरुआत है।\n\n` +
-        `    कंसल्टेशन फीस का भुगतान आपको कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपको आगे का फीस भुगतान प्रोसेस (Payment QR Code / Link) और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। ✨\n` +
+        `    आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n` +
+        `    ---\n` +
+        `    हमारी सामान्य कंसल्टेशन फीस ₹1,000 और रजिस्ट्रेशन फीस ₹500 है। लेकिन अभी Gynocci के एक स्पेशल ऑफर में आपको सिर्फ ₹499 पे करने होंगे, और लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा। ✨\n` +
+        `    ---\n` +
+        `    फीस से कहीं ज्यादा मायने आपकी सेहत रखती है — समस्या के आगे बढ़ने से पहले समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है।\n` +
+        `    ---\n` +
+        `    कंसल्टेशन फीस का भुगतान कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके पेमेंट QR Code / Link और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। 🙏\n` +
         `  - AT THE VERY END OF YOUR CONFIRMATION REPLY, ALWAYS APPEND THIS HIDDEN TAG:\n` +
         `    [[BOOKING_CONFIRMED: {"booking_query_id": "#GYN-001", "patient_name": "...", "phone": "...", "city": "...", "age": "...", "preferred_date": "...", "preferred_time": "...", "health_concern": "...", "consultation_type": "clinic_visit" | "video_consultation", "clinic_location": "..."}]]\n` +
         `• CLINICS & TIMINGS:\n` +
