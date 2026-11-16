@@ -396,6 +396,7 @@ export async function dispatchInboundToAiReply(
             console.error('[ai auto-reply] failed to record booking:', bookingErr)
           } else {
             console.log(`[ai auto-reply] recorded booking ${queryId} for contact ${contactId}`)
+            void syncBookingTag(db, accountId, contactId, true)
           }
         } else {
           console.log(`[ai auto-reply] booking confirmation delayed — city is missing or invalid for contact ${contactId}`)
@@ -776,6 +777,11 @@ export async function dispatchInboundToAiReply(
         break
       }
     }
+
+    // Auto-tag lead as "Booking Pending" if no booking was made during this interaction
+    if (!effectiveBooking && contactId) {
+      void syncBookingTag(db, accountId, contactId, false)
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
@@ -803,6 +809,88 @@ async function showTypingIndicator(
     })
   } catch (err) {
     console.warn('[ai auto-reply] typing indicator failed (continuing):', err)
+  }
+}
+
+/**
+ * Automatically synchronizes booking tags for a contact:
+ * - isConfirmed = true: assigns 'Booking Done' (#10b981) and removes 'Booking Pending'
+ * - isConfirmed = false: assigns 'Booking Pending' (#f59e0b) only if contact has no confirmed booking
+ */
+export async function syncBookingTag(
+  db: ReturnType<typeof supabaseAdmin>,
+  accountId: string,
+  contactId: string,
+  isConfirmed: boolean
+): Promise<void> {
+  try {
+    if (!accountId || !contactId) return
+
+    // If isConfirmed is false, check if contact already has a confirmed booking in db
+    if (!isConfirmed) {
+      const { data: existingBooking } = await db
+        .from('bookings')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .neq('status', 'cancelled')
+        .limit(1)
+        .maybeSingle()
+
+      if (existingBooking?.id) {
+        // Contact already booked! Do not tag as Booking Pending
+        return
+      }
+    }
+
+    const targetTagName = isConfirmed ? 'Booking Done' : 'Booking Pending'
+    const removeTagName = isConfirmed ? 'Booking Pending' : 'Booking Done'
+    const targetTagColor = isConfirmed ? '#10b981' : '#f59e0b'
+
+    // Fetch existing tags in the account
+    const { data: existingTags } = await db
+      .from('tags')
+      .select('id, name')
+      .eq('account_id', accountId)
+
+    let targetTag = existingTags?.find(
+      (t) => t.name.trim().toLowerCase() === targetTagName.toLowerCase()
+    )
+
+    if (!targetTag) {
+      const { data: createdTag } = await db
+        .from('tags')
+        .insert({
+          account_id: accountId,
+          name: targetTagName,
+          color: targetTagColor,
+        })
+        .select('id, name')
+        .maybeSingle()
+      targetTag = createdTag || undefined
+    }
+
+    if (targetTag) {
+      // Upsert contact_tag
+      await db.from('contact_tags').upsert(
+        { contact_id: contactId, tag_id: targetTag.id },
+        { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+      )
+    }
+
+    // Remove opposing tag if present
+    const removeTag = existingTags?.find(
+      (t) => t.name.trim().toLowerCase() === removeTagName.toLowerCase()
+    )
+    if (removeTag) {
+      await db
+        .from('contact_tags')
+        .delete()
+        .eq('contact_id', contactId)
+        .eq('tag_id', removeTag.id)
+    }
+  } catch (err) {
+    console.warn('[ai auto-reply] syncBookingTag notice:', err)
   }
 }
 

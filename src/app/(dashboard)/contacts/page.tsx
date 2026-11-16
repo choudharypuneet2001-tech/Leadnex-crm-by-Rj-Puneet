@@ -61,6 +61,7 @@ import {
   MessageSquare,
   FileText,
   Check,
+  CheckCircle2,
   Tag as TagIcon,
   Clock,
 } from 'lucide-react';
@@ -379,6 +380,27 @@ export default function ContactsPage() {
     Record<string, { id: string; note_text: string; created_at: string }[]>
   >({});
 
+  // Contact bookings map: contactId -> booking info
+  const [contactBookingsMap, setContactBookingsMap] = useState<
+    Record<
+      string,
+      {
+        id: string;
+        contact_id?: string | null;
+        phone: string;
+        booking_query_id: string;
+        status: string;
+        preferred_date?: string | null;
+        preferred_time?: string | null;
+        consultation_type?: string | null;
+        clinic_location?: string | null;
+      }
+    >
+  >({});
+
+  // Booking status filter: 'all' | 'pending' | 'done'
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
+
   // Follow-up Notes Modal state
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [editingNoteContact, setEditingNoteContact] = useState<Contact | null>(null);
@@ -493,13 +515,21 @@ export default function ContactsPage() {
       setContacts([]);
       setContactTagsMap({});
       setContactNotesMap({});
+      setContactBookingsMap({});
       setLoading(false);
       return;
     }
 
-    // Fetch tags & notes for these contacts in parallel
+    // Fetch tags, notes & bookings for these contacts in parallel
     const contactIds = contactRows.map((c) => c.id);
-    const [{ data: contactTags }, { data: contactNotes }] = await Promise.all([
+    const contactPhones = contactRows.map((c) => c.phone).filter(Boolean) as string[];
+
+    const [
+      { data: contactTags },
+      { data: contactNotes },
+      { data: bookingsByContactId },
+      { data: bookingsByPhone },
+    ] = await Promise.all([
       supabase
         .from('contact_tags')
         .select('contact_id, tag_id')
@@ -509,6 +539,20 @@ export default function ContactsPage() {
         .select('id, contact_id, note_text, created_at')
         .in('contact_id', contactIds)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('bookings')
+        .select('id, contact_id, phone, booking_query_id, status, preferred_date, preferred_time, consultation_type, clinic_location')
+        .in('contact_id', contactIds)
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: false }),
+      contactPhones.length > 0
+        ? supabase
+            .from('bookings')
+            .select('id, contact_id, phone, booking_query_id, status, preferred_date, preferred_time, consultation_type, clinic_location')
+            .in('phone', contactPhones)
+            .neq('status', 'cancelled')
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] }),
     ]);
 
     if (seq !== fetchSeq.current) return; // superseded by a newer fetch
@@ -526,6 +570,38 @@ export default function ContactsPage() {
       notesByContact[cn.contact_id].push(cn);
     });
     setContactNotesMap(notesByContact);
+
+    // Map bookings: phone fallback first, then direct contact_id priority
+    const bMap: Record<
+      string,
+      {
+        id: string;
+        contact_id?: string | null;
+        phone: string;
+        booking_query_id: string;
+        status: string;
+        preferred_date?: string | null;
+        preferred_time?: string | null;
+        consultation_type?: string | null;
+        clinic_location?: string | null;
+      }
+    > = {};
+
+    bookingsByPhone?.forEach((b) => {
+      if (b.phone) {
+        const digits = b.phone.replace(/\D/g, '').slice(-10);
+        const match = contactRows.find(
+          (c) => c.phone && c.phone.replace(/\D/g, '').slice(-10) === digits
+        );
+        if (match) bMap[match.id] = b;
+      }
+    });
+
+    bookingsByContactId?.forEach((b) => {
+      if (b.contact_id) bMap[b.contact_id] = b;
+    });
+
+    setContactBookingsMap(bMap);
 
     const enriched: ContactWithTags[] = contactRows.map((c) => ({
       ...c,
@@ -551,6 +627,27 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  const bookingCounts = useMemo(() => {
+    let done = 0;
+    let pending = 0;
+    contacts.forEach((c) => {
+      if (contactBookingsMap[c.id]) done++;
+      else pending++;
+    });
+    return { done, pending, total: contacts.length };
+  }, [contacts, contactBookingsMap]);
+
+  const displayedContacts = useMemo(() => {
+    if (bookingStatusFilter === 'all') return contacts;
+    if (bookingStatusFilter === 'done') {
+      return contacts.filter((c) => Boolean(contactBookingsMap[c.id]));
+    }
+    if (bookingStatusFilter === 'pending') {
+      return contacts.filter((c) => !contactBookingsMap[c.id]);
+    }
+    return contacts;
+  }, [contacts, bookingStatusFilter, contactBookingsMap]);
 
   const handleOpenInbox = async (contact: Contact) => {
     try {
@@ -773,16 +870,16 @@ export default function ContactsPage() {
   }
 
   const allOnPageSelected =
-    contacts.length > 0 && contacts.every((c) => selected.has(c.id));
-  const someOnPageSelected = contacts.some((c) => selected.has(c.id));
+    displayedContacts.length > 0 && displayedContacts.every((c) => selected.has(c.id));
+  const someOnPageSelected = displayedContacts.some((c) => selected.has(c.id));
 
   function toggleSelectAll() {
     setSelected((prev) => {
       const next = new Set(prev);
       if (allOnPageSelected) {
-        contacts.forEach((c) => next.delete(c.id));
+        displayedContacts.forEach((c) => next.delete(c.id));
       } else {
-        contacts.forEach((c) => next.add(c.id));
+        displayedContacts.forEach((c) => next.add(c.id));
       }
       return next;
     });
@@ -883,25 +980,39 @@ export default function ContactsPage() {
         return;
       }
 
-      // Fetch tags for exported contacts in safe chunks
+      // Fetch tags and bookings for exported contacts in safe chunks
       const contactIds = exportContactRows.map((c) => c.id);
       const chunkSize = 500;
       const allContactTags: { contact_id: string; tag_id: string }[] = [];
+      const allBookings: { contact_id?: string | null; phone: string; booking_query_id: string }[] = [];
+
       for (let i = 0; i < contactIds.length; i += chunkSize) {
         const chunk = contactIds.slice(i, i + chunkSize);
-        const { data: ctData } = await supabase
-          .from('contact_tags')
-          .select('contact_id, tag_id')
-          .in('contact_id', chunk);
-        if (ctData) {
-          allContactTags.push(...ctData);
-        }
+        const [{ data: ctData }, { data: bkData }] = await Promise.all([
+          supabase
+            .from('contact_tags')
+            .select('contact_id, tag_id')
+            .in('contact_id', chunk),
+          supabase
+            .from('bookings')
+            .select('contact_id, phone, booking_query_id')
+            .in('contact_id', chunk)
+            .neq('status', 'cancelled'),
+        ]);
+
+        if (ctData) allContactTags.push(...ctData);
+        if (bkData) allBookings.push(...bkData);
       }
 
       const tagsByContact: Record<string, string[]> = {};
       allContactTags.forEach((ct) => {
         if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
         tagsByContact[ct.contact_id].push(ct.tag_id);
+      });
+
+      const bookingsByContact: Record<string, string> = {};
+      allBookings.forEach((b) => {
+        if (b.contact_id) bookingsByContact[b.contact_id] = b.booking_query_id;
       });
 
       // Fetch custom fields
@@ -937,6 +1048,8 @@ export default function ContactsPage() {
         'Name',
         'Mobile (10 Digits)',
         'WhatsApp Phone (+91)',
+        'Booking Status',
+        'Booking Query ID',
         'Email',
         'City / Location',
         'Meta Ad Name',
@@ -952,6 +1065,9 @@ export default function ContactsPage() {
           .filter(Boolean)
           .join(', ');
 
+        const bQueryId = bookingsByContact[c.id] || '';
+        const bStatus = bQueryId ? 'Booking Done' : 'Booking Pending';
+
         const customCells = customFields.map(
           (f) => customValuesByContact[c.id]?.[f.id] ?? ''
         );
@@ -960,6 +1076,8 @@ export default function ContactsPage() {
           c.name ?? '',
           get10DigitPhone(c.phone),
           getFormattedPhone(c.phone),
+          bStatus,
+          bQueryId,
           c.email ?? '',
           c.city ?? '',
           c.ad_name ?? '',
@@ -1004,20 +1122,27 @@ export default function ContactsPage() {
         'Name',
         'Mobile (10 Digits)',
         'WhatsApp Phone (+91)',
+        'Booking Status',
+        'Booking Query ID',
         'Email',
         'City / Location',
         'Tags',
         'Created At',
       ];
-      const rows = selectedContacts.map((c) => [
-        c.name ?? '',
-        get10DigitPhone(c.phone),
-        getFormattedPhone(c.phone),
-        c.email ?? '',
-        c.city ?? '',
-        (c.tags ?? []).map((t) => t.name).join(', '),
-        formatCsvDate(c.created_at),
-      ]);
+      const rows = selectedContacts.map((c) => {
+        const bk = contactBookingsMap[c.id];
+        return [
+          c.name ?? '',
+          get10DigitPhone(c.phone),
+          getFormattedPhone(c.phone),
+          bk ? 'Booking Done' : 'Booking Pending',
+          bk?.booking_query_id || '',
+          c.email ?? '',
+          c.city ?? '',
+          (c.tags ?? []).map((t) => t.name).join(', '),
+          formatCsvDate(c.created_at),
+        ];
+      });
 
       const csvContent = toCsv([headers, ...rows]);
       const dateStr = new Date().toISOString().split('T')[0];
@@ -1085,84 +1210,131 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Search + tag filter */}
+      {/* Search + booking filter + tag filter */}
       <div className="space-y-2">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                // Reset pagination when the query changes — the result
-                // set shrinks/grows, page N may no longer be valid.
-                setPage(0);
-              }}
-              placeholder={t('searchPlaceholder')}
-              className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
+        <div className="flex flex-col lg:flex-row gap-2 items-stretch lg:items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center flex-1">
+            <div className="relative w-full max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  // Reset pagination when the query changes — the result
+                  // set shrinks/grows, page N may no longer be valid.
+                  setPage(0);
+                }}
+                placeholder={t('searchPlaceholder')}
+                className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
 
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="outline"
-                  className="border-border text-muted-foreground hover:bg-muted shrink-0"
-                />
-              }
-            >
-              <Filter className="size-4" />
-              {t('filterByTags')}
-              {selectedTagIds.length > 0 && (
-                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-                  {selectedTagIds.length}
-                </span>
-              )}
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-64 p-0">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <span className="text-sm font-medium text-popover-foreground">
-                  {t('filterByTags')}
-                </span>
-                {selectedTagIds.length > 0 && (
-                  <button
-                    onClick={clearTagFilters}
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    {t('clearAll')}
-                  </button>
+            {/* Booking Status Filter: All | Booking Pending | Booking Done */}
+            <div className="flex items-center gap-1 border border-border rounded-lg p-0.5 bg-muted/30 shrink-0">
+              <Button
+                type="button"
+                variant={bookingStatusFilter === 'all' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setBookingStatusFilter('all')}
+                className="h-8 text-xs px-2.5 font-medium cursor-pointer"
+              >
+                All Contacts ({bookingCounts.total})
+              </Button>
+              <Button
+                type="button"
+                variant={bookingStatusFilter === 'pending' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setBookingStatusFilter('pending')}
+                className={cn(
+                  "h-8 text-xs px-2.5 gap-1.5 font-semibold transition-all cursor-pointer",
+                  bookingStatusFilter === 'pending'
+                    ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                    : "text-amber-600 dark:text-amber-400 hover:text-amber-700 hover:bg-amber-500/10"
                 )}
-              </div>
-              {allTags.length === 0 ? (
-                <p className="px-3 py-4 text-sm text-muted-foreground text-center">
-                  {t('noTagsYet')}
-                </p>
-              ) : (
-                <div className="max-h-64 overflow-y-auto py-1">
-                  {allTags.map((tag) => (
-                    <label
-                      key={tag.id}
-                      className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-muted/50"
+                title="Show only leads who have not booked yet so you can call them"
+              >
+                <Clock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                Booking Pending ({bookingCounts.pending})
+              </Button>
+              <Button
+                type="button"
+                variant={bookingStatusFilter === 'done' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setBookingStatusFilter('done')}
+                className={cn(
+                  "h-8 text-xs px-2.5 gap-1.5 font-semibold transition-all cursor-pointer",
+                  bookingStatusFilter === 'done'
+                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                    : "text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-500/10"
+                )}
+                title="Show contacts who have confirmed appointment bookings"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                Booking Done ({bookingCounts.done})
+              </Button>
+            </div>
+
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    className="border-border text-muted-foreground hover:bg-muted shrink-0"
+                  />
+                }
+              >
+                <Filter className="size-4" />
+                {t('filterByTags')}
+                {selectedTagIds.length > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                    {selectedTagIds.length}
+                  </span>
+                )}
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-0">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                  <span className="text-sm font-medium text-popover-foreground">
+                    {t('filterByTags')}
+                  </span>
+                  {selectedTagIds.length > 0 && (
+                    <button
+                      onClick={clearTagFilters}
+                      className="text-xs text-muted-foreground hover:text-foreground"
                     >
-                      <Checkbox
-                        checked={selectedTagIds.includes(tag.id)}
-                        onCheckedChange={() => toggleTagFilter(tag.id)}
-                        aria-label={`Filter by ${tag.name}`}
-                      />
-                      <span
-                        className="size-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <span className="text-sm text-popover-foreground truncate">
-                        {tag.name}
-                      </span>
-                    </label>
-                  ))}
+                      {t('clearAll')}
+                    </button>
+                  )}
                 </div>
-              )}
-            </PopoverContent>
-          </Popover>
+                {allTags.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted-foreground text-center">
+                    {t('noTagsYet')}
+                  </p>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {allTags.map((tag) => (
+                      <label
+                        key={tag.id}
+                        className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={selectedTagIds.includes(tag.id)}
+                          onCheckedChange={() => toggleTagFilter(tag.id)}
+                          aria-label={`Filter by ${tag.name}`}
+                        />
+                        <span
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span className="text-sm text-popover-foreground truncate">
+                          {tag.name}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
         {/* Active tag-filter chips */}
@@ -1250,12 +1422,13 @@ export default function ContactsPage() {
                   checked={allOnPageSelected}
                   indeterminate={!allOnPageSelected && someOnPageSelected}
                   onCheckedChange={toggleSelectAll}
-                  disabled={contacts.length === 0}
+                  disabled={displayedContacts.length === 0}
                   aria-label={t('selectAllOnPage')}
                 />
               </TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
               <TableHead className="text-muted-foreground min-w-[210px]">{t('tableColumns.phone')}</TableHead>
+              <TableHead className="text-muted-foreground min-w-[155px]">Booking Status</TableHead>
               <TableHead className="text-muted-foreground min-w-[130px]">AI Pitch</TableHead>
               <TableHead className="text-muted-foreground min-w-[160px]">{t('tableColumns.tags')}</TableHead>
               <TableHead className="text-muted-foreground min-w-[190px]">Follow-up Notes</TableHead>
@@ -1269,24 +1442,26 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={11} className="text-center py-12">
+                <TableCell colSpan={12} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
                   </div>
                 </TableCell>
               </TableRow>
-            ) : contacts.length === 0 ? (
+            ) : displayedContacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={11} className="text-center py-12">
+                <TableCell colSpan={12} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
-                      {hasActiveFilters
+                      {bookingStatusFilter !== 'all'
+                        ? `No contacts found with booking status: ${bookingStatusFilter === 'pending' ? 'Pending' : 'Done'}`
+                        : hasActiveFilters
                         ? t('noContactsMatch')
                         : t('noContactsYet')}
                     </p>
-                    {!hasActiveFilters && (
+                    {!hasActiveFilters && bookingStatusFilter === 'all' && (
                       <GatedButton
                         canAct={canEdit}
                         gateReason="add or import contacts"
@@ -1303,7 +1478,7 @@ export default function ContactsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              contacts.map((contact) => (
+              displayedContacts.map((contact) => (
                 <TableRow
                   key={contact.id}
                   className="border-border hover:bg-muted/50 cursor-pointer"
@@ -1367,6 +1542,39 @@ export default function ContactsPage() {
                         </div>
                       )}
                     </div>
+                  </TableCell>
+                  {/* Booking Status Column */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const booking = contactBookingsMap[contact.id];
+                      if (booking) {
+                        return (
+                          <div className="space-y-1">
+                            <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 gap-1 text-xs font-semibold py-0.5">
+                              <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                              Booking Done
+                            </Badge>
+                            <div className="text-[11px] text-muted-foreground flex items-center gap-1 font-mono">
+                              <span className="font-semibold text-foreground">{booking.booking_query_id}</span>
+                              {booking.preferred_date && (
+                                <span className="text-[10px] text-muted-foreground font-sans">
+                                  • {booking.preferred_date}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-0.5">
+                          <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-xs font-semibold py-0.5">
+                            <Clock className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                            Booking Pending
+                          </Badge>
+                          <p className="text-[10px] text-muted-foreground font-medium">Needs follow-up call</p>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   {/* AI Pitch Advisor */}
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1513,6 +1721,18 @@ export default function ContactsPage() {
                           <MessageSquare className="size-4 text-primary" />
                           Open Inbox Chat
                         </DropdownMenuItem>
+                        {contactBookingsMap[contact.id] && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/bookings?search=${contactBookingsMap[contact.id].booking_query_id}`);
+                            }}
+                            className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer font-medium"
+                          >
+                            <CheckCircle2 className="size-4 text-emerald-500" />
+                            View Booking ({contactBookingsMap[contact.id].booking_query_id})
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();

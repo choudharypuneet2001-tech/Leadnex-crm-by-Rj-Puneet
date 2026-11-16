@@ -57,12 +57,44 @@ vi.mock('./admin-client', () => ({
         }
       }
       if (table === 'bookings') {
+        const query: any = {
+          select: () => query,
+          eq: () => query,
+          neq: () => query,
+          limit: () => query,
+          order: () => query,
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          then: (resolve: any) => Promise.resolve({ data: [], error: null }).then(resolve),
+        }
         return {
-          select: () => ({
-            eq: () => Promise.resolve({ data: [], error: null }),
-          }),
+          ...query,
           insert: () => Promise.resolve({ data: null, error: null }),
         }
+      }
+      if (table === 'tags') {
+        const query: any = {
+          select: () => query,
+          eq: () => Promise.resolve({ data: [], error: null }),
+          insert: () => ({
+            select: () => ({
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { id: 'tag-1', name: 'Booking Pending' },
+                  error: null,
+                }),
+            }),
+          }),
+        }
+        return query
+      }
+      if (table === 'contact_tags') {
+        const query: any = {
+          upsert: () => Promise.resolve({ error: null }),
+          delete: () => query,
+          eq: () => query,
+          then: (resolve: any) => Promise.resolve({ error: null }).then(resolve),
+        }
+        return query
       }
       // conversations
       return {
