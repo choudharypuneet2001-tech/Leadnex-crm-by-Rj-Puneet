@@ -6,7 +6,7 @@ import { buildConversationContext } from '@/lib/ai/context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
-import { latestUserMessage, isEnglishMessage } from '@/lib/ai/query'
+import { latestUserMessage, isEnglishMessage, resolveConversationLanguage } from '@/lib/ai/query'
 import { logAiUsage } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
@@ -90,7 +90,8 @@ export async function POST(request: Request) {
     }
 
     const latestMsg = latestUserMessage(messages)
-    const isEnglish = isEnglishMessage(latestMsg)
+    const targetLanguage = resolveConversationLanguage(latestMsg, messages)
+    const isEnglish = targetLanguage.code === 'en' || isEnglishMessage(latestMsg)
 
     // Ground the draft in the account's knowledge base (best-effort —
     // returns [] when there's no KB or retrieval fails).
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
       mode: 'draft',
       knowledge,
       isEnglish,
+      targetLanguage,
       latestUserMsg: latestMsg,
     })
 

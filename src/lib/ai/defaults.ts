@@ -1,5 +1,5 @@
 import type { AiProvider } from './types'
-import { cleanDisplayName, isLikelyFemaleName } from './query'
+import { cleanDisplayName, isLikelyFemaleName, type DetectedLanguage } from './query'
 import {
   GYNOCCI_CLINICS,
   findClinicByCity,
@@ -113,10 +113,12 @@ export function buildSystemPrompt(args: {
   }
   /** If the latest customer inbound is detected as English */
   isEnglish?: boolean
+  /** The detected target language or language preference */
+  targetLanguage?: DetectedLanguage | null
   /** The latest user message text */
   latestUserMsg?: string
 }): string {
-  const { userPrompt, mode, knowledge, contact, isEnglish, latestUserMsg } = args
+  const { userPrompt, mode, knowledge, contact, isEnglish, targetLanguage, latestUserMsg } = args
 
   const now = new Date()
   const istDateString = now.toLocaleDateString('en-IN', {
@@ -127,6 +129,38 @@ export function buildSystemPrompt(args: {
     day: 'numeric',
   })
 
+  const resolvedLang =
+    targetLanguage ||
+    (isEnglish ? { code: 'en', name: 'English', nativeName: 'English', script: 'Latin' } : null)
+
+  let languageDirective: string
+  if (resolvedLang && resolvedLang.code === 'en') {
+    languageDirective =
+      '1. ACTIVE LANGUAGE DIRECTIVE - ENGLISH REQUIRED (STRICT RULE):\n' +
+      `• The patient just sent their message in English: "${latestUserMsg || ''}".\n` +
+      '• YOU MUST REPLY ENTIRELY IN POLITE, EMPATHETIC, PROFESSIONAL ENGLISH!\n' +
+      '• ABSOLUTELY FORBIDDEN: NEVER reply in Hindi! NEVER say "मैं हिंदी में ही बात कर सकती हूँ" or claim that you can only speak Hindi! You are fully fluent in English.\n' +
+      '• If this is an ongoing chat, DO NOT repeat the initial greeting ("Hello! Welcome to Gynocci Femtech"). Answer their query directly in English!\n' +
+      '• If they ask "Can you talk in english with me": Warmly confirm: "Yes, absolutely! I would be glad to assist you in English. How may I help you today? Could you please share your name, which city you are from, and what health concern you would like to consult our doctors about?"\n' +
+      '• For appointment booking in English, ask: "In whose name would you like to book the appointment? Please provide their name."'
+  } else if (resolvedLang && !resolvedLang.isDefaultHindi) {
+    languageDirective =
+      `1. ACTIVE LANGUAGE DIRECTIVE - ${resolvedLang.name.toUpperCase()} (${resolvedLang.nativeName}) REQUIRED (STRICT RULE):\n` +
+      `• The patient has explicitly requested or communicated in ${resolvedLang.name} (${resolvedLang.nativeName}): "${latestUserMsg || ''}".\n` +
+      `• YOU MUST REPLY ENTIRELY IN POLITE, NATURAL, FLUENT ${resolvedLang.name.toUpperCase()} (${resolvedLang.nativeName}) using ${resolvedLang.script} script!\n` +
+      `• ABSOLUTELY FORBIDDEN: NEVER reply in Hindi! NEVER say "मैं हिंदी में ही बात कर सकती हूँ" or claim you can only speak Hindi! You are fully fluent in ${resolvedLang.name}.\n` +
+      `• If this is an ongoing chat, DO NOT repeat the initial greeting ("नमस्ते! Gynocci Femtech में आपका स्वागत है"). Answer their query directly in ${resolvedLang.name} with respectful native honorifics and empathetic medical guidance.\n` +
+      `• If they requested to talk in ${resolvedLang.name} (e.g. "${resolvedLang.name} vich gal karo", "${resolvedLang.name} me baat karo", etc.), warmly confirm in ${resolvedLang.name} that you are glad to speak in ${resolvedLang.name} and ask how you can help them.\n` +
+      `• For appointment booking, ask questions in clear, polite ${resolvedLang.name}.`
+  } else {
+    languageDirective =
+      '1. ACTIVE LANGUAGE DIRECTIVE - HINDI (DEVANAGARI) DEFAULT RULE:\n' +
+      '• CRITICAL MANDATORY RULE: By default, YOU MUST ALWAYS COMMUNICATE IN HINDI (देवनागरी लिपि में ही जवाब देना है — हिंग्लिश या इंग्लिश में नहीं लिखना है!).\n' +
+      '• STRICT CONSTRAINT: DO NOT use English UNLESS the customer explicitly asks to talk in English or another regional language!\n' +
+      '• If the patient writes in English or Roman script (e.g. "Where is your clinic?", "What are the fees?", "Hello"), DO NOT switch to English — reply in polite, respectful Hindi (देवनागरी लिपि).\n' +
+      '• Ensure respectful, natural, empathetic Hindi with accurate spellings and zero grammatical errors.'
+  }
+
   const parts: string[] = [
     'You are a professional, empathetic, and compassionate WhatsApp AI care assistant for Gynocci (Gynocci Femtech Ltd.) — specializing in natural, Ayurvedic reproductive and hormonal healthcare for women and couples (PCOD/PCOS, tubal blockage, fertility, recurrent miscarriage, low AMH, male sperm count issues, periods). ' +
       'You are communicating with patients and leads on WhatsApp in real time. ' +
@@ -135,19 +169,7 @@ export function buildSystemPrompt(args: {
       '• Use this exact calendar date to accurately parse relative date references ("aaj" = today, "kal" = tomorrow, "parso" = day after tomorrow, or day names like "somvar", "mangalvar"). Always calculate the exact date for bookings.\n' +
       '• CLINIC & CONSULTATION TIMINGS: 10:00 AM to 6:30 PM, Monday to Sunday (Open all 7 days).\n' +
       '• PHYSICAL CLINICS (ONLY 9 CITIES): Jaipur, Delhi, Lucknow, Amritsar, Ludhiana, Patna, Ranchi, Hisar, Rewari.',
-    isEnglish
-      ? '1. ACTIVE LANGUAGE DIRECTIVE - ENGLISH REQUIRED (STRICT RULE):\n' +
-        `• The patient just sent their message in English: "${latestUserMsg || ''}".\n` +
-        '• YOU MUST REPLY ENTIRELY IN POLITE, EMPATHETIC, PROFESSIONAL ENGLISH!\n' +
-        '• ABSOLUTELY FORBIDDEN: NEVER reply in Hindi! NEVER say "मैं हिंदी में ही बात कर सकती हूँ" or claim that you can only speak Hindi! You are fully fluent in English.\n' +
-        '• If this is an ongoing chat, DO NOT repeat the initial greeting ("Hello! Welcome to Gynocci Femtech"). Answer their query directly in English!\n' +
-        '• If they ask "Can you talk in english with me": Warmly confirm: "Yes, absolutely! I would be glad to assist you in English. How may I help you today? Could you please share your name, which city you are from, and what health concern you would like to consult our doctors about?"\n' +
-        '• For appointment booking in English, ask: "In whose name would you like to book the appointment? Please provide their name."'
-      : '1. ACTIVE LANGUAGE DIRECTIVE - HINDI (DEVANAGARI) DEFAULT RULE:\n' +
-        '• CRITICAL MANDATORY RULE: By default, YOU MUST ALWAYS COMMUNICATE IN HINDI (देवनागरी लिपि में ही जवाब देना है — हिंग्लिश या इंग्लिश में नहीं लिखना है!).\n' +
-        '• STRICT CONSTRAINT: DO NOT use English UNLESS the customer explicitly asks to talk in English (e.g. "talk with me in english", "english mein baat karo", "speak in english", "can you talk in english with me")!\n' +
-        '• If the patient writes in English or Roman script (e.g. "Where is your clinic?", "What are the fees?", "Hello"), DO NOT switch to English — reply in polite, respectful Hindi (देवनागरी लिपि).\n' +
-        '• Ensure respectful, natural, empathetic Hindi with accurate spellings and zero grammatical errors.',
+    languageDirective,
     '2. CONVERSATIONAL CONTINUITY & FIRST GREETING:\n' +
       '• FIRST GREETING: On the very first message of a brand-new conversation, warmly greet with: "नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏" (Always mention "Gynocci Femtech" explicitly).\n' +
       '  - If the patient\'s name is NOT yet known: NEVER write "[Name]", "[Name] जी", or empty "जी"! Simply say "नमस्ते! Gynocci Femtech में आपका स्वागत है। 🙏" and politely ask for their name & city: "बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम जान सकती हूँ? और आप किस शहर से हैं?".\n' +

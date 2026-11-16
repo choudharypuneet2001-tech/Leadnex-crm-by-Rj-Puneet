@@ -36,7 +36,7 @@ export function splitIntoWhatsAppChunks(text: string, maxChunks = 8): string[] {
     .filter(Boolean)
 
   if (paragraphs.length >= 2 && paragraphs.length <= maxChunks) {
-    const allModerate = paragraphs.every((p) => p.length < 350)
+    const allModerate = paragraphs.every((p) => p.length < 550)
     if (allModerate) {
       return paragraphs
     }

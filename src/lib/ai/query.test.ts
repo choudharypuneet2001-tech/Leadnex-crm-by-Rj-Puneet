@@ -6,6 +6,9 @@ import {
   cleanDisplayName,
   isEnglishMessage,
   isLikelyFemaleName,
+  detectRequestedLanguage,
+  resolveConversationLanguage,
+  SUPPORTED_INDIAN_LANGUAGES,
 } from './query'
 
 describe('latestUserMessage', () => {
@@ -127,6 +130,97 @@ describe('isLikelyFemaleName', () => {
     expect(isLikelyFemaleName('Mohammad')).toBe(false)
     expect(isLikelyFemaleName('Deepak')).toBe(false)
     expect(isLikelyFemaleName('Ravi')).toBe(false)
+  })
+})
+
+describe('detectRequestedLanguage', () => {
+  it('detects Punjabi through keywords and Gurmukhi script', () => {
+    expect(detectRequestedLanguage('punjabi vich gal karo')?.code).toBe('pa')
+    expect(detectRequestedLanguage('punjabi')?.code).toBe('pa')
+    expect(detectRequestedLanguage('ਸਤਿ ਸ਼੍ਰੀ ਅਕਾਲ ਜੀ')?.code).toBe('pa')
+  })
+
+  it('detects Marathi through keywords and phrases', () => {
+    expect(detectRequestedLanguage('marathi madhe bola')?.code).toBe('mr')
+    expect(detectRequestedLanguage('मराठीत बोला')?.code).toBe('mr')
+    expect(detectRequestedLanguage('marathi')?.code).toBe('mr')
+  })
+
+  it('detects Bengali through keywords and script', () => {
+    expect(detectRequestedLanguage('bangla e kotha bolun')?.code).toBe('bn')
+    expect(detectRequestedLanguage('bengali')?.code).toBe('bn')
+    expect(detectRequestedLanguage('নমস্কার')?.code).toBe('bn')
+  })
+
+  it('detects Telugu through keywords and script', () => {
+    expect(detectRequestedLanguage('telugu lo matladandi')?.code).toBe('te')
+    expect(detectRequestedLanguage('నమస్కారం')?.code).toBe('te')
+  })
+
+  it('detects Tamil and avoids false positive on Tamil Nadu place name', () => {
+    expect(detectRequestedLanguage('tamilil pesavum')?.code).toBe('ta')
+    expect(detectRequestedLanguage('வணக்கம்')?.code).toBe('ta')
+    expect(detectRequestedLanguage('Main Tamil Nadu se hu')).toBe(null)
+  })
+
+  it('detects Gujarati through keywords and script', () => {
+    expect(detectRequestedLanguage('gujarati ma vat karo')?.code).toBe('gu')
+    expect(detectRequestedLanguage('કેમ છો')?.code).toBe('gu')
+  })
+
+  it('detects Kannada, Malayalam, Odia, Urdu, and regional languages', () => {
+    expect(detectRequestedLanguage('kannadadalli mathanadi')?.code).toBe('kn')
+    expect(detectRequestedLanguage('മലയാളം')?.code).toBe('ml')
+    expect(detectRequestedLanguage('odia re katha kuha')?.code).toBe('or')
+    expect(detectRequestedLanguage('اردو')?.code).toBe('ur')
+    expect(detectRequestedLanguage('urdu mein baat karein')?.code).toBe('ur')
+    expect(detectRequestedLanguage('bhojpuri me baat kara')?.code).toBe('bho')
+    expect(detectRequestedLanguage('marwari me bolo')?.code).toBe('raj')
+    expect(detectRequestedLanguage('मैथिली')?.code).toBe('mai')
+  })
+
+  it('detects English and explicit switch back to Hindi', () => {
+    expect(detectRequestedLanguage('can you talk in english with me')?.code).toBe('en')
+    expect(detectRequestedLanguage('hindi me baat karo')?.code).toBe('hi')
+    expect(detectRequestedLanguage('हिंदी में बात करो')?.code).toBe('hi')
+  })
+
+  it('returns null for general Hindi/Hinglish queries so default applies', () => {
+    expect(detectRequestedLanguage('Mujhe appointment chahiye')).toBe(null)
+    expect(detectRequestedLanguage('Clinic kahan hai?')).toBe(null)
+    expect(detectRequestedLanguage('Mein Jaipur se hu')).toBe(null)
+    expect(detectRequestedLanguage('Mein Punjab se hu')).toBe(null)
+  })
+})
+
+describe('resolveConversationLanguage', () => {
+  it('defaults to Hindi when no explicit language preference exists', () => {
+    const lang = resolveConversationLanguage('Mujhe PCOS ka ilaaj chahiye', [])
+    expect(lang.code).toBe('hi')
+    expect(lang.isDefaultHindi).toBe(true)
+  })
+
+  it('switches immediately on current turn language request', () => {
+    const lang = resolveConversationLanguage('punjabi vich gal karo', [
+      { role: 'user', content: 'hello' },
+    ])
+    expect(lang.code).toBe('pa')
+  })
+
+  it('maintains language persistently from conversation history', () => {
+    const lang = resolveConversationLanguage('Mera naam Gurpreet hai, Ludhiana to', [
+      { role: 'user', content: 'punjabi vich gal karo' },
+      { role: 'assistant', content: 'ਸਤਿ ਸ਼੍ਰੀ ਅਕਾਲ ਜੀ! Gynocci Femtech ਵਿੱਚ ਤੁਹਾਡਾ ਸਵਾਗਤ ਹੈ।' },
+    ])
+    expect(lang.code).toBe('pa')
+  })
+
+  it('switches back to Hindi when customer requests Hindi mid-conversation', () => {
+    const lang = resolveConversationLanguage('ab hindi me baat karo', [
+      { role: 'user', content: 'punjabi vich gal karo' },
+      { role: 'assistant', content: 'ਸਤਿ ਸ਼੍ਰੀ ਅਕਾਲ ਜੀ!' },
+    ])
+    expect(lang.code).toBe('hi')
   })
 })
 

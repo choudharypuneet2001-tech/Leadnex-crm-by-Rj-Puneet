@@ -5,7 +5,7 @@ import { loadAiConfig } from '@/lib/ai/config'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
-import { latestUserMessage, isEnglishMessage } from '@/lib/ai/query'
+import { latestUserMessage, isEnglishMessage, resolveConversationLanguage } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 
 // Keep the tested transcript bounded, mirroring the live context window.
@@ -73,7 +73,8 @@ export async function POST(request: Request) {
     }
 
     const latestMsg = latestUserMessage(messages)
-    const isEnglish = isEnglishMessage(latestMsg)
+    const targetLanguage = resolveConversationLanguage(latestMsg, messages)
+    const isEnglish = targetLanguage.code === 'en' || isEnglishMessage(latestMsg)
 
     const knowledge = await retrieveKnowledge(
       supabase,
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
       mode: 'auto_reply',
       knowledge,
       isEnglish,
+      targetLanguage,
       latestUserMsg: latestMsg,
     })
 

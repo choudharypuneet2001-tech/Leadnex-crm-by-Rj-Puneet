@@ -240,6 +240,160 @@ export function isEnglishMessage(text?: string | null): boolean {
   )
 }
 
+export interface DetectedLanguage {
+  code: string
+  name: string
+  nativeName: string
+  script: string
+  isDefaultHindi?: boolean
+}
+
+export const DEFAULT_HINDI_LANGUAGE: DetectedLanguage = {
+  code: 'hi',
+  name: 'Hindi',
+  nativeName: 'हिन्दी',
+  script: 'Devanagari',
+  isDefaultHindi: true,
+}
+
+export const SUPPORTED_INDIAN_LANGUAGES: Record<string, DetectedLanguage> = {
+  hi: DEFAULT_HINDI_LANGUAGE,
+  en: { code: 'en', name: 'English', nativeName: 'English', script: 'Latin' },
+  pa: { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ', script: 'Gurmukhi' },
+  mr: { code: 'mr', name: 'Marathi', nativeName: 'मराठी', script: 'Devanagari' },
+  bn: { code: 'bn', name: 'Bengali', nativeName: 'বাংলা', script: 'Bengali' },
+  te: { code: 'te', name: 'Telugu', nativeName: 'తెలుగు', script: 'Telugu' },
+  ta: { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்', script: 'Tamil' },
+  gu: { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', script: 'Gujarati' },
+  kn: { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ', script: 'Kannada' },
+  ml: { code: 'ml', name: 'Malayalam', nativeName: 'മലയാളം', script: 'Malayalam' },
+  or: { code: 'or', name: 'Odia', nativeName: 'ଓଡ଼ିଆ', script: 'Odia' },
+  ur: { code: 'ur', name: 'Urdu', nativeName: 'اردو', script: 'Urdu (Perso-Arabic)' },
+  as: { code: 'as', name: 'Assamese', nativeName: 'অসমীয়া', script: 'Assamese' },
+  bho: { code: 'bho', name: 'Bhojpuri', nativeName: 'भोजपुरी', script: 'Devanagari' },
+  raj: { code: 'raj', name: 'Rajasthani / Marwari', nativeName: 'राजस्थानी / मारवाड़ी', script: 'Devanagari' },
+  mai: { code: 'mai', name: 'Maithili', nativeName: 'मैथिली', script: 'Devanagari' },
+}
+
+/**
+ * Detects if a customer has requested or written in an Indian regional language or English.
+ * Supports Punjabi, Marathi, Bengali, Telugu, Tamil, Gujarati, Kannada, Malayalam,
+ * Odia, Urdu, Assamese, Bhojpuri, Rajasthani/Marwari, Maithili, English, and Hindi.
+ */
+export function detectRequestedLanguage(text?: string | null): DetectedLanguage | null {
+  if (!text) return null
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  // 1. Check unique non-Devanagari Indic & Perso-Arabic scripts
+  if (/[\u0A00-\u0A7F]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.pa
+  if (/[\u0C00-\u0C7F]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.te
+  if (/[\u0B80-\u0BFF]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.ta
+  if (/[\u0A80-\u0AFF]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.gu
+  if (/[\u0C80-\u0CFF]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.kn
+  if (/[\u0D00-\u0D7F]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.ml
+  if (/[\u0B00-\u0B7F]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.or
+  if (/[\u0600-\u06FF]/.test(trimmed)) return SUPPORTED_INDIAN_LANGUAGES.ur
+  if (/[\u0980-\u09FF]/.test(trimmed)) {
+    if (/\b(?:assamese|oxomiya|axomiya|asamiya)\b/i.test(trimmed) || /অসমীয়া/.test(trimmed)) {
+      return SUPPORTED_INDIAN_LANGUAGES.as
+    }
+    return SUPPORTED_INDIAN_LANGUAGES.bn
+  }
+
+  // 2. Check explicit English requests
+  if (isEnglishMessage(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.en
+  }
+
+  // 3. Check explicit Hindi requests (when switching back to Hindi)
+  if (
+    /\b(?:talk|speak|chat|reply|write)\s+in\s+hindi\b/i.test(trimmed) ||
+    /\bhindi\s*(?:mein|me|mai)\s*baat\b/i.test(trimmed) ||
+    /\b(?:in\s+)?hindi\s+please\b/i.test(trimmed) ||
+    /\bhindi\s+language\b/i.test(trimmed) ||
+    /^(?:hindi|हिन्दी|हिंदी)$/i.test(trimmed) ||
+    /(?:हिंदी|हिन्दी)\s*(?:में|में\s*बात|बोलो)/.test(trimmed)
+  ) {
+    return SUPPORTED_INDIAN_LANGUAGES.hi
+  }
+
+  // 4. Keyword and native phrase triggers for Indian regional languages
+  if (/\b(?:punjabi|panjabi|punjabee)\b/i.test(trimmed) || /ਪੰਜਾਬੀ/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.pa
+  }
+  if (/\b(?:marathi|marathe|marathit)\b/i.test(trimmed) || /(?:मराठी|मराठीत|मराठी\s*मध्ये)/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.mr
+  }
+  if (/\b(?:bengali|bangla|bangali|banglay|banglate)\b/i.test(trimmed) || /বাংলা/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.bn
+  }
+  if (/\b(?:telugu|telgu|telugulo)\b/i.test(trimmed) || /తెలుగు/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.te
+  }
+  if (/\btamilnadu\b/i.test(trimmed) || /\btamil\s+nadu\b/i.test(trimmed)) {
+    if (/\b(?:talk|speak|chat|reply|write|baat|pesavum|sollunga|in\s+tamil|tamil\s*(?:me|mein|il))\b/i.test(trimmed)) {
+      return SUPPORTED_INDIAN_LANGUAGES.ta
+    }
+  } else if (/\b(?:tamil|thamizh|tamilil|thamizhil)\b/i.test(trimmed) || /தமிழ்/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.ta
+  }
+  if (/\b(?:gujarati|gujrati|gujaratima)\b/i.test(trimmed) || /ગુજરાતી/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.gu
+  }
+  if (/\b(?:kannada|canarese|kannadadalli)\b/i.test(trimmed) || /ಕನ್ನಡ/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.kn
+  }
+  if (/\b(?:malayalam|mallu|malayalathil)\b/i.test(trimmed) || /മലയാളം/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.ml
+  }
+  if (/\b(?:odia|oriya|odiare|oriyare)\b/i.test(trimmed) || /ଓଡ଼ିଆ/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.or
+  }
+  if (/\b(?:urdu)\b/i.test(trimmed) || /اردو/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.ur
+  }
+  if (/\b(?:assamese|oxomiya|axomiya|asamiya)\b/i.test(trimmed) || /অসমীয়া/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.as
+  }
+  if (/\b(?:bhojpuri|bhojpoori)\b/i.test(trimmed) || /भोजपुरी/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.bho
+  }
+  if (/\b(?:rajasthani|marwari|marwadi)\b/i.test(trimmed) || /(?:राजस्थानी|मारवाड़ी|मारवाड़ी)/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.raj
+  }
+  if (/\b(?:maithili|maithli)\b/i.test(trimmed) || /मैथिली/.test(trimmed)) {
+    return SUPPORTED_INDIAN_LANGUAGES.mai
+  }
+
+  return null
+}
+
+/**
+ * Resolves the active conversation language by checking the latest user message
+ * and scanning conversation history backwards for persistent language selection.
+ * Defaults to Hindi (Devanagari) when no explicit language preference has been indicated.
+ */
+export function resolveConversationLanguage(
+  latestMsg?: string | null,
+  history?: { role: string; content?: string }[],
+): DetectedLanguage {
+  const current = detectRequestedLanguage(latestMsg)
+  if (current) return current
+
+  if (history && history.length > 0) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i]
+      if (msg.role === 'user' && msg.content) {
+        const histLang = detectRequestedLanguage(msg.content)
+        if (histLang) return histLang
+      }
+    }
+  }
+
+  return DEFAULT_HINDI_LANGUAGE
+}
+
 const KNOWN_FEMALE_NAMES = new Set([
   'meenal', 'payal', 'komal', 'kajal', 'suman', 'kiran', 'poonam', 'sheetal', 'simran',
   'mumtreen', 'fatima', 'shabnam', 'shabana', 'rubina', 'yasmin', 'salma', 'parveen',

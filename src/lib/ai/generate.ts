@@ -182,10 +182,11 @@ export function parseGeneration(
   cleanRaw = cleanRaw.replace(BOOKING_CONFIRMED_REGEX, '')
   cleanRaw = cleanRaw.replace(/\[\[(?:BOOKING_CONFIRMED|APPOINTMENT_BOOKED)[\s\S]*?(?:\]\]|$)/gi, '')
   cleanRaw = cleanRaw.replace(/\[\[(?:UPDATE_CONTACT|CONTACT_UPDATE)[\s\S]*?(?:\]\]|$)/gi, '')
-  // General failsafe: strip any unclosed [[ tag at the end of the text
-  cleanRaw = cleanRaw.replace(/\[\[[^\]]*$/gi, '')
   const handoff = cleanRaw.includes(HANDOFF_SENTINEL)
-  const text = cleanRaw.split(HANDOFF_SENTINEL).join('').trim()
+  cleanRaw = cleanRaw.split(HANDOFF_SENTINEL).join('').trim()
+  // General failsafe: strip any unclosed [[ tag at the end of the text
+  cleanRaw = cleanRaw.replace(/\[\[[\s\S]*$/gi, '')
+  const text = cleanRaw.trim()
   const result: GenerateResult = { text, handoff, usage }
   if (contactUpdate) {
     result.contactUpdate = contactUpdate

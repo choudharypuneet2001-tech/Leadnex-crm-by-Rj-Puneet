@@ -12,6 +12,9 @@ import {
   cleanDisplayName,
   isEnglishMessage,
   isLikelyFemaleName,
+  detectRequestedLanguage,
+  resolveConversationLanguage,
+  type DetectedLanguage,
 } from './query'
 import {
   engineSendText,
@@ -227,7 +230,8 @@ export async function dispatchInboundToAiReply(
       userMsg,
     )
 
-    const isEnglish = isEnglishMessage(userMsg)
+    const targetLanguage = resolveConversationLanguage(userMsg, messages)
+    const isEnglish = targetLanguage.code === 'en' || isEnglishMessage(userMsg)
 
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
@@ -241,6 +245,7 @@ export async function dispatchInboundToAiReply(
         concern: tracedConcern,
       },
       isEnglish,
+      targetLanguage,
       latestUserMsg: userMsg,
     })
 
@@ -677,6 +682,8 @@ export async function dispatchInboundToAiReply(
           '---\nOur regular consultation fee is ₹1,000 and registration fee is ₹500. However, under Gynocci\'s special offer, you only need to pay ₹499, and your consultations will remain free for a lifetime as long as your treatment continues with us. ✨\n' +
           '---\nYour health matters far more than fees — addressing and resolving the root cause in time is our highest priority.\n' +
           '---\nPlease note that consultation fees need to be paid before the consultation begins. Our senior Gynocci team will connect with you shortly to share the payment details (QR Code / Link) and explain the consultation process. 🙏'
+      } else if (targetLanguage && !targetLanguage.isDefaultHindi && targetLanguage.code !== 'hi') {
+        // Handled naturally in target regional language via system prompt instructions
       } else {
         replyText += '\n---\n' + emotionalFeesHindi
       }
@@ -707,8 +714,19 @@ export async function dispatchInboundToAiReply(
       }
 
       // If text was unexpectedly empty but no handoff, provide warm fallback so patient is not left hanging
-      replyText =
-        'Namaskar, Gynocci Femtech Ltd. mein aapka swagat hai! Kaise hain aap? Bataiye main aapki kya sahayta kar sakti hoon? 🙏'
+      if (isEnglish) {
+        replyText =
+          'Hello! Welcome to Gynocci Femtech. How may I assist you today? Please feel free to share your health concern with us. 🙏'
+      } else if (targetLanguage && targetLanguage.code === 'pa') {
+        replyText =
+          'ਸਤਿ ਸ਼੍ਰੀ ਅਕਾਲ ਜੀ! Gynocci Femtech ਵਿੱਚ ਤੁਹਾਡਾ ਸਵਾਗਤ ਹੈ। ਦੱਸੋ ਜੀ ਮੈਂ ਤੁਹਾਡੀ ਕੀ ਸਹਾਇਤਾ ਕਰ ਸਕਦੀ ਹਾਂ? 🙏'
+      } else if (targetLanguage && targetLanguage.code === 'mr') {
+        replyText =
+          'नमस्कार! Gynocci Femtech मध्ये आपले स्वागत आहे. सांगा, मी आपली काय मदत करू शकते? 🙏'
+      } else {
+        replyText =
+          'नमस्ते, Gynocci Femtech में आपका स्वागत है! बताइए मैं आपकी क्या सहायता कर सकती हूँ? 🙏'
+      }
     }
 
     // Pre-send guard: if another inbound arrived from the customer while the LLM was
