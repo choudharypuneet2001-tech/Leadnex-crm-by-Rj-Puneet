@@ -1,4 +1,5 @@
 import {
+  Building2,
   Coins,
   FileText,
   KeyRound,
@@ -30,6 +31,7 @@ export const SETTINGS_SECTIONS = [
   'templates',
   'quick-replies',
   'fields',
+  'clinics',
   'deals',
   'members',
   'api',
@@ -58,6 +60,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace' },
   'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace' },
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
+  clinics: { id: 'clinics', label: 'Clinics & Branches', icon: Building2, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace', adminOnly: true },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace', techOnly: true },

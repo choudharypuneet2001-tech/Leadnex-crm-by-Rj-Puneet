@@ -70,6 +70,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { useClinics } from '@/hooks/use-clinics';
 import { cn } from '@/lib/utils';
 
 const TAG_PRESET_COLORS = [
@@ -342,6 +343,7 @@ export default function BookingsPage() {
   const router = useRouter();
   const supabase = createClient();
   const { account, accountRole, user } = useAuth();
+  const { activeClinics } = useClinics();
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1367,14 +1369,14 @@ export default function BookingsPage() {
                               🏥 In-Person Clinic Visit:
                             </div>
 
-                            {CLINIC_OPTIONS.map((c) => {
+                            {activeClinics.map((c) => {
                               const isCurrentClinic =
                                 isClinic &&
                                 (b.clinic_location?.toLowerCase() === c.city.toLowerCase() ||
                                   (!b.clinic_location && b.city?.toLowerCase() === c.city.toLowerCase()));
                               return (
                                 <DropdownMenuItem
-                                  key={c.city}
+                                  key={c.id || c.city}
                                   onClick={() => handleUpdateConsultationType(b.id, 'clinic_visit', c.city)}
                                   className={cn(
                                     "flex items-center justify-between cursor-pointer py-1.5 px-2.5 rounded-md text-xs",
@@ -1383,7 +1385,7 @@ export default function BookingsPage() {
                                 >
                                   <div className="flex items-center gap-2 truncate">
                                     <Building2 className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                                    <span className="truncate">{c.label}</span>
+                                    <span className="truncate">{c.name || `${c.city} Clinic`}</span>
                                   </div>
                                   {isCurrentClinic && <Check className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
                                 </DropdownMenuItem>
@@ -2035,14 +2037,14 @@ export default function BookingsPage() {
                         🏥 In-Person Clinic Visit:
                       </div>
 
-                      {CLINIC_OPTIONS.map((c) => {
+                      {activeClinics.map((c) => {
                         const isCurrentClinic =
                           selectedBooking.consultation_type === 'clinic_visit' &&
                           (selectedBooking.clinic_location?.toLowerCase() === c.city.toLowerCase() ||
                             (!selectedBooking.clinic_location && selectedBooking.city?.toLowerCase() === c.city.toLowerCase()));
                         return (
                           <DropdownMenuItem
-                            key={c.city}
+                            key={c.id || c.city}
                             onClick={() => handleUpdateConsultationType(selectedBooking.id, 'clinic_visit', c.city)}
                             className={cn(
                               "flex items-center justify-between cursor-pointer py-1.5 px-2.5 rounded-md text-xs",
@@ -2051,7 +2053,7 @@ export default function BookingsPage() {
                           >
                             <div className="flex items-center gap-2 truncate">
                               <Building2 className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                              <span className="truncate">{c.label}</span>
+                              <span className="truncate">{c.name || `${c.city} Clinic`}</span>
                             </div>
                             {isCurrentClinic && <Check className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
                           </DropdownMenuItem>

@@ -72,7 +72,8 @@ export function CustomFieldsPanel() {
       .from('custom_fields')
       .select('*')
       .order('field_name');
-    setFields((data as CustomField[] | null) ?? []);
+    const raw = (data as CustomField[] | null) ?? [];
+    setFields(raw.filter((f) => !f.field_name?.startsWith('__')));
     setLoading(false);
   }, [supabase, accountId]);
 
