@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import {
   Download,
   FileText,
   ImageOff,
   Loader2,
   Maximize2,
+  Play,
+  Pause,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -231,16 +233,148 @@ export function MediaAudioBubble({
   t: Translator;
 }) {
   const { downloading, download } = useMediaDownload(message, t);
+  const { src: blobSrc, status } = useMediaBlobUrl(message.media_url);
+
+  // Audio element reference & playback states
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const [loadError, setLoadError] = useState(false);
+
+  // Effective src: prefer blob URL (loads securely in mobile memory with credentials), fallback to direct media_url
+  const effectiveSrc = blobSrc || message.media_url;
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch((err) => {
+          console.warn("Audio playback issue:", err);
+          setLoadError(true);
+        });
+    }
+  };
+
+  const cycleSpeed = () => {
+    const nextSpeed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
+    setSpeed(nextSpeed);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextSpeed;
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current && Number.isFinite(audioRef.current.duration)) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = Number(e.target.value);
+    setCurrentTime(time);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  };
+
+  const formatTime = (secs: number) => {
+    if (!Number.isFinite(secs) || isNaN(secs) || secs < 0) return "0:00";
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
 
   return (
-    <div className="flex items-center gap-2">
-      <audio src={message.media_url} controls className="max-w-60" />
-      <MediaActionButton
-        icon={Download}
-        label={t("download")}
-        onClick={download}
-        busy={downloading}
+    <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-card border border-border shadow-xs min-w-[240px] max-w-[280px]">
+      <audio
+        ref={audioRef}
+        src={effectiveSrc}
+        preload="metadata"
+        playsInline
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={() => setIsPlaying(false)}
+        onError={() => setLoadError(true)}
+        className="hidden"
       />
+
+      <div className="flex items-center gap-2">
+        {/* Big Touch-friendly Play/Pause button */}
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 transition-transform active:scale-95 cursor-pointer"
+          title={isPlaying ? "Pause voice note" : "Play voice note"}
+        >
+          {status === "loading" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : isPlaying ? (
+            <Pause className="h-4 w-4 fill-current" />
+          ) : (
+            <Play className="h-4 w-4 fill-current ml-0.5" />
+          )}
+        </button>
+
+        {/* Progress scrub bar & time */}
+        <div className="flex-1 flex flex-col justify-center gap-0.5 min-w-0">
+          <input
+            type="range"
+            min={0}
+            max={duration || 100}
+            value={currentTime}
+            onChange={handleSeek}
+            className="w-full h-1.5 accent-primary bg-muted rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+        </div>
+
+        {/* Speed toggle button (1x / 1.5x / 2x) */}
+        <button
+          type="button"
+          onClick={cycleSpeed}
+          className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          title="Playback speed"
+        >
+          {speed}x
+        </button>
+
+        {/* Download button */}
+        <MediaActionButton
+          icon={Download}
+          label={t("download")}
+          onClick={download}
+          busy={downloading}
+        />
+      </div>
+
+      {loadError && (
+        <div className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center justify-between pt-0.5">
+          <span>Mobile format note</span>
+          <button
+            type="button"
+            onClick={download}
+            className="underline font-medium hover:text-foreground"
+          >
+            Download to play
+          </button>
+        </div>
+      )}
     </div>
   );
 }

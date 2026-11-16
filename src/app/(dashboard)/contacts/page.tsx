@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -53,6 +57,12 @@ import {
   Phone,
   MapPin,
   Megaphone,
+  Sparkles,
+  MessageSquare,
+  FileText,
+  Check,
+  Tag as TagIcon,
+  Clock,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -61,11 +71,229 @@ import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
+import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { AiPitchDialog } from '@/components/inbox/ai-pitch-dialog';
 
 const PAGE_SIZE = 25;
 
+const TAG_PRESET_COLORS = [
+  '#6366f1', // indigo
+  '#06b6d4', // cyan
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#ef4444', // red
+  '#ec4899', // pink
+  '#8b5cf6', // purple
+];
+
+const QUICK_NOTE_TEMPLATES = [
+  '📞 Call Connected - Interested, ready to consult',
+  '📵 Switched off / Not reachable',
+  '⏳ Requested callback tomorrow',
+  '🏥 Interested in Ayurvedic consultation',
+  '🗓️ Booked appointment',
+  '💳 ₹499 Offer & fees details explained',
+  '❌ Not interested at this time',
+];
+
 interface ContactWithTags extends Contact {
   tags?: Tag[];
+}
+
+interface ContactTagsCellProps {
+  contactId: string;
+  contactName: string;
+  contactTagIds: string[];
+  allTags: Tag[];
+  tagsMap: Record<string, Tag>;
+  onToggleTag: (contactId: string, tagId: string) => Promise<void>;
+  onCreateTag: (contactId: string, name: string, color: string) => Promise<void>;
+}
+
+function ContactTagsCell({
+  contactId,
+  contactName,
+  contactTagIds,
+  allTags,
+  tagsMap,
+  onToggleTag,
+  onCreateTag,
+}: ContactTagsCellProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState(TAG_PRESET_COLORS[0]);
+  const [creating, setCreating] = useState(false);
+
+  const filteredTags = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allTags;
+    return allTags.filter((t) => t.name.toLowerCase().includes(q));
+  }, [allTags, search]);
+
+  const handleCreate = async () => {
+    if (!newTagName.trim() || !contactId) return;
+    setCreating(true);
+    try {
+      await onCreateTag(contactId, newTagName.trim(), newTagColor);
+      setNewTagName('');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-1 max-w-[220px]"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {contactTagIds.map((tid) => {
+        const tag = tagsMap[tid];
+        if (!tag) return null;
+        return (
+          <Badge
+            key={tag.id}
+            variant="outline"
+            className="text-[11px] font-medium px-1.5 py-0.5 gap-1 border shadow-2xs group/tag transition-all"
+            style={{
+              backgroundColor: `${tag.color}15`,
+              color: tag.color,
+              borderColor: `${tag.color}40`,
+            }}
+          >
+            <span
+              className="h-1.5 w-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: tag.color }}
+            />
+            <span className="truncate max-w-[100px]">{tag.name}</span>
+            <button
+              type="button"
+              className="opacity-0 group-hover/tag:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5 transition-opacity cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (contactId) onToggleTag(contactId, tag.id);
+              }}
+              title={`Remove ${tag.name}`}
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </Badge>
+        );
+      })}
+
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer rounded border border-dashed border-border/80 hover:border-solid hover:bg-muted/60 transition-colors"
+          title="Assign or create tags for this contact"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Plus className="h-3 w-3" />
+          <span>{contactTagIds.length === 0 ? 'Tag' : ''}</span>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-72 p-2.5 shadow-xl bg-popover z-50 space-y-2 border"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between pb-1.5 border-b border-border">
+            <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <TagIcon className="h-3.5 w-3.5 text-primary" />
+              Contact Tags ({contactName || 'Contact'})
+            </span>
+          </div>
+
+          <Input
+            placeholder="Filter tags..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-7 text-xs"
+          />
+
+          <div className="max-h-44 overflow-y-auto space-y-0.5 pr-0.5">
+            {filteredTags.length === 0 ? (
+              <p className="py-3 text-center text-xs text-muted-foreground">
+                No matching tags found.
+              </p>
+            ) : (
+              filteredTags.map((t) => {
+                const isSelected = contactTagIds.includes(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      if (contactId) onToggleTag(contactId, t.id);
+                    }}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors text-left cursor-pointer',
+                      isSelected
+                        ? 'bg-primary/10 text-primary font-medium'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    )}
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <span
+                        className="h-2 w-2 rounded-full shrink-0"
+                        style={{ backgroundColor: t.color }}
+                      />
+                      <span className="truncate">{t.name}</span>
+                    </span>
+                    {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-1" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="border-t border-border pt-2 space-y-1.5">
+            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Create New Tag
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Input
+                placeholder="New tag name..."
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleCreate();
+                  }
+                }}
+                className="h-7 text-xs flex-1"
+              />
+              <Button
+                size="sm"
+                type="button"
+                disabled={!newTagName.trim() || creating || !contactId}
+                onClick={handleCreate}
+                className="h-7 px-2 text-xs gap-1"
+              >
+                {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                Add
+              </Button>
+            </div>
+            <div className="flex items-center gap-1.5 pt-0.5">
+              {TAG_PRESET_COLORS.map((col) => (
+                <button
+                  key={col}
+                  type="button"
+                  onClick={() => setNewTagColor(col)}
+                  className={cn(
+                    'h-4 w-4 rounded-full transition-transform cursor-pointer',
+                    newTagColor === col ? 'ring-2 ring-offset-1 ring-primary scale-110' : 'hover:scale-105'
+                  )}
+                  style={{ backgroundColor: col }}
+                  title={col}
+                />
+              ))}
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 }
 
 /**
@@ -126,8 +354,11 @@ function getFormattedPhone(rawPhone?: string | null): string {
 }
 
 export default function ContactsPage() {
+  const router = useRouter();
   const t = useTranslations('Contacts.page');
   const supabase = createClient();
+  const { account, profile, user } = useAuth();
+  const accountId = account?.id || profile?.account_id;
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
 
@@ -139,6 +370,24 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+
+  // Contact tags map: contactId -> tagId[]
+  const [contactTagsMap, setContactTagsMap] = useState<Record<string, string[]>>({});
+
+  // Contact notes map: contactId -> notes list
+  const [contactNotesMap, setContactNotesMap] = useState<
+    Record<string, { id: string; note_text: string; created_at: string }[]>
+  >({});
+
+  // Follow-up Notes Modal state
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [editingNoteContact, setEditingNoteContact] = useState<Contact | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
+  // AI Patient Pitch Advisor state
+  const [aiPitchOpen, setAiPitchOpen] = useState(false);
+  const [selectedContactForPitch, setSelectedContactForPitch] = useState<Contact | null>(null);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -242,16 +491,26 @@ export default function ContactsPage() {
 
     if (contactRows.length === 0) {
       setContacts([]);
+      setContactTagsMap({});
+      setContactNotesMap({});
       setLoading(false);
       return;
     }
 
-    // Fetch tags for these contacts
+    // Fetch tags & notes for these contacts in parallel
     const contactIds = contactRows.map((c) => c.id);
-    const { data: contactTags } = await supabase
-      .from('contact_tags')
-      .select('contact_id, tag_id')
-      .in('contact_id', contactIds);
+    const [{ data: contactTags }, { data: contactNotes }] = await Promise.all([
+      supabase
+        .from('contact_tags')
+        .select('contact_id, tag_id')
+        .in('contact_id', contactIds),
+      supabase
+        .from('contact_notes')
+        .select('id, contact_id, note_text, created_at')
+        .in('contact_id', contactIds)
+        .order('created_at', { ascending: false }),
+    ]);
+
     if (seq !== fetchSeq.current) return; // superseded by a newer fetch
 
     const tagsByContact: Record<string, string[]> = {};
@@ -259,6 +518,14 @@ export default function ContactsPage() {
       if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
       tagsByContact[ct.contact_id].push(ct.tag_id);
     });
+    setContactTagsMap(tagsByContact);
+
+    const notesByContact: Record<string, { id: string; note_text: string; created_at: string }[]> = {};
+    contactNotes?.forEach((cn) => {
+      if (!notesByContact[cn.contact_id]) notesByContact[cn.contact_id] = [];
+      notesByContact[cn.contact_id].push(cn);
+    });
+    setContactNotesMap(notesByContact);
 
     const enriched: ContactWithTags[] = contactRows.map((c) => ({
       ...c,
@@ -284,6 +551,179 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  const handleOpenInbox = async (contact: Contact) => {
+    try {
+      // 1. Direct lookup in conversations table by contact_id
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('contact_id', contact.id)
+        .order('last_message_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (conv?.id) {
+        router.push(`/inbox?c=${conv.id}`);
+        return;
+      }
+
+      // 2. Fallback lookup by phone digits (last 10 digits)
+      if (contact.phone) {
+        const digits = contact.phone.replace(/\D/g, '');
+        const last10 = digits.slice(-10);
+        const { data: convByPhone } = await supabase
+          .from('conversations')
+          .select('id, contact_id, contacts!inner(phone)')
+          .ilike('contacts.phone', `%${last10}%`)
+          .order('last_message_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (convByPhone?.id) {
+          router.push(`/inbox?c=${convByPhone.id}`);
+          return;
+        }
+      }
+
+      toast.info('No active conversation found yet, opening CRM Inbox');
+      router.push('/inbox');
+    } catch (err) {
+      console.warn('Inbox lookup error:', err);
+      router.push('/inbox');
+    }
+  };
+
+  const toggleContactTag = async (contactId: string, tagId: string) => {
+    if (!contactId) return;
+    const currentTags = contactTagsMap[contactId] || [];
+    const isSelected = currentTags.includes(tagId);
+
+    // Optimistic UI update
+    setContactTagsMap((prev) => {
+      const list = prev[contactId] || [];
+      return {
+        ...prev,
+        [contactId]: isSelected ? list.filter((id) => id !== tagId) : [...list, tagId],
+      };
+    });
+
+    try {
+      if (isSelected) {
+        await deleteContactTag(contactId, tagId);
+      } else {
+        await addContactTag(contactId, tagId);
+      }
+      toast.success(isSelected ? 'Tag removed' : 'Tag assigned');
+    } catch (err: any) {
+      console.warn('API tag toggle error, attempting DB fallback:', err);
+      try {
+        if (isSelected) {
+          await supabase
+            .from('contact_tags')
+            .delete()
+            .eq('contact_id', contactId)
+            .eq('tag_id', tagId);
+        } else {
+          await supabase
+            .from('contact_tags')
+            .insert({ contact_id: contactId, tag_id: tagId });
+        }
+        toast.success(isSelected ? 'Tag removed' : 'Tag assigned');
+      } catch (fallbackErr) {
+        // Revert on failure
+        setContactTagsMap((prev) => {
+          const list = prev[contactId] || [];
+          return {
+            ...prev,
+            [contactId]: isSelected ? [...list, tagId] : list.filter((id) => id !== tagId),
+          };
+        });
+        toast.error('Failed to update tag');
+      }
+    }
+  };
+
+  const handleCreateAndAssignTag = async (
+    contactId: string,
+    name: string,
+    color: string
+  ) => {
+    if (!name.trim() || !accountId) {
+      toast.error('Unable to create tag: Account ID missing');
+      return;
+    }
+    try {
+      const { data: newTag, error } = await supabase
+        .from('tags')
+        .insert({
+          account_id: accountId,
+          name: name.trim(),
+          color: color || TAG_PRESET_COLORS[0],
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (newTag) {
+        setTagsMap((prev) => ({ ...prev, [newTag.id]: newTag }));
+        if (contactId) {
+          await toggleContactTag(contactId, newTag.id);
+        }
+        toast.success(`Tag "${newTag.name}" created & assigned`);
+      }
+    } catch (err: any) {
+      console.error('Failed to create tag:', err);
+      toast.error(err?.message || 'Failed to create tag');
+    }
+  };
+
+  const handleSaveContactNote = async () => {
+    if (!editingNoteContact || !noteDraft.trim()) return;
+    if (!accountId) {
+      toast.error('Account ID not available');
+      return;
+    }
+    setSavingNote(true);
+    const cleanNote = noteDraft.trim();
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id || user?.id;
+
+      const { data: inserted, error } = await supabase
+        .from('contact_notes')
+        .insert({
+          contact_id: editingNoteContact.id,
+          account_id: accountId,
+          user_id: currentUserId,
+          note_text: cleanNote,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update state
+      setContactNotesMap((prev) => {
+        const list = prev[editingNoteContact.id] || [];
+        return {
+          ...prev,
+          [editingNoteContact.id]: [inserted, ...list],
+        };
+      });
+
+      toast.success('Follow-up note added successfully');
+      setNoteDraft('');
+      setNoteModalOpen(false);
+    } catch (err: any) {
+      console.error('Failed to save contact note:', err);
+      toast.error(err?.message || 'Failed to save note');
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   function openAddForm() {
     setEditContact(null);
@@ -815,19 +1255,21 @@ export default function ContactsPage() {
                 />
               </TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
-              <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
+              <TableHead className="text-muted-foreground min-w-[210px]">{t('tableColumns.phone')}</TableHead>
+              <TableHead className="text-muted-foreground min-w-[130px]">AI Pitch</TableHead>
+              <TableHead className="text-muted-foreground min-w-[160px]">{t('tableColumns.tags')}</TableHead>
+              <TableHead className="text-muted-foreground min-w-[190px]">Follow-up Notes</TableHead>
               <TableHead className="text-muted-foreground hidden sm:table-cell">City / Location</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">Meta Ad Source</TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
-              <TableHead className="text-muted-foreground hidden xl:table-cell">{t('tableColumns.createdAt')}</TableHead>
-              <TableHead className="text-muted-foreground w-12" />
+              <TableHead className="text-muted-foreground hidden xl:table-cell">{t('tableColumns.email')}</TableHead>
+              <TableHead className="text-muted-foreground hidden 2xl:table-cell">{t('tableColumns.createdAt')}</TableHead>
+              <TableHead className="text-muted-foreground w-12 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={9} className="text-center py-12">
+                <TableCell colSpan={11} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -836,7 +1278,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={9} className="text-center py-12">
+                <TableCell colSpan={11} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -894,24 +1336,109 @@ export default function ContactsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
-                    <div className="flex items-center gap-2">
-                      <span>{contact.phone || '-'}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span>{getFormattedPhone(contact.phone) || contact.phone || '-'}</span>
                       {contact.phone && (
-                        <a
-                          href={`tel:${contact.phone}`}
-                          onClick={(e) => e.stopPropagation()}
-                          title={`Call ${contact.name || contact.phone}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all font-sans font-semibold text-[11px] shadow-xs cursor-pointer border border-emerald-500/20"
-                          aria-label={`Call ${contact.name || contact.phone}`}
-                        >
-                          <Phone className="size-3 fill-current" />
-                          <span>Call</span>
-                        </a>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-[11px] gap-1 font-semibold text-primary border-primary/30 bg-primary/5 hover:bg-primary/15 transition-all shadow-2xs cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenInbox(contact);
+                            }}
+                            title="Open chat in CRM Inbox"
+                          >
+                            <MessageSquare className="h-3 w-3 text-primary" />
+                            Inbox
+                          </Button>
+                          <a
+                            href={`tel:${contact.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            title={`Call ${contact.name || contact.phone}`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all font-sans font-semibold text-[11px] shadow-xs cursor-pointer border border-emerald-500/20"
+                            aria-label={`Call ${contact.name || contact.phone}`}
+                          >
+                            <Phone className="size-2.5 fill-current" />
+                            <span>Call</span>
+                          </a>
+                        </div>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
-                    {contact.email || <span className="text-muted-foreground">-</span>}
+                  {/* AI Pitch Advisor */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5 text-xs gap-1.5 font-semibold text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800 bg-purple-50/60 dark:bg-purple-950/30 hover:bg-purple-100 hover:border-purple-300 dark:hover:bg-purple-900/40 shadow-2xs transition-all cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedContactForPitch(contact);
+                        setAiPitchOpen(true);
+                      }}
+                      title="Analyze chat history and get telecalling pitch & script"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                      Analyze Pitch
+                    </Button>
+                  </TableCell>
+                  {/* Interactive Tags Cell */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <ContactTagsCell
+                      contactId={contact.id}
+                      contactName={contact.name || contact.phone || ''}
+                      contactTagIds={contactTagsMap[contact.id] || []}
+                      allTags={allTags}
+                      tagsMap={tagsMap}
+                      onToggleTag={toggleContactTag}
+                      onCreateTag={handleCreateAndAssignTag}
+                    />
+                  </TableCell>
+                  {/* Follow-up Notes Cell */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const notesList = contactNotesMap[contact.id] || [];
+                      const latestNote = notesList[0];
+                      return latestNote ? (
+                        <div
+                          className="group/note flex items-start justify-between gap-1.5 p-1.5 rounded-md bg-muted/40 hover:bg-muted/70 border border-border/60 text-xs cursor-pointer max-w-[210px] transition-colors"
+                          onClick={() => {
+                            setEditingNoteContact(contact);
+                            setNoteDraft('');
+                            setNoteModalOpen(true);
+                          }}
+                          title="Click to view notes history or add follow-up note"
+                        >
+                          <div className="flex items-start gap-1 min-w-0">
+                            <FileText className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                            <span className="line-clamp-2 text-foreground font-normal break-words">
+                              {latestNote.note_text}
+                            </span>
+                          </div>
+                          <Pencil className="h-3 w-3 text-muted-foreground group-hover/note:text-foreground shrink-0 mt-0.5 opacity-50 group-hover/note:opacity-100 transition-opacity" />
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground gap-1 border border-dashed border-border/80 hover:border-solid hover:bg-muted/50 font-normal cursor-pointer"
+                          onClick={() => {
+                            setEditingNoteContact(contact);
+                            setNoteDraft('');
+                            setNoteModalOpen(true);
+                          }}
+                          title="Add follow-up note"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          <span>+ Add Note</span>
+                        </Button>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-muted-foreground hidden sm:table-cell text-sm">
                     {contact.city || contact.company || <span className="text-muted-foreground">-</span>}
@@ -936,39 +1463,17 @@ export default function ContactsPage() {
                       <span className="text-muted-foreground/60 text-xs italic">Direct</span>
                     )}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {contact.tags && contact.tags.length > 0 ? (
-                        contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {tag.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                      {contact.tags && contact.tags.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          +{contact.tags.length - 3}
-                        </span>
-                      )}
-                    </div>
+                  <TableCell className="text-muted-foreground hidden xl:table-cell text-sm">
+                    {contact.email || <span className="text-muted-foreground">-</span>}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
+                  <TableCell className="text-muted-foreground text-xs hidden 2xl:table-cell">
                     {new Date(contact.created_at).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
                       year: 'numeric',
                     })}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={
@@ -1001,9 +1506,42 @@ export default function ContactsPage() {
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
+                            handleOpenInbox(contact);
+                          }}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer"
+                        >
+                          <MessageSquare className="size-4 text-primary" />
+                          Open Inbox Chat
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedContactForPitch(contact);
+                            setAiPitchOpen(true);
+                          }}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer"
+                        >
+                          <Sparkles className="size-4 text-purple-500" />
+                          AI Calling Pitch
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingNoteContact(contact);
+                            setNoteDraft('');
+                            setNoteModalOpen(true);
+                          }}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer"
+                        >
+                          <FileText className="size-4 text-primary" />
+                          Add Follow-up Note
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
                             openEditForm(contact);
                           }}
-                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer"
                         >
                           <Pencil className="size-4" />
                           {t('editAction')}
@@ -1163,6 +1701,131 @@ export default function ContactsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Follow-up Note Dialog */}
+      <Dialog open={noteModalOpen} onOpenChange={setNoteModalOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              Follow-up Notes
+            </DialogTitle>
+            <DialogDescription>
+              Record call outcome, patient response, and next steps for{' '}
+              <strong className="text-foreground">
+                {editingNoteContact?.name || editingNoteContact?.phone || 'Contact'}
+              </strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
+            {/* Previous Notes History */}
+            {editingNoteContact && (contactNotesMap[editingNoteContact.id]?.length || 0) > 0 && (
+              <div className="space-y-1.5 pb-2 border-b border-border">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Previous Notes History ({contactNotesMap[editingNoteContact.id]?.length})
+                </span>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {contactNotesMap[editingNoteContact.id]?.map((note) => (
+                    <div
+                      key={note.id}
+                      className="p-2 rounded bg-muted/40 border border-border/60 text-xs text-foreground space-y-0.5"
+                    >
+                      <p className="whitespace-pre-wrap">{note.note_text}</p>
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-2.5 w-2.5" />
+                        {new Date(note.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Status / Outcome Templates */}
+            <div>
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Quick Templates (Click to insert)
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_NOTE_TEMPLATES.map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => {
+                      setNoteDraft((prev) => {
+                        const trimmed = prev.trim();
+                        return trimmed ? `${trimmed}\n${chip}` : chip;
+                      });
+                    }}
+                    className="px-2 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 text-foreground border border-border/60 transition-colors cursor-pointer"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Note Textarea */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground">
+                Add New Note / Follow-up Details:
+              </label>
+              <Textarea
+                rows={3}
+                placeholder="e.g., Patient se baat hui, unhone kal subah video consultation ke liye bola, fees detail bhej di hai..."
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex sm:justify-between items-center">
+            <div className="text-xs text-muted-foreground">
+              {editingNoteContact?.phone && (
+                <a
+                  href={`tel:${editingNoteContact.phone}`}
+                  className="text-primary hover:underline flex items-center gap-1"
+                >
+                  <Phone className="h-3 w-3" />
+                  Call: {getFormattedPhone(editingNoteContact.phone)}
+                </a>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNoteModalOpen(false)}
+                disabled={savingNote}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveContactNote}
+                disabled={savingNote || !noteDraft.trim()}
+                className="gap-1.5"
+              >
+                {savingNote ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
+                Save Note
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Patient Pitch Advisor Modal */}
+      <AiPitchDialog
+        open={aiPitchOpen}
+        onOpenChange={setAiPitchOpen}
+        contactId={selectedContactForPitch?.id}
+        patientName={selectedContactForPitch?.name}
+      />
     </div>
   );
 }

@@ -27,7 +27,10 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Sparkles,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AiPitchDialog } from "./ai-pitch-dialog";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
@@ -174,6 +177,7 @@ export function MessageThread({
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [aiPitchOpen, setAiPitchOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
@@ -965,6 +969,18 @@ export function MessageThread({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* AI Pitch Advisor Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAiPitchOpen(true)}
+            className="h-7 px-2 text-xs gap-1.5 font-medium border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 shadow-2xs"
+            title="Analyze patient chat & generate phone call pitch"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+            <span className="hidden sm:inline">AI Pitch</span>
+          </Button>
+
           {/* Contact-panel toggle — desktop only. The contact sidebar
               eats a chunk of horizontal width that crowds the thread on
               smaller laptops; this lets agents reclaim it when they just
@@ -1225,6 +1241,15 @@ export function MessageThread({
         activeId={mediaMessageId}
         onActiveIdChange={handleMediaChange}
         contactLabel={contactDisplayName}
+      />
+
+      {/* AI Pitch Advisor Dialog */}
+      <AiPitchDialog
+        open={aiPitchOpen}
+        onOpenChange={setAiPitchOpen}
+        conversationId={conversation?.id}
+        contactId={contact?.id}
+        patientName={displayName}
       />
     </div>
   );

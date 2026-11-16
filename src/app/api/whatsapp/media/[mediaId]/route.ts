@@ -73,10 +73,45 @@ export async function GET(
       accessToken,
     })
 
+    const totalLength = buffer.byteLength
+    const mime = contentType || mediaInfo.mimeType || 'application/octet-stream'
+
+    // Handle HTTP Range requests for mobile Safari (iOS), Android Chrome, and audio/video streaming
+    const rangeHeader = request.headers.get('range')
+    if (rangeHeader && rangeHeader.startsWith('bytes=')) {
+      const parts = rangeHeader.replace(/bytes=/, '').split('-')
+      const start = parseInt(parts[0], 10) || 0
+      const end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1
+
+      if (start >= totalLength || end >= totalLength) {
+        return new Response(null, {
+          status: 416, // Range Not Satisfiable
+          headers: {
+            'Content-Range': `bytes */${totalLength}`,
+            'Accept-Ranges': 'bytes',
+          },
+        })
+      }
+
+      const chunk = buffer.slice(start, end + 1)
+      return new Response(new Uint8Array(chunk), {
+        status: 206, // Partial Content
+        headers: {
+          'Content-Range': `bytes ${start}-${end}/${totalLength}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': `${chunk.byteLength}`,
+          'Content-Type': mime,
+          'Cache-Control': 'public, max-age=86400',
+        },
+      })
+    }
+
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        'Content-Type': contentType || mediaInfo.mimeType || 'application/octet-stream',
+        'Content-Type': mime,
+        'Content-Length': `${totalLength}`,
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=86400',
       },
     })

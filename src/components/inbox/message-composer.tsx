@@ -155,6 +155,10 @@ export function MessageComposer({
   const [savingQuickReply, setSavingQuickReply] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
 
+  // Voice-to-Text Speech Recognition (Speech to type)
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
   const [draft, setDraft] = useState<MediaDraft | null>(null);
@@ -209,6 +213,11 @@ export function MessageComposer({
       // stop() releases the mic stream + audio context inside opus-recorder.
       void recorderRef.current?.stop().catch(() => {});
       removeStaged(draftRef.current?.path);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
     };
   }, [clearTimer, removeStaged]);
 
@@ -225,6 +234,12 @@ export function MessageComposer({
     if (!trimmed || sending || sessionExpired) return;
 
     setSending(true);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      setIsListening(false);
+    }
     try {
       onSend(trimmed, replyTo?.id);
       setText("");
@@ -253,6 +268,77 @@ export function MessageComposer({
     },
     [adjustHeight]
   );
+
+  const toggleSpeechRecognition = useCallback(() => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition =
+      typeof window !== "undefined"
+        ? (window as any).SpeechRecognition ||
+          (window as any).webkitSpeechRecognition
+        : null;
+
+    if (!SpeechRecognition) {
+      toast.error(
+        "Voice typing is not supported in this browser. Please use Google Chrome or Microsoft Edge."
+      );
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "hi-IN"; // Speaks Hindi and English naturally
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      const currentText = text;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        toast.info("Listening... Speak now in Hindi or English");
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+
+        const separator = currentText && !currentText.endsWith(" ") ? " " : "";
+        setText(currentText + separator + transcript);
+        if (textareaRef.current) {
+          adjustHeight();
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn("Speech recognition error:", event.error);
+        if (event.error === "not-allowed") {
+          toast.error("Microphone permission denied. Please allow microphone access.");
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error("Failed to start speech recognition:", err);
+      setIsListening(false);
+      toast.error("Could not start speech recognition.");
+    }
+  }, [isListening, text, adjustHeight]);
 
   // Ask the AI assistant for a suggested reply and drop it into the
   // composer for the agent to edit + send. Read-only server-side —
@@ -749,6 +835,28 @@ export function MessageComposer({
               (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
             )}
           />
+
+          {/* Voice-to-Text (Speech Recognition) Microphone Button */}
+          <Button
+            type="button"
+            variant={isListening ? "destructive" : "ghost"}
+            size="sm"
+            disabled={sessionExpired || readOnly}
+            onClick={toggleSpeechRecognition}
+            className={cn(
+              "h-9 w-9 shrink-0 p-0 transition-all cursor-pointer",
+              isListening
+                ? "animate-pulse bg-red-500 text-white hover:bg-red-600 shadow-md ring-2 ring-red-400/50"
+                : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+            )}
+            title={
+              isListening
+                ? "Listening... Click to stop voice typing"
+                : "Voice Typing (Speak in Hindi or English to type automatically)"
+            }
+          >
+            <Mic className={cn("h-4 w-4", isListening && "animate-bounce")} />
+          </Button>
 
           <GatedButton
             size="sm"
