@@ -54,6 +54,7 @@ import {
   RefreshCw,
   Copy,
   Check,
+  ChevronDown,
   Sparkles,
   CalendarDays,
   User,
@@ -81,6 +82,29 @@ const TAG_PRESET_COLORS = [
   '#f97316', // orange
   '#ef4444', // red
 ];
+
+const CLINIC_OPTIONS = [
+  { city: 'Jaipur', label: 'Jaipur (Head Office, Vaishali Nagar)' },
+  { city: 'Delhi', label: 'Delhi (Rajouri Garden)' },
+  { city: 'Lucknow', label: 'Lucknow (Gomti Nagar)' },
+  { city: 'Amritsar', label: 'Amritsar (Ranjit Avenue)' },
+  { city: 'Ludhiana', label: 'Ludhiana (Ferozepur Road)' },
+  { city: 'Chandigarh', label: 'Chandigarh (Sector 35-C)' },
+  { city: 'Indore', label: 'Indore (Vijay Nagar)' },
+  { city: 'Patna', label: 'Patna (Kankarbagh)' },
+  { city: 'Rewari', label: 'Rewari (Model Town)' },
+];
+
+function getQuickDate(daysFromNow: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  const day = d.getDate();
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  return `${day} ${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+}
 
 function toCsv(rows: string[][]): string {
   const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
@@ -337,6 +361,13 @@ export default function BookingsPage() {
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
+  // Reschedule Date & Time Modal state
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [editingScheduleBooking, setEditingScheduleBooking] = useState<Booking | null>(null);
+  const [scheduleDateDraft, setScheduleDateDraft] = useState('');
+  const [scheduleTimeDraft, setScheduleTimeDraft] = useState('');
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
   // Selected booking modal
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -484,6 +515,116 @@ export default function BookingsPage() {
     } catch (err) {
       console.error('[bookings] update status error:', err);
       toast.error('Failed to update status');
+    }
+  };
+
+  const handleUpdateConsultationType = async (
+    bookingId: string,
+    newType: ConsultationType | string,
+    newClinicLocation?: string | null
+  ) => {
+    try {
+      const targetBooking = bookings.find((b) => b.id === bookingId);
+      const updatePayload: Record<string, any> = {
+        consultation_type: newType,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (newType === 'clinic_visit') {
+        updatePayload.clinic_location =
+          newClinicLocation || targetBooking?.clinic_location || targetBooking?.city || 'Jaipur';
+      } else {
+        updatePayload.clinic_location = null;
+      }
+
+      const { error } = await supabase
+        .from('bookings')
+        .update(updatePayload)
+        .eq('id', bookingId);
+
+      if (error) {
+        toast.error('Failed to update consultation type');
+      } else {
+        setBookings((prev) =>
+          prev.map((b) =>
+            b.id === bookingId
+              ? {
+                  ...b,
+                  consultation_type: newType,
+                  clinic_location: updatePayload.clinic_location,
+                }
+              : b
+          )
+        );
+        if (selectedBooking?.id === bookingId) {
+          setSelectedBooking((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  consultation_type: newType,
+                  clinic_location: updatePayload.clinic_location,
+                }
+              : null
+          );
+        }
+        const label =
+          newType === 'clinic_visit'
+            ? `Clinic Visit (${updatePayload.clinic_location})`
+            : 'Online Video Call';
+        toast.success(`Consultation mode updated to ${label}`);
+      }
+    } catch (err) {
+      console.error('[bookings] update consultation type error:', err);
+      toast.error('Failed to update consultation type');
+    }
+  };
+
+  const handleOpenScheduleModal = (booking: Booking) => {
+    setEditingScheduleBooking(booking);
+    setScheduleDateDraft(booking.preferred_date || '');
+    setScheduleTimeDraft(booking.preferred_time || '');
+    setScheduleModalOpen(true);
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!editingScheduleBooking) return;
+    setSavingSchedule(true);
+    try {
+      const cleanDate = scheduleDateDraft.trim() || null;
+      const cleanTime = scheduleTimeDraft.trim() || null;
+
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          preferred_date: cleanDate,
+          preferred_time: cleanTime,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingScheduleBooking.id);
+
+      if (error) throw error;
+
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === editingScheduleBooking.id
+            ? { ...b, preferred_date: cleanDate, preferred_time: cleanTime }
+            : b
+        )
+      );
+
+      if (selectedBooking?.id === editingScheduleBooking.id) {
+        setSelectedBooking((prev) =>
+          prev ? { ...prev, preferred_date: cleanDate, preferred_time: cleanTime } : null
+        );
+      }
+
+      toast.success('Appointment schedule updated successfully');
+      setScheduleModalOpen(false);
+    } catch (err: any) {
+      console.error('[bookings] save schedule error:', err);
+      toast.error('Failed to save schedule');
+    } finally {
+      setSavingSchedule(false);
     }
   };
 
@@ -1024,9 +1165,9 @@ export default function BookingsPage() {
                   <TableHead className="min-w-[190px]">Patient Details</TableHead>
                   <TableHead className="min-w-[150px]">Tags</TableHead>
                   <TableHead className="min-w-[180px]">Follow-up Notes</TableHead>
-                  <TableHead>Consultation Mode</TableHead>
+                  <TableHead className="min-w-[165px]">Consultation Mode</TableHead>
                   <TableHead>City</TableHead>
-                  <TableHead>Preferred Schedule</TableHead>
+                  <TableHead className="min-w-[170px]">Preferred Schedule</TableHead>
                   <TableHead>Health Concern (तकलीफ)</TableHead>
                   <TableHead>Meta Ad Referral</TableHead>
                   <TableHead>Status</TableHead>
@@ -1165,26 +1306,91 @@ export default function BookingsPage() {
                         )}
                       </TableCell>
 
-                      {/* Consultation Mode */}
-                      <TableCell>
-                        {isClinic ? (
-                          <div className="space-y-0.5">
-                            <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-xs">
-                              <Building2 className="h-3 w-3" />
-                              Clinic Visit
-                            </Badge>
-                            {b.clinic_location && (
-                              <p className="text-[11px] text-muted-foreground font-medium">
-                                {b.clinic_location} Clinic
-                              </p>
+                      {/* Consultation Mode (Editable Dropdown) */}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <button
+                                type="button"
+                                className="group/mode inline-flex items-center gap-1.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/60 p-1.5 text-left transition-all focus:outline-hidden cursor-pointer"
+                                title="Click to change consultation mode / कंसल्टेशन का प्रकार बदलें"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            }
+                          >
+                            {isClinic ? (
+                              <div className="space-y-0.5">
+                                <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-xs font-semibold cursor-pointer">
+                                  <Building2 className="h-3 w-3" />
+                                  <span>Clinic Visit</span>
+                                  <ChevronDown className="h-3 w-3 opacity-60 group-hover/mode:opacity-100 transition-opacity ml-0.5" />
+                                </Badge>
+                                <p className="text-[11px] text-muted-foreground font-medium pl-0.5">
+                                  {b.clinic_location || b.city || 'Jaipur'} Clinic
+                                </p>
+                              </div>
+                            ) : (
+                              <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 gap-1 text-xs font-semibold cursor-pointer">
+                                <Video className="h-3 w-3" />
+                                <span>Video Call</span>
+                                <ChevronDown className="h-3 w-3 opacity-60 group-hover/mode:opacity-100 transition-opacity ml-0.5" />
+                              </Badge>
                             )}
-                          </div>
-                        ) : (
-                          <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 gap-1 text-xs">
-                            <Video className="h-3 w-3" />
-                            Video Call
-                          </Badge>
-                        )}
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-64 p-1.5 max-h-80 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                            <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                              Change Consultation Mode
+                            </div>
+
+                            {/* Video Call Option */}
+                            <DropdownMenuItem
+                              onClick={() => handleUpdateConsultationType(b.id, 'video_consultation')}
+                              className={cn(
+                                "flex items-center justify-between cursor-pointer py-2 px-2.5 rounded-md",
+                                !isClinic && "bg-blue-500/10 text-blue-700 dark:text-blue-300 font-semibold"
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Video className="h-4 w-4 text-blue-600 shrink-0" />
+                                <div>
+                                  <div className="text-xs font-medium">Online Video Call</div>
+                                  <div className="text-[10px] text-muted-foreground">45 Min Doctor Session</div>
+                                </div>
+                              </div>
+                              {!isClinic && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator className="my-1" />
+
+                            <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                              🏥 In-Person Clinic Visit:
+                            </div>
+
+                            {CLINIC_OPTIONS.map((c) => {
+                              const isCurrentClinic =
+                                isClinic &&
+                                (b.clinic_location?.toLowerCase() === c.city.toLowerCase() ||
+                                  (!b.clinic_location && b.city?.toLowerCase() === c.city.toLowerCase()));
+                              return (
+                                <DropdownMenuItem
+                                  key={c.city}
+                                  onClick={() => handleUpdateConsultationType(b.id, 'clinic_visit', c.city)}
+                                  className={cn(
+                                    "flex items-center justify-between cursor-pointer py-1.5 px-2.5 rounded-md text-xs",
+                                    isCurrentClinic && "bg-amber-500/10 text-amber-700 dark:text-amber-300 font-semibold"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2 truncate">
+                                    <Building2 className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                    <span className="truncate">{c.label}</span>
+                                  </div>
+                                  {isCurrentClinic && <Check className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
+                                </DropdownMenuItem>
+                              );
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
 
                       {/* City */}
@@ -1199,24 +1405,36 @@ export default function BookingsPage() {
                         )}
                       </TableCell>
 
-                      {/* Preferred Schedule */}
-                      <TableCell>
-                        <div className="space-y-0.5 text-xs">
-                          {b.preferred_date ? (
-                            <div className="flex items-center gap-1 text-foreground font-medium">
-                              <Calendar className="h-3 w-3 text-primary" />
-                              <span>{b.preferred_date}</span>
-                            </div>
-                          ) : null}
-                          {b.preferred_time ? (
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              <span>{b.preferred_time}</span>
-                            </div>
-                          ) : null}
-                          {!b.preferred_date && !b.preferred_time && (
-                            <span className="text-muted-foreground italic">Flexible</span>
-                          )}
+                      {/* Preferred Schedule (Editable On-Click) */}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="group/schedule flex items-center justify-between gap-1.5 p-1.5 -m-1.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/50 cursor-pointer transition-all"
+                          onClick={() => handleOpenScheduleModal(b)}
+                          title="Click to edit date and time / अपॉइंटमेंट की तारीख व समय बदलें"
+                        >
+                          <div className="space-y-0.5 text-xs">
+                            {b.preferred_date ? (
+                              <div className="flex items-center gap-1 text-foreground font-medium">
+                                <Calendar className="h-3 w-3 text-primary shrink-0" />
+                                <span>{b.preferred_date}</span>
+                              </div>
+                            ) : null}
+                            {b.preferred_time ? (
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span>{b.preferred_time}</span>
+                              </div>
+                            ) : null}
+                            {!b.preferred_date && !b.preferred_time && (
+                              <span className="text-muted-foreground italic flex items-center gap-1">
+                                <CalendarDays className="h-3 w-3 opacity-60" />
+                                Flexible
+                              </span>
+                            )}
+                          </div>
+                          <div className="opacity-0 group-hover/schedule:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-foreground shrink-0">
+                            <Pencil className="h-3 w-3" />
+                          </div>
                         </div>
                       </TableCell>
 
@@ -1335,6 +1553,10 @@ export default function BookingsPage() {
                               <DropdownMenuItem onClick={() => handleOpenInbox(b)}>
                                 <MessageSquare className="h-4 w-4 mr-2 text-primary" />
                                 Open Inbox Chat
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenScheduleModal(b)}>
+                                <CalendarDays className="h-4 w-4 mr-2 text-primary" />
+                                Reschedule (Date & Time)
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => {
@@ -1482,6 +1704,185 @@ export default function BookingsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Reschedule Date & Time Dialog */}
+      <Dialog open={scheduleModalOpen} onOpenChange={setScheduleModalOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-primary" />
+              Reschedule Appointment (तारीख व समय बदलें)
+            </DialogTitle>
+            <DialogDescription>
+              Update preferred appointment date and consultation time for{' '}
+              <strong className="text-foreground">{editingScheduleBooking?.patient_name}</strong>{' '}
+              <span className="font-mono text-xs">({editingScheduleBooking?.booking_query_id})</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Date Section */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-primary" />
+                <span>Preferred Date (अपॉइंटमेंट की तारीख)</span>
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="e.g. 18 November 2026 or 2026-11-18"
+                  value={scheduleDateDraft}
+                  onChange={(e) => setScheduleDateDraft(e.target.value)}
+                  className="text-xs h-9"
+                />
+                <Input
+                  type="date"
+                  className="w-12 px-2 text-xs h-9 cursor-pointer shrink-0"
+                  title="Pick from calendar"
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      const parts = e.target.value.split('-');
+                      if (parts.length === 3) {
+                        const year = parseInt(parts[0], 10);
+                        const month = parseInt(parts[1], 10) - 1;
+                        const day = parseInt(parts[2], 10);
+                        const d = new Date(year, month, day);
+                        const monthNames = [
+                          'January', 'February', 'March', 'April', 'May', 'June',
+                          'July', 'August', 'September', 'October', 'November', 'December'
+                        ];
+                        setScheduleDateDraft(`${day} ${monthNames[d.getMonth()]} ${year}`);
+                      } else {
+                        setScheduleDateDraft(e.target.value);
+                      }
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Quick Date Shortcuts */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[11px] text-muted-foreground mr-1">Quick:</span>
+                {[
+                  { label: 'Today (आज)', days: 0 },
+                  { label: 'Tomorrow (कल)', days: 1 },
+                  { label: '+2 Days (परसों)', days: 2 },
+                  { label: '+3 Days', days: 3 },
+                  { label: '+5 Days', days: 5 },
+                  { label: '+7 Days', days: 7 },
+                ].map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    onClick={() => setScheduleDateDraft(getQuickDate(s.days))}
+                    className="text-[11px] px-2 py-0.5 rounded-md border border-border bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer"
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Time Section */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-primary" />
+                <span>Preferred Time (परामर्श का समय)</span>
+              </label>
+              <Input
+                type="text"
+                placeholder="e.g. 11:00 AM or 04:30 PM"
+                value={scheduleTimeDraft}
+                onChange={(e) => setScheduleTimeDraft(e.target.value)}
+                className="text-xs h-9"
+              />
+
+              {/* Quick Time Slot Shortcuts */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[11px] text-muted-foreground mr-1">Slots:</span>
+                {[
+                  '10:00 AM',
+                  '11:00 AM',
+                  '12:00 PM',
+                  '02:00 PM',
+                  '03:30 PM',
+                  '04:30 PM',
+                  '05:30 PM',
+                  '06:30 PM',
+                  '07:30 PM',
+                ].map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => setScheduleTimeDraft(slot)}
+                    className={cn(
+                      "text-[11px] px-2 py-0.5 rounded-md border transition-colors cursor-pointer",
+                      scheduleTimeDraft === slot
+                        ? "bg-primary text-primary-foreground border-primary font-semibold"
+                        : "border-border bg-muted/60 hover:bg-muted text-foreground"
+                    )}
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Flexible Reset button */}
+            <div className="pt-2 flex items-center justify-between border-t border-border/60">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                onClick={() => {
+                  setScheduleDateDraft('');
+                  setScheduleTimeDraft('');
+                }}
+              >
+                Reset to Flexible (समय तय नहीं)
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter className="flex sm:justify-between items-center">
+            <div className="text-xs text-muted-foreground">
+              {editingScheduleBooking?.phone && (
+                <a
+                  href={`tel:${editingScheduleBooking.phone}`}
+                  className="text-primary hover:underline flex items-center gap-1"
+                >
+                  <Phone className="h-3 w-3" />
+                  Call: {formatPhoneDisplay(editingScheduleBooking.phone)}
+                </a>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setScheduleModalOpen(false)}
+                disabled={savingSchedule}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveSchedule}
+                disabled={savingSchedule}
+                className="gap-1.5"
+              >
+                {savingSchedule ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                Save Schedule
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Booking Details Modal */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="sm:max-w-[550px]">
@@ -1590,8 +1991,74 @@ export default function BookingsPage() {
 
               {/* Consultation Mode Card */}
               <div className="p-3.5 rounded-lg border bg-muted/40 space-y-2">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Consultation Mode
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Consultation Mode
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-primary hover:text-primary/80 gap-1 font-normal cursor-pointer"
+                        />
+                      }
+                    >
+                      <Pencil className="h-3 w-3" />
+                      <span>Change Mode</span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64 p-1.5 max-h-80 overflow-y-auto">
+                      <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        Change Consultation Mode
+                      </div>
+                      <DropdownMenuItem
+                        onClick={() => handleUpdateConsultationType(selectedBooking.id, 'video_consultation')}
+                        className={cn(
+                          "flex items-center justify-between cursor-pointer py-2 px-2.5 rounded-md",
+                          selectedBooking.consultation_type !== 'clinic_visit' && "bg-blue-500/10 text-blue-700 dark:text-blue-300 font-semibold"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Video className="h-4 w-4 text-blue-600 shrink-0" />
+                          <div>
+                            <div className="text-xs font-medium">Online Video Call</div>
+                            <div className="text-[10px] text-muted-foreground">45 Min Doctor Session</div>
+                          </div>
+                        </div>
+                        {selectedBooking.consultation_type !== 'clinic_visit' && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
+                      </DropdownMenuItem>
+
+                      <DropdownMenuSeparator className="my-1" />
+
+                      <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                        🏥 In-Person Clinic Visit:
+                      </div>
+
+                      {CLINIC_OPTIONS.map((c) => {
+                        const isCurrentClinic =
+                          selectedBooking.consultation_type === 'clinic_visit' &&
+                          (selectedBooking.clinic_location?.toLowerCase() === c.city.toLowerCase() ||
+                            (!selectedBooking.clinic_location && selectedBooking.city?.toLowerCase() === c.city.toLowerCase()));
+                        return (
+                          <DropdownMenuItem
+                            key={c.city}
+                            onClick={() => handleUpdateConsultationType(selectedBooking.id, 'clinic_visit', c.city)}
+                            className={cn(
+                              "flex items-center justify-between cursor-pointer py-1.5 px-2.5 rounded-md text-xs",
+                              isCurrentClinic && "bg-amber-500/10 text-amber-700 dark:text-amber-300 font-semibold"
+                            )}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <Building2 className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                              <span className="truncate">{c.label}</span>
+                            </div>
+                            {isCurrentClinic && <Check className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <div className="flex items-center gap-2">
                   {selectedBooking.consultation_type === 'clinic_visit' ? (
@@ -1610,8 +2077,20 @@ export default function BookingsPage() {
 
               {/* Schedule Card */}
               <div className="p-3.5 rounded-lg border bg-muted/40 space-y-2">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Preferred Appointment Schedule
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Preferred Appointment Schedule
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-primary hover:text-primary/80 gap-1 font-normal cursor-pointer"
+                    onClick={() => handleOpenScheduleModal(selectedBooking)}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    <span>Reschedule</span>
+                  </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center gap-1.5">
