@@ -209,15 +209,183 @@ export function formatAllClinicsList(isEnglish: boolean = false): string {
 }
 
 export function formatNoClinicCityMessage(city: string, isEnglish: boolean = false): string {
+  return formatLocationAndDoctorPitch(city, isEnglish)
+}
+
+export interface NearbyClinicMatch {
+  clinic: ClinicDetails
+  isExactCity: boolean
+  patientCity: string
+}
+
+export const NEARBY_CLINIC_MAPPING: Record<string, string[]> = {
+  delhi: [
+    'noida', 'greater noida', 'ghaziabad', 'meerut', 'gurgaon', 'gurugram', 'faridabad',
+    'sonipat', 'panipat', 'rohtak', 'karnal', 'muzaffarnagar', 'bulandshahr', 'hapur',
+    'aligarh', 'mathura', 'moradabad', 'bareilly', 'ncr', 'delhi ncr', 'saharanpur',
+    'shamli', 'baghpat', 'modinagar', 'dadri', 'palwal'
+  ],
+  jaipur: [
+    'ajmer', 'sikar', 'alwar', 'dausa', 'tonk', 'kota', 'bhilwara', 'bikaner', 'jodhpur',
+    'bharatpur', 'jhunjhunu', 'churu', 'sawai madhopur', 'nagaur', 'pali', 'udaipur',
+    'rajasthan', 'kishangarh', 'beawar', 'sujangarh', 'chittorgarh', 'shahpura'
+  ],
+  rewari: [
+    'bawal', 'dharuhera', 'narnaul', 'bhiwadi', 'neemrana', 'mahendragarh', 'manesar',
+    'jhajjar', 'charkhi dadri', 'behror', 'kotputli', 'tijara', 'kosli', 'taoru', 'pataudi'
+  ],
+  hisar: [
+    'sirsa', 'fatehabad', 'jind', 'bhiwani', 'hansi', 'tohana', 'narwana', 'kaithal',
+    'barwala', 'mandi adampur', 'ellinabad', 'uchana'
+  ],
+  amritsar: [
+    'tarn taran', 'gurdaspur', 'batala', 'pathankot', 'kapurthala', 'hoshiarpur',
+    'firozpur', 'firozepur', 'fazilka', 'jammu', 'kathua'
+  ],
+  ludhiana: [
+    'jalandhar', 'moga', 'khanna', 'phagwara', 'nawanshahr', 'fatehgarh sahib', 'patiala',
+    'sangrur', 'barnala', 'bathinda', 'malerkotla', 'chandigarh', 'mohali', 'panchkula',
+    'ambala', 'samrala', 'raikot', 'jagraon', 'mandi gobindgarh', 'sirhind'
+  ],
+  lucknow: [
+    'kanpur', 'ayodhya', 'barabanki', 'unnao', 'rae bareli', 'sitapur', 'hardoi',
+    'sultanpur', 'gonda', 'bahraich', 'prayagraj', 'allahabad', 'varanasi', 'gorakhpur',
+    'jhansi', 'fatehpur', 'lakhimpur', 'amethi', 'faizabad', 'basti', 'azamgarh'
+  ],
+  patna: [
+    'gaya', 'muzaffarpur', 'bhagalpur', 'darbhanga', 'bihar sharif', 'arrah', 'bhojpur',
+    'chapra', 'saran', 'begusarai', 'samastipur', 'hajipur', 'vaishali', 'nalanda',
+    'purnia', 'motihari', 'siwan', 'sasaram', 'buxar', 'madhubani'
+  ],
+  ranchi: [
+    'jamshedpur', 'dhanbad', 'bokaro', 'hazaribagh', 'ramgarh', 'deoghar', 'giridih',
+    'chaibasa', 'medininagar', 'daltonganj', 'purulia', 'rourkela', 'koderma', 'khunti',
+    'lohardaga', 'gumla', 'simdega'
+  ],
+}
+
+/**
+ * Finds if a given patient city matches one of our 9 physical clinic cities directly,
+ * or is in the immediate geographic proximity of one of our clinics.
+ */
+export function findNearbyClinic(cityName?: string | null): NearbyClinicMatch | null {
+  if (!cityName) return null
+  const cleaned = cityName.trim().toLowerCase()
+
+  // 1. Direct match with official 9 clinic cities
+  const direct = findClinicByCity(cityName)
+  if (direct) {
+    return {
+      clinic: direct,
+      isExactCity: true,
+      patientCity: direct.city,
+    }
+  }
+
+  // 2. Proximity check in nearby cities / regions
+  for (const [clinicKey, nearbyList] of Object.entries(NEARBY_CLINIC_MAPPING)) {
+    const isNearby = nearbyList.some(
+      (nc) => cleaned === nc || cleaned.includes(nc) || nc.includes(cleaned),
+    )
+    if (isNearby) {
+      const clinic = GYNOCCI_CLINICS[clinicKey]
+      if (clinic) {
+        return {
+          clinic,
+          isExactCity: false,
+          patientCity: cityName.trim(),
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Formats a location acknowledgment that:
+ * 1. Analyzes proximity to Gynocci's 9 clinics and highlights the nearest clinic (with Google Maps link).
+ * 2. Contrasts in-person Nadi Parikshan with online Jeebha Parikshan + reports analysis.
+ * 3. Highlights the Panel of 5 Senior Doctors deep study and discussion to establish deep patient trust.
+ */
+export function formatLocationAndDoctorPitch(cityName: string, isEnglish: boolean = false): string {
+  const match = findNearbyClinic(cityName)
+
   if (isEnglish) {
+    if (match?.isExactCity) {
+      return (
+        `🏥 **Gynocci Clinic - ${match.clinic.city}**\n` +
+        `📍 Address: ${match.clinic.addressEnglish}\n` +
+        `🗺️ Google Maps: ${match.clinic.googleMapsUrl}\n` +
+        `⏰ Timings: 10:00 AM to 6:30 PM (All 7 Days Open)\n` +
+        `---\n` +
+        `🌿 **Consultation Options:**\n` +
+        `• **Clinic Visit:** In-person **Nadi Parikshan (Pulse Examination)** by senior doctors to detect internal dosha imbalances without side-effects.\n` +
+        `• **Online Video Consultation:** Dedicated 45-minute consultation including **Jeebha Parikshan (Tongue Examination)** and thorough review of all your previous medical reports.\n` +
+        `• **5 Senior Doctors Panel:** Our dedicated board of 5 senior doctors deeply studies your case together before consultation so you get complete, unhurried guidance!\n` +
+        `---\n` +
+        `Would you like to book a Clinic Visit at ${match.clinic.city} or an Online Video Consultation?`
+      )
+    }
+
+    if (match && !match.isExactCity) {
+      return (
+        `Nearest to your location (${match.patientCity}), our **${match.clinic.city} Clinic** is available:\n` +
+        `📍 Address: ${match.clinic.addressEnglish}\n` +
+        `🗺️ Google Maps: ${match.clinic.googleMapsUrl}\n` +
+        `---\n` +
+        `• If you wish to visit the clinic, you can come to our ${match.clinic.city} clinic for in-person **Nadi Parikshan (Pulse Examination)**.\n` +
+        `• You can also take a detailed 45-minute **Online Video Consultation** from home where doctors perform **Jeebha Parikshan (Tongue Examination)** and report analysis.\n` +
+        `• Our panel of 5 Senior Doctors reviews your case history so that your doubts are completely addressed.\n` +
+        `---\n` +
+        `Which option would you prefer: a Clinic Visit at ${match.clinic.city} or an Online Video Consultation?`
+      )
+    }
+
     return (
-      `Gynocci currently does not have a physical clinic in ${city}. However, you can consult with our senior expert doctor from the comfort of your home via a dedicated 45-minute Online Video Consultation. The doctor will review your reports in depth and provide complete Ayurvedic root-cause guidance.\n\n` +
-      `Would you like me to book your online video consultation appointment?`
+      `Gynocci currently does not have a physical clinic in ${cityName}. However, you can consult our senior doctors from the comfort of home via a dedicated 45-minute **Online Video Consultation**!\n` +
+      `---\n` +
+      `Our doctors perform **Jeebha Parikshan (Tongue Examination)**, facial analysis, and an extensive review of all your prior reports. Furthermore, our panel of 5 Senior Doctors deeply studies your case together.\n` +
+      `---\n` +
+      `Shall I book your Online Video Consultation appointment?`
+    )
+  }
+
+  // Hindi (Default)
+  if (match?.isExactCity) {
+    return (
+      `🏥 **${match.clinic.titleHindi}**\n` +
+      `📍 पता: ${match.clinic.addressHindi}\n` +
+      `🗺️ Google Maps: ${match.clinic.googleMapsUrl}\n` +
+      `⏰ समय: ${match.clinic.timings}\n` +
+      `---\n` +
+      `🌿 **डॉक्टर परामर्श के दो बेहतरीन विकल्प:**\n` +
+      `1. **क्लिनिक विज़िट (Clinic Visit):** क्लिनिक पर हमारे वरिष्ठ डॉक्टर्स आपका **नाड़ी परीक्षण (Nadi Parikshan)** करके शरीर के अंदरूनी दोषों (वात, पित्त, कफ) को समझते हैं और बिना किसी साइड-इफेक्ट के समस्या को जड़ (root cause) से ठीक करने की दिशा में कार्य करते हैं।\n` +
+      `2. **ऑनलाइन वीडियो कंसल्टेशन:** यदि आप क्लिनिक नहीं आ सकते, तो घर बैठे 45 मिनट के वीडियो सत्र में डॉक्टर्स **जिह्वा परीक्षण (Jeebha Parikshan)** और आपकी पुरानी रिपोर्ट्स का गहराई से विश्लेषण करते हैं।\n` +
+      `---\n` +
+      `✨ सबसे खास बात: हमारी **5 सीनियर डॉक्टर्स की विशेषज्ञ पैनल टीम** आपकी केस हिस्ट्री का गहराई से अध्ययन करती है ताकि आपका कोई भी संदेह अधूरा न रहे और आप तसल्ली से अपनी समस्या समझ सकें।\n` +
+      `क्या आप हमारे ${match.clinic.hindiCity} क्लीनिक में विज़िट करना चाहेंगे या घर बैठे ऑनलाइन वीडियो कंसल्टेशन लेना चाहेंगे?`
+    )
+  }
+
+  if (match && !match.isExactCity) {
+    return (
+      `आपकी बताई लोकेशन **${match.patientCity}** के सबसे नजदीक हमारी **${match.clinic.titleHindi}** मौजूद है:\n` +
+      `📍 पता: ${match.clinic.addressHindi}\n` +
+      `🗺️ Google Maps: ${match.clinic.googleMapsUrl}\n` +
+      `---\n` +
+      `• **क्लिनिक विज़िट:** यदि आप क्लिनिक आना चाहें, तो आप ${match.clinic.hindiCity} क्लीनिक आ सकते हैं, जहाँ डॉक्टर्स आपका **नाड़ी परीक्षण (Nadi Parikshan)** करके समस्या को जड़ (root cause) से समझने का कार्य करेंगे।\n` +
+      `• **ऑनलाइन वीडियो कंसल्टेशन:** या फिर आप घर बैठे ही हमारे सीनियर डॉक्टर्स के साथ 45 मिनट का विस्तृत वीडियो कंसल्टेशन ले सकते हैं, जिसमें डॉक्टर्स **जिह्वा परीक्षण (Jeebha Parikshan)** और आपकी पिछली रिपोर्ट्स का विश्लेषण करेंगे।\n` +
+      `---\n` +
+      `हमारी **5 सीनियर डॉक्टर्स की पैनल टीम** आपकी पूरी समस्या को गहराई से समझकर समाधान तैयार करती है। आप इनमें से किस विकल्प से अपॉइंटमेंट लेना पसंद करेंगे?`
     )
   }
 
   return (
-    `Gynocci का फिजिकल क्लीनिक अभी आपके शहर ${city} में उपलब्ध नहीं है। लेकिन आप घर बैठे हमारे सीनियर एक्सपर्ट डॉक्टर के साथ 45 मिनट की ऑनलाइन वीडियो कंसल्टेशन (Online Video Consultation) ले सकते हैं जिसमें डॉक्टर आपकी रिपोर्ट्स और समस्या को गहराई से समझकर संपूर्ण प्राकृतिक आयुर्वेदिक मार्गदर्शन प्रदान करेंगे।\n\n` +
-    `क्या मैं आपका वीडियो कंसल्टेशन अपॉइंटमेंट बुक कर दूँ?`
+    `चूंकि आपकी लोकेशन **${cityName}** में अभी हमारी कोई नजदीकी फिजिकल क्लीनिक नहीं है, इसलिए आप घर बैठे हमारे सीनियर डॉक्टर्स के साथ 45 मिनट का विस्तृत **ऑनलाइन वीडियो कंसल्टेशन (Online Video Consultation)** ले सकते हैं।\n` +
+    `---\n` +
+    `वीडियो कंसल्टेशन में डॉक्टर्स **जिह्वा परीक्षण (Jeebha Parikshan)** और आपकी पुरानी सभी रिपोर्ट्स का विस्तृत अध्ययन करते हैं। साथ ही हमारी **5 सीनियर डॉक्टर्स की पैनल टीम** मिलकर आपकी समस्या का जड़ से समाधान तय करती है।\n` +
+    `---\n` +
+    `क्या मैं आपका ऑनलाइन वीडियो कंसल्टेशन अपॉइंटमेंट दर्ज कर दूँ?`
   )
 }

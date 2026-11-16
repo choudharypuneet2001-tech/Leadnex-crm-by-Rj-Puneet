@@ -14,6 +14,7 @@ import {
   isLikelyFemaleName,
   detectRequestedLanguage,
   resolveConversationLanguage,
+  isValidIndianPersonName,
   type DetectedLanguage,
 } from './query'
 import {
@@ -184,7 +185,11 @@ export async function dispatchInboundToAiReply(
     const tracedConcern = extractConcernFromMessages(messages)
 
     // Effective patient name: prefer explicitly stated name from chat; clean profile handle otherwise
-    let effectiveName = tracedName || cleanDisplayName(contact?.name) || null
+    let effectiveName =
+      (tracedName && isValidIndianPersonName(tracedName) ? tracedName : null) ||
+      (cleanDisplayName(contact?.name) && isValidIndianPersonName(cleanDisplayName(contact?.name))
+        ? cleanDisplayName(contact?.name)
+        : null)
     if (effectiveName && /puneet/i.test(effectiveName) && !tracedName) {
       // Owner testing handle without stating actual patient name yet
       effectiveName = null
@@ -203,14 +208,14 @@ export async function dispatchInboundToAiReply(
 
     // Proactively persist extracted name / city to DB so contact profile stays clean & up-to-date
     if (
-      (tracedName && tracedName !== contact?.name) ||
+      (tracedName && isValidIndianPersonName(tracedName) && tracedName !== contact?.name) ||
       (tracedCity && tracedCity !== contact?.company)
     ) {
       try {
         const updatePayload: Record<string, unknown> = {
           updated_at: new Date().toISOString(),
         }
-        if (tracedName) updatePayload.name = tracedName
+        if (tracedName && isValidIndianPersonName(tracedName)) updatePayload.name = tracedName
         if (tracedCity) {
           updatePayload.company = tracedCity
           updatePayload.city = tracedCity
@@ -256,7 +261,8 @@ export async function dispatchInboundToAiReply(
     })
 
     // If contact name or city was extracted, update the contact record
-    const extractedName = contactUpdate?.name || bookingConfirmed?.patient_name || tracedName
+    const rawExtractedName = contactUpdate?.name || bookingConfirmed?.patient_name || tracedName
+    const extractedName = rawExtractedName && isValidIndianPersonName(rawExtractedName) ? rawExtractedName : undefined
     const extractedCity = contactUpdate?.city || bookingConfirmed?.city || tracedCity
     if (extractedName || extractedCity) {
       try {
@@ -648,18 +654,44 @@ export async function dispatchInboundToAiReply(
     replyText = replyText.replace(/Ab thoda intezaar kijiye!?/gi, '')
 
     // Post-booking receipt: Ensure senior doctors team details share, emotional health connection, and fees details are presented politely as separate, short messages
-    const emotionalFeesHindi =
-      'आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं। 🙏\n' +
-      '---\n' +
-      'हमारी सामान्य कंसल्टेशन फीस ₹1,000 और रजिस्ट्रेशन फीस ₹500 है। लेकिन अभी Gynocci के एक स्पेशल ऑफर में आपको सिर्फ ₹499 पे करने होंगे, और लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा। ✨\n' +
-      '---\n' +
-      'फीस से कहीं ज्यादा मायने आपकी सेहत रखती है — समस्या के आगे बढ़ने से पहले समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है।\n' +
-      '---\n' +
-      'कंसल्टेशन फीस का भुगतान कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके पेमेंट QR Code / Link और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। 🙏'
+    const isClinicVisit =
+      effectiveBooking?.consultation_type === 'clinic_visit' ||
+      replyText.toLowerCase().includes('clinic visit') ||
+      replyText.includes('क्लिनिक') ||
+      replyText.includes('Clinic')
+
+    const emotionalFeesHindi = isClinicVisit
+      ? 'आपकी डिटेल्स हमारी 5 सीनियर डॉक्टर्स की विशेषज्ञ पैनल टीम के साथ शेयर कर दी गई हैं। 🙏\n' +
+        '---\n' +
+        'क्लिनिक विज़िट के लिए आपको अभी ऑनलाइन किसी भी तरह की कोई पेमेंट नहीं करनी है! जब आप क्लिनिक पहुंचेंगे, तब आपको अपनी कंसल्टेशन फीस क्लिनिक काउंटर पर ही जमा करानी होगी। ✨\n' +
+        '---\n' +
+        'क्लिनिक पर हमारे वरिष्ठ डॉक्टर्स आपका नाड़ी परीक्षण (Nadi Parikshan) करके समस्या को जड़ से समझने का कार्य करेंगे। साथ ही हमारी 5 डॉक्टर्स की टीम पहले ही आपकी केस हिस्ट्री का अध्ययन कर लेगी ताकि आपका कोई भी संदेह अधूरा न रहे।\n' +
+        '---\n' +
+        'हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपके क्लिनिक अपॉइंटमेंट की पूरी तैयारी सुनिश्चित करेगी। 🙏'
+      : 'आपकी डिटेल्स हमारी 5 सीनियर डॉक्टर्स की विशेषज्ञ पैनल टीम के साथ शेयर कर दी गई हैं। 🙏\n' +
+        '---\n' +
+        'हमारी डॉक्टर्स टीम आपकी बातचीत और रिपोर्ट्स का गहराई से अध्ययन कर रही है ताकि डॉक्टर से मिलते समय आपका कोई भी डाउट अधूरा न रहे और आप तसल्ली से पूरी समस्या समझ सकें।\n' +
+        '---\n' +
+        'हमारी सामान्य कंसल्टेशन फीस ₹1,000 और रजिस्ट्रेशन फीस ₹500 है। लेकिन अभी Gynocci के एक स्पेशल ऑफर में आपको सिर्फ ₹499 पे करने होंगे, और लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा। ✨\n' +
+        '---\n' +
+        'फीस से कहीं ज्यादा मायने आपकी सेहत रखती है — समस्या के आगे बढ़ने से पहले समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है।\n' +
+        '---\n' +
+        'कंसल्टेशन फीस का भुगतान कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके पेमेंट QR Code / Link और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। 🙏'
+
+    const emotionalFeesEnglish = isClinicVisit
+      ? 'Your details have been shared with our Panel of 5 Senior Doctors. 🙏\n' +
+        '---\nFor your Clinic Visit, you DO NOT need to make any online payment right now! Your consultation fees will be paid directly at the clinic counter upon your arrival. ✨\n' +
+        '---\nDuring your in-person visit, our senior doctors will perform an in-depth Nadi Parikshan (Pulse Examination) to understand and address the root cause of your concern.\n' +
+        '---\nOur senior Gynocci team will connect with you shortly to coordinate your clinic appointment.'
+      : 'Your details have been shared with our Panel of 5 Senior Doctors. 🙏\n' +
+        '---\nOur medical board is thoroughly reviewing your case history so that during your 45-minute consultation, every doubt is completely resolved without any rush!\n' +
+        '---\nOur regular consultation fee is ₹1,000 and registration fee is ₹500. Under Gynocci\'s special offer, you only need to pay ₹499, and your consultations remain free for a lifetime as long as your treatment continues with us. ✨\n' +
+        '---\nYour health matters far more than fees — addressing and resolving the root cause in time is our highest priority.\n' +
+        '---\nPlease note that consultation fees need to be paid before the consultation begins. Our senior Gynocci team will connect with you shortly to share the payment details (QR Code / Link) and explain the consultation process. 🙏'
 
     // Replace old long paragraphs with crisp, separated WhatsApp bubbles
     replyText = replyText.replace(
-      /आपकी डिटेल्स हमारी सीनियर डॉक्टर्स टीम के साथ शेयर कर दी गई हैं।[\s\S]*?(?:प्रक्रिया समझा देगी।?\s*(?:✨|🙏)?)/gi,
+      /आपकी डिटेल्स हमारी (?:5 )?सीनियर डॉक्टर्स (?:की विशेषज्ञ पैनल )?टीम के साथ शेयर कर दी गई हैं।[\s\S]*?(?:प्रक्रिया समझा देगी।?\s*(?:✨|🙏)?|तैयारी सुनिश्चित करेगी।?\s*(?:✨|🙏)?)/gi,
       emotionalFeesHindi,
     )
     replyText = replyText.replace(
@@ -674,14 +706,12 @@ export async function dispatchInboundToAiReply(
     if (
       (replyText.includes('Booking ID:') || replyText.includes('📋 Booking ID') || replyText.includes('सफलतापूर्वक दर्ज')) &&
       !replyText.includes('₹499') &&
-      !replyText.includes('499')
+      !replyText.includes('499') &&
+      !replyText.includes('क्लिनिक काउंटर') &&
+      !replyText.includes('clinic counter')
     ) {
       if (isEnglish) {
-        replyText +=
-          '\n---\nYour details have been shared with our Senior Doctors Team. 🙏\n' +
-          '---\nOur regular consultation fee is ₹1,000 and registration fee is ₹500. However, under Gynocci\'s special offer, you only need to pay ₹499, and your consultations will remain free for a lifetime as long as your treatment continues with us. ✨\n' +
-          '---\nYour health matters far more than fees — addressing and resolving the root cause in time is our highest priority.\n' +
-          '---\nPlease note that consultation fees need to be paid before the consultation begins. Our senior Gynocci team will connect with you shortly to share the payment details (QR Code / Link) and explain the consultation process. 🙏'
+        replyText += '\n---\n' + emotionalFeesEnglish
       } else if (targetLanguage && !targetLanguage.isDefaultHindi && targetLanguage.code !== 'hi') {
         // Handled naturally in target regional language via system prompt instructions
       } else {
@@ -1183,12 +1213,10 @@ export function extractNameFromMessages(messages: { role: string; content: strin
 
   function cleanCandidate(raw?: string | null): string | null {
     if (!raw) return null
-    let s = raw.trim().replace(/^[:=\-\s]+/, '').replace(/\s+(?:hai|hoon|hu|h|ji|sir|maam)$/i, '').trim()
+    let s = raw.trim().replace(/^[:=\-\s]+/, '').replace(/\s+(?:hai|hoon|hu|h|ji|sir|maam|madam)$/i, '').trim()
+    if (!isValidIndianPersonName(s)) return null
     const words = s.split(/\s+/)
     if (words.length > 3 || words.length === 0) return null
-    if (words.some((w) => NON_NAME_WORDS.has(w.toLowerCase()))) return null
-    if (!/^[a-zA-Z\u0900-\u097F\s.]+$/.test(s)) return null
-    if (s.length < 2 || s.length > 30) return null
     return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
   }
 

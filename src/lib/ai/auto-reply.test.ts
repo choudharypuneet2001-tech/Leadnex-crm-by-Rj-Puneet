@@ -464,6 +464,25 @@ describe('Conversation history extraction helpers', () => {
       { role: 'user', content: 'Mere hi naam se kar do' },
     ]
     expect(extractNameFromMessages(mereNaamChat)).toBe('Puneet')
+
+    // Does NOT extract non-names when user replies with problems or symptoms
+    const nonNameChat1 = [
+      { role: 'assistant', content: 'बातचीत शुरू करने से पहले, क्या मैं आपका शुभ नाम जान सकती हूँ? और आप किस शहर से हैं?' },
+      { role: 'user', content: 'Baby chahiye' },
+    ]
+    expect(extractNameFromMessages(nonNameChat1)).toBeNull()
+
+    const nonNameChat2 = [
+      { role: 'assistant', content: 'क्या मैं आपका शुभ नाम जान सकती हूँ?' },
+      { role: 'user', content: 'Dard hota hai' },
+    ]
+    expect(extractNameFromMessages(nonNameChat2)).toBeNull()
+
+    const nonNameChat3 = [
+      { role: 'assistant', content: 'आप किसके नाम से अपॉइंटमेंट बुक करवाना चाहते हैं, कृपया उनका नाम बताएं?' },
+      { role: 'user', content: 'Reports bhej di' },
+    ]
+    expect(extractNameFromMessages(nonNameChat3)).toBeNull()
   })
 
   it('extracts age and phone correctly', () => {

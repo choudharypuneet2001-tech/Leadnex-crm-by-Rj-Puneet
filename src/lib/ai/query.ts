@@ -394,19 +394,132 @@ export function resolveConversationLanguage(
   return DEFAULT_HINDI_LANGUAGE
 }
 
-const KNOWN_FEMALE_NAMES = new Set([
-  'meenal', 'payal', 'komal', 'kajal', 'suman', 'kiran', 'poonam', 'sheetal', 'simran',
-  'mumtreen', 'fatima', 'shabnam', 'shabana', 'rubina', 'yasmin', 'salma', 'parveen',
-  'noor', 'nargis', 'rehana', 'afsana', 'shama', 'tannu', 'mannu', 'guddi', 'chhavi'
+export const KNOWN_FEMALE_NAMES = new Set([
+  'shikha', 'priya', 'pooja', 'puja', 'anjali', 'sunita', 'neha', 'aarti', 'arti', 'sneha',
+  'divya', 'ritu', 'rekha', 'kavita', 'jyoti', 'meenal', 'payal', 'komal', 'kajal', 'suman',
+  'kiran', 'poonam', 'sheetal', 'simran', 'mamta', 'geeta', 'gita', 'seema', 'sima', 'anita',
+  'renu', 'meena', 'radha', 'chhaya', 'vandana', 'swati', 'shweta', 'preeti', 'priti', 'pinky',
+  'pinki', 'manju', 'sarita', 'babita', 'usha', 'saroj', 'shashi', 'pushpa', 'nirmala', 'asha',
+  'santosh', 'kamla', 'krishna', 'maya', 'sushma', 'shakuntala', 'vimla', 'malti', 'manisha',
+  'monika', 'monica', 'ruchi', 'shalu', 'deepika', 'dipika', 'garima', 'sonam', 'priyanka',
+  'richa', 'pallavi', 'pragya', 'tanu', 'tanya', 'ishita', 'rashi', 'shivani', 'varsha',
+  'chanchal', 'mumtreen', 'fatima', 'shabnam', 'shabana', 'rubina', 'yasmin', 'salma',
+  'parveen', 'noor', 'nargis', 'rehana', 'afsana', 'shama', 'tannu', 'mannu', 'guddi',
+  'chhavi', 'sapna', 'sonia', 'soniya', 'bhavna', 'dimple', 'khushboo', 'alka', 'anju',
+  'kanchan', 'sudha', 'archana', 'sakshi', 'muskan', 'muskaan', 'nisha', 'roshni', 'komila'
 ])
 
-const KNOWN_MALE_NAMES = new Set([
+export const KNOWN_MALE_NAMES = new Set([
   'rajesh', 'rahul', 'amit', 'puneet', 'rohit', 'vikas', 'suresh', 'ramesh', 'ajay',
   'vijay', 'sanjay', 'manoj', 'rakesh', 'deepak', 'anil', 'sunil', 'mukesh', 'dinesh',
   'mohit', 'sumit', 'aman', 'abaan', 'mohammad', 'mohd', 'khan', 'singh', 'kumar',
   'gaurav', 'sourabh', 'saurabh', 'ankit', 'ashish', 'abhishek', 'alok', 'arun', 'ashok',
-  'shashank', 'mayank', 'prateek', 'prashant', 'praveen', 'naveen', 'tarun', 'varun'
+  'shashank', 'mayank', 'prateek', 'prashant', 'praveen', 'naveen', 'tarun', 'varun',
+  'rauf', 'sonu', 'rabis', 'sachin', 'nitin', 'nikhil', 'vivek', 'vishal', 'vikram',
+  'harpreet', 'gurpreet', 'manpreet', 'jaspreet', 'kuldeep', 'sandip', 'sandeep',
+  'pradeep', 'jagdish', 'mahesh', 'kamlesh', 'naresh', 'kailash', 'subhash', 'satish',
+  'vinod', 'pramod', 'devendra', 'surendra', 'jitendra', 'dharmendra', 'ravindra',
+  'bhupendra', 'arvind', 'govind', 'anand', 'prakash', 'om', 'shyam', 'ram', 'mohan',
+  'sohan', 'roshan', 'chetan', 'pankaj', 'neeraj', 'hemant', 'lalit', 'manish', 'yogesh'
 ])
+
+export const COMMON_INDIAN_SURNAMES = new Set([
+  'sharma', 'verma', 'gupta', 'singh', 'kaur', 'yadav', 'patel', 'jain', 'choudhary',
+  'chaudhary', 'agarwal', 'agrawal', 'mishra', 'tiwari', 'pandey', 'jha', 'joshi',
+  'saini', 'rao', 'reddy', 'nair', 'pillai', 'khan', 'ali', 'sheikh', 'ansari',
+  'bairwa', 'rajpurohit', 'rathore', 'chauhan', 'shekhawat', 'gehlot', 'meena', 'jangid',
+  'kumari', 'devi', 'bano', 'khatoon', 'begum', 'das', 'roy', 'ghosh', 'banerjee'
+])
+
+export const NAME_BLACKLIST_WORDS = new Set([
+  // Symptoms & clinical terms
+  'pcod', 'pcos', 'tubal', 'blockage', 'fallopian', 'sperm', 'count', 'motility',
+  'infertility', 'periods', 'period', 'baby', 'baccha', 'bacha', 'bache', 'bachey',
+  'pregnancy', 'pregnant', 'conceive', 'conception', 'miscarriage', 'amh', 'fibroid',
+  'cysts', 'cyst', 'ultrasound', 'hsg', 'semen', 'report', 'reports', 'dard', 'pain',
+  'bleed', 'bleeding', 'white', 'discharge', 'problem', 'samasya', 'takleef', 'bimari',
+  'ilaaj', 'treatment', 'upchar', 'dawa', 'dawai', 'medicine', 'nadi', 'jeebha', 'parikshan',
+
+  // Actions, verbs & requests
+  'call', 'batao', 'bataiye', 'bolo', 'boliye', 'suno', 'sun', 'dekh', 'dekho',
+  'karo', 'karein', 'karna', 'karni', 'chahiye', 'bhejo', 'bheji', 'bheja', 'send',
+  'aana', 'jana', 'milna', 'baat', 'consult', 'consultation', 'visit', 'book', 'booking',
+  'dena', 'deni', 'lena', 'leni', 'kripya', 'please', 'madad', 'help', 'samjho', 'samjhao',
+  'discuss', 'janana', 'jankari', 'detail', 'details', 'start', 'shuru',
+
+  // Conversational fillers, affirmations, negation
+  'ha', 'haa', 'haan', 'han', 'nahi', 'nahin', 'no', 'yes', 'ok', 'okay', 'theek',
+  'thik', 'accha', 'achha', 'acha', 'shukriya', 'dhanyawad', 'thanks', 'thank', 'namaste',
+  'namaskar', 'hello', 'hi', 'hey', 'hru', 'kaise', 'kaisa', 'kaisi', 'kya', 'haal', 'sab',
+  'sir', 'maam', 'mam', 'madam', 'ji', 'bhai', 'didi', 'doctor', 'dr',
+
+  // Money, numbers, fees & times
+  'fees', 'fee', 'rupaye', 'rupees', 'rs', 'paise', 'kharche', 'kharch', 'online', 'offline',
+  'free', 'discount', 'offer', 'aaj', 'kal', 'parso', 'today', 'tomorrow', 'morning',
+  'evening', 'subah', 'shaam', 'baje', 'pm', 'am', 'time', 'date', 'tariq',
+
+  // Places & clinic terms
+  'clinic', 'hospital', 'jaipur', 'delhi', 'lucknow', 'amritsar', 'ludhiana', 'patna',
+  'ranchi', 'hisar', 'rewari', 'city', 'shehar', 'shahar', 'pata', 'address', 'location',
+  'near', 'kahan', 'kaha', 'kidhar',
+
+  // Pronouns, prepositions & connectives
+  'aap', 'aapko', 'aapka', 'aapki', 'aapke', 'mera', 'meri', 'mere', 'hum', 'hume',
+  'humara', 'humari', 'tum', 'tera', 'teri', 'unka', 'unki', 'unke', 'woh', 'wo',
+  'yeh', 'ye', 'kyu', 'kyun', 'kab', 'kiska', 'kiske', 'kiski', 'kitna', 'kitne',
+  'kitni', 'aur', 'par', 'pe', 'se', 'ko', 'me', 'mein', 'mai', 'bhi', 'toh', 'to',
+  'lekin', 'kyoki', 'kyunki', 'parantu', 'kuch', 'bahut', 'pareshan', 'sirf'
+])
+
+/**
+ * Validates whether a text candidate is an actual Indian human name,
+ * and NOT a medical symptom, question, conversational phrase, or action verb.
+ */
+export function isValidIndianPersonName(raw?: string | null): boolean {
+  if (!raw) return false
+  const clean = raw
+    .trim()
+    .replace(/^[:=\-\s]+/, '')
+    .replace(/\s+(?:hai|hoon|hu|h|ji|sir|maam|madam)$/i, '')
+    .trim()
+
+  if (clean.length < 2 || clean.length > 30) return false
+  if (!/^[a-zA-Z\u0900-\u097F\s.]+$/.test(clean)) return false
+
+  const words = clean.split(/\s+/).map((w) => w.trim().toLowerCase()).filter(Boolean)
+  if (words.length === 0 || words.length > 3) return false
+
+  // If any word is in the non-name / medical / verb blacklist -> reject!
+  if (words.some((w) => NAME_BLACKLIST_WORDS.has(w))) {
+    return false
+  }
+
+  // If the candidate contains any recognized Indian first name or surname -> accept!
+  for (const w of words) {
+    if (KNOWN_FEMALE_NAMES.has(w) || KNOWN_MALE_NAMES.has(w) || COMMON_INDIAN_SURNAMES.has(w)) {
+      return true
+    }
+  }
+
+  // Devanagari names with 2-3 words where no word is blacklisted and length >= 3
+  if (/^[\u0900-\u097F\s]+$/.test(clean) && words.length <= 2 && words.every((w) => w.length >= 3)) {
+    return true
+  }
+
+  // English letters: 1-2 words where words end with typical Indian name phonology (a, i, eesh, deep, kant, endra, etc.)
+  if (words.length <= 2) {
+    const first = words[0]
+    if (
+      first.length >= 3 &&
+      !NAME_BLACKLIST_WORDS.has(first) &&
+      /(?:a|i|ee|ya|ka|na|ti|vi|ta|shi|ni|esh|raj|deep|pal|veer|jeet|kant|ender|endra|ant|an|ur|ik|al)$/.test(first)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
 
 /**
  * Predicts whether an Indian first name is likely female or male so the AI

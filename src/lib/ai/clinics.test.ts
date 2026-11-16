@@ -5,6 +5,7 @@ import {
   formatClinicCard,
   formatAllClinicsList,
   formatNoClinicCityMessage,
+  findNearbyClinic,
 } from './clinics'
 
 describe('clinics directory and formatting', () => {
@@ -52,8 +53,24 @@ describe('clinics directory and formatting', () => {
 
   it('formats no-clinic message for non-clinic cities correctly', () => {
     const suratMsg = formatNoClinicCityMessage('Surat', false)
-    expect(suratMsg).toContain('Gynocci का फिजिकल क्लीनिक अभी आपके शहर Surat में उपलब्ध नहीं है')
-    expect(suratMsg).toContain('45 मिनट की ऑनलाइन वीडियो कंसल्टेशन')
+    expect(suratMsg).toContain('Surat')
+    expect(suratMsg).toContain('45 मिनट का विस्तृत')
+    expect(suratMsg).toContain('ऑनलाइन वीडियो कंसल्टेशन')
+  })
+
+  it('correctly detects nearby clinics for surrounding cities', () => {
+    const noidaMatch = findNearbyClinic('Noida')
+    expect(noidaMatch?.clinic.city).toBe('Delhi')
+    expect(noidaMatch?.isExactCity).toBe(false)
+
+    const ajmerMatch = findNearbyClinic('Ajmer')
+    expect(ajmerMatch?.clinic.city).toBe('Jaipur')
+
+    const kanpurMatch = findNearbyClinic('Kanpur')
+    expect(kanpurMatch?.clinic.city).toBe('Lucknow')
+
+    const jalandharMatch = findNearbyClinic('Jalandhar')
+    expect(jalandharMatch?.clinic.city).toBe('Ludhiana')
   })
 
   it('formats all-clinics list with 9 cities', () => {

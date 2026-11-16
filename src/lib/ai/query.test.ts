@@ -9,6 +9,7 @@ import {
   detectRequestedLanguage,
   resolveConversationLanguage,
   SUPPORTED_INDIAN_LANGUAGES,
+  isValidIndianPersonName,
 } from './query'
 
 describe('latestUserMessage', () => {
@@ -221,6 +222,41 @@ describe('resolveConversationLanguage', () => {
       { role: 'assistant', content: 'ਸਤਿ ਸ਼੍ਰੀ ਅਕਾਲ ਜੀ!' },
     ])
     expect(lang.code).toBe('hi')
+  })
+})
+
+describe('isValidIndianPersonName', () => {
+  it('accepts legitimate Indian person names (female and male)', () => {
+    expect(isValidIndianPersonName('Shikha')).toBe(true)
+    expect(isValidIndianPersonName('Priya Sharma')).toBe(true)
+    expect(isValidIndianPersonName('Rajesh Kumar')).toBe(true)
+    expect(isValidIndianPersonName('Rauf')).toBe(true)
+    expect(isValidIndianPersonName('Pooja')).toBe(true)
+    expect(isValidIndianPersonName('Anjali')).toBe(true)
+    expect(isValidIndianPersonName('Sunita Devi')).toBe(true)
+    expect(isValidIndianPersonName('Sonu')).toBe(true)
+    expect(isValidIndianPersonName('Harpreet Singh')).toBe(true)
+    expect(isValidIndianPersonName('Chanchal')).toBe(true)
+    expect(isValidIndianPersonName('पूजा')).toBe(true)
+    expect(isValidIndianPersonName('राजेश')).toBe(true)
+  })
+
+  it('rejects medical symptoms, conversational questions, and common phrases', () => {
+    expect(isValidIndianPersonName('Baby chahiye')).toBe(false)
+    expect(isValidIndianPersonName('Dard hota hai')).toBe(false)
+    expect(isValidIndianPersonName('PCOD hai')).toBe(false)
+    expect(isValidIndianPersonName('Report bhej di')).toBe(false)
+    expect(isValidIndianPersonName('Fees kitni hai')).toBe(false)
+    expect(isValidIndianPersonName('Jaipur me kahan hai')).toBe(false)
+    expect(isValidIndianPersonName('Call karo')).toBe(false)
+    expect(isValidIndianPersonName('Kal aa sakte hai')).toBe(false)
+    expect(isValidIndianPersonName('Ilaaj chahiye')).toBe(false)
+    expect(isValidIndianPersonName('Online consultation')).toBe(false)
+    expect(isValidIndianPersonName('Ha theek hai')).toBe(false)
+    expect(isValidIndianPersonName('Batao doctor')).toBe(false)
+    expect(isValidIndianPersonName('Kharche kitne')).toBe(false)
+    expect(isValidIndianPersonName('Reports')).toBe(false)
+    expect(isValidIndianPersonName('Problem')).toBe(false)
   })
 })
 
