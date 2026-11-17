@@ -1,5 +1,6 @@
 import { isLikelyFemaleName } from '@/lib/ai/query';
 import { DEFAULT_CLINICS } from '@/lib/clinics/clinics-service';
+import { analyzeLeadIntent } from './lead-intent-analyzer';
 import type {
   AdPerformanceItem,
   AiAdCreativeHook,
@@ -363,7 +364,8 @@ export function computeAnalytics(
   contacts: Contact[],
   bookings: Booking[],
   filter: DateRangeFilter,
-  selectedAdFilter?: string | null
+  selectedAdFilter?: string | null,
+  conversations?: { id: string; contact_id: string; last_message_text?: string | null; last_message_at?: string | null }[]
 ): AnalyticsSummary {
   const { from, to, label: date_range_label } = resolveDateRange(filter);
 
@@ -377,6 +379,16 @@ export function computeAnalytics(
 
   const filteredContacts = contacts.filter((c) => isWithinRange(c.created_at));
   const filteredBookings = bookings.filter((b) => isWithinRange(b.created_at));
+
+  // Map conversations by contact_id
+  const convByContactId = new Map<string, { id: string; contact_id: string; last_message_text?: string | null; last_message_at?: string | null }>();
+  if (conversations) {
+    for (const conv of conversations) {
+      if (conv.contact_id) {
+        convByContactId.set(conv.contact_id, conv);
+      }
+    }
+  }
 
   // Map bookings by contact_id and by normalized phone
   const bookingByContactId = new Map<string, Booking>();
@@ -399,6 +411,7 @@ export function computeAnalytics(
     const digits = c.phone.replace(/\D/g, '');
     const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
     const matchingBooking = bookingByContactId.get(c.id) || (last10 ? bookingByPhone.get(last10) : undefined);
+    const conv = convByContactId.get(c.id);
 
     const cAny = c as unknown as Record<string, unknown>;
     const effectiveName =
@@ -412,6 +425,19 @@ export function computeAnalytics(
     const effectiveConcern = matchingBooking?.health_concern || c.ad_body || c.ad_name || null;
     const classified = classifyHealthConcern(effectiveConcern);
     const gender = detectLeadGender(effectiveName);
+
+    const ai_analysis = analyzeLeadIntent({
+      name: effectiveName,
+      phone: c.phone,
+      city: effectiveCity,
+      healthConcern: matchingBooking?.health_concern || c.ad_body || null,
+      concernCategory: classified.category,
+      adName: effectiveAdName,
+      adBody: c.ad_body,
+      hasBooking: !!matchingBooking,
+      bookingStatus: matchingBooking?.status,
+      lastMessageText: conv?.last_message_text || matchingBooking?.notes || null,
+    });
 
     leadsMap.set(c.id, {
       id: c.id,
@@ -430,8 +456,9 @@ export function computeAnalytics(
       booking_status: matchingBooking?.status || null,
       consultation_type: matchingBooking?.consultation_type || null,
       clinic_location: matchingBooking?.clinic_location || null,
-      conversation_id: matchingBooking?.conversation_id || null,
+      conversation_id: conv?.id || matchingBooking?.conversation_id || null,
       notes: matchingBooking?.notes || null,
+      ai_analysis,
     });
   }
 
@@ -457,9 +484,30 @@ export function computeAnalytics(
         existing.health_concern = b.health_concern;
         existing.concern_category = classifyHealthConcern(b.health_concern).category;
       }
+      existing.ai_analysis = analyzeLeadIntent({
+        name: existing.name,
+        phone: existing.phone,
+        city: existing.city,
+        healthConcern: existing.health_concern,
+        concernCategory: existing.concern_category,
+        adName: existing.ad_name,
+        hasBooking: true,
+        bookingStatus: b.status,
+      });
     } else {
       const classified = classifyHealthConcern(b.health_concern || b.ad_name);
       const gender = detectLeadGender(b.patient_name);
+      const ai_analysis = analyzeLeadIntent({
+        name: b.patient_name,
+        phone: b.phone,
+        city: b.city,
+        healthConcern: b.health_concern,
+        concernCategory: classified.category,
+        adName: b.ad_name,
+        hasBooking: true,
+        bookingStatus: b.status,
+      });
+
       leadsMap.set(b.id, {
         id: b.id,
         created_at: b.created_at,
@@ -479,6 +527,7 @@ export function computeAnalytics(
         clinic_location: b.clinic_location || null,
         conversation_id: b.conversation_id || null,
         notes: b.notes || null,
+        ai_analysis,
       });
     }
   }
@@ -725,6 +774,19 @@ export function computeAnalytics(
     conversion_rate
   );
 
+  const ready_to_convert_count = allLeads.filter(
+    (l) => l.ai_analysis?.intent_stage === 'ready_to_convert'
+  ).length;
+  const fees_hesitation_count = allLeads.filter(
+    (l) => l.ai_analysis?.intent_stage === 'fees_hesitation'
+  ).length;
+  const clinic_opportunity_count = allLeads.filter(
+    (l) => l.ai_analysis?.intent_stage === 'clinic_opportunity'
+  ).length;
+  const awareness_only_count = allLeads.filter(
+    (l) => l.ai_analysis?.intent_stage === 'awareness_only'
+  ).length;
+
   return {
     total_leads,
     total_bookings,
@@ -733,6 +795,10 @@ export function computeAnalytics(
     video_consultations,
     meta_ad_leads,
     organic_leads,
+    ready_to_convert_count,
+    fees_hesitation_count,
+    clinic_opportunity_count,
+    awareness_only_count,
     ad_performance,
     health_concerns,
     gender_stats,

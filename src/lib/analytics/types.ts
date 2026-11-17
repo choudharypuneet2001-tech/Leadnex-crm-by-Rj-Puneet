@@ -73,6 +73,22 @@ export interface AiAdRecommendation {
   summary: string;
 }
 
+export type LeadIntentStage =
+  | 'ready_to_convert'   // 🔥 High Intent - Ready to Convert (Needs Human Touch Call)
+  | 'fees_hesitation'    // ⚠️ Price / Fees Hesitation (High Opportunity)
+  | 'clinic_opportunity' // 🏥 Clinic Visit Interest (Near Branch)
+  | 'awareness_only'     // 💡 General Awareness / Low Priority
+  | 'booked';            // ✅ Booking Confirmed
+
+export interface LeadAiAnalysis {
+  intent_stage: LeadIntentStage;
+  intent_label: string;
+  intent_badge_color: string;
+  dropout_reason: string;
+  calling_pitch: string;
+  urgency: 'high' | 'medium' | 'low';
+}
+
 export interface AnalyticsLeadItem {
   id: string;
   created_at: string;
@@ -92,6 +108,7 @@ export interface AnalyticsLeadItem {
   clinic_location: string | null;
   conversation_id: string | null;
   notes: string | null;
+  ai_analysis: LeadAiAnalysis;
 }
 
 export interface AnalyticsSummary {
@@ -102,6 +119,10 @@ export interface AnalyticsSummary {
   video_consultations: number;
   meta_ad_leads: number;
   organic_leads: number;
+  ready_to_convert_count: number;
+  fees_hesitation_count: number;
+  clinic_opportunity_count: number;
+  awareness_only_count: number;
   ad_performance: AdPerformanceItem[];
   health_concerns: HealthConcernItem[];
   gender_stats: GenderStats;
