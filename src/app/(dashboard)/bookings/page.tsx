@@ -38,6 +38,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  BarChart3,
   CalendarCheck,
   Search,
   Download,
@@ -960,6 +961,16 @@ export default function BookingsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push('/analytics')}
+            className="h-9 gap-1.5"
+          >
+            <BarChart3 className="h-4 w-4 text-primary" />
+            Analytics & Ads
+          </Button>
+
           <Button
             variant="outline"
             size="sm"

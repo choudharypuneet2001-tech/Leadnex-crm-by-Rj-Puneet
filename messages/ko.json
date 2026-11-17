@@ -42,7 +42,8 @@
     "menuProfile": "프로필",
     "menuSettings": "설정",
     "menuSignOut": "로그아웃",
-    "bookings": "예약"
+    "bookings": "예약",
+    "analytics": "분석 및 광고"
   },
   "Header": {
     "dashboard": "대시보드",
@@ -60,7 +61,8 @@
     "menuProfile": "프로필",
     "menuSettings": "설정",
     "menuSignOut": "로그아웃",
-    "bookings": "예약"
+    "bookings": "예약",
+    "analytics": "분석 및 광고"
   },
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"

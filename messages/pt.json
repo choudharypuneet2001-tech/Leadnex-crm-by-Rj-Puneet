@@ -42,7 +42,8 @@
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
     "menuSignOut": "Sair",
-    "bookings": "Agendamentos"
+    "bookings": "Agendamentos",
+    "analytics": "Análise e Anúncios"
   },
   "Header": {
     "dashboard": "Painel",
@@ -60,7 +61,8 @@
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
     "menuSignOut": "Sair",
-    "bookings": "Agendamentos"
+    "bookings": "Agendamentos",
+    "analytics": "Análise e Anúncios"
   },
   "ModeToggle": {
     "switchMode": "Mudar para o modo {mode}"

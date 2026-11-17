@@ -44,6 +44,7 @@ import {
   Plus,
   Upload,
   Download,
+  BarChart3,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -1175,6 +1176,14 @@ export default function ContactsPage() {
               {t('customFieldsBtn')}
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={() => router.push('/analytics')}
+            className="border-border text-primary hover:bg-primary/5 gap-1.5"
+          >
+            <BarChart3 className="size-4" />
+            Analytics & Ads
+          </Button>
           <Button
             variant="outline"
             onClick={handleExportCsv}

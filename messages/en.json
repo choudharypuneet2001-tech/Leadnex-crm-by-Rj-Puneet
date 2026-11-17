@@ -42,7 +42,8 @@
     "menuProfile": "Profile",
     "menuSettings": "Settings",
     "menuSignOut": "Sign out",
-    "bookings": "Bookings"
+    "bookings": "Bookings",
+    "analytics": "Analytics & Ads"
   },
   "Header": {
     "dashboard": "Dashboard",
@@ -60,7 +61,8 @@
     "menuProfile": "Profile",
     "menuSettings": "Settings",
     "menuSignOut": "Sign out",
-    "bookings": "Bookings"
+    "bookings": "Bookings",
+    "analytics": "Analytics & Ads"
   },
   "ModeToggle": {
     "switchMode": "Switch to {mode} mode"

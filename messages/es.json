@@ -42,7 +42,8 @@
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
     "menuSignOut": "Cerrar sesión",
-    "bookings": "Reservas"
+    "bookings": "Reservas",
+    "analytics": "Analítica y Anuncios"
   },
   "Header": {
     "dashboard": "Panel",
@@ -60,7 +61,8 @@
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
     "menuSignOut": "Cerrar sesión",
-    "bookings": "Reservas"
+    "bookings": "Reservas",
+    "analytics": "Analítica y Anuncios"
   },
   "ModeToggle": {
     "switchMode": "Cambiar al modo {mode}"
