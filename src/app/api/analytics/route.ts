@@ -26,27 +26,43 @@ export async function GET(request: Request) {
     };
 
     // Fetch contacts for this account
-    const { data: contactsData, error: contactsErr } = await ctx.supabase
+    let contactsQuery = ctx.supabase
       .from('contacts')
-      .select('id, name, first_name, last_name, phone, city, ad_id, ad_name, ad_source, ad_source_url, ad_body, ad_media_url, created_at, updated_at')
-      .eq('account_id', ctx.accountId)
+      .select('*')
       .order('created_at', { ascending: false });
+
+    if (ctx.accountId) {
+      contactsQuery = contactsQuery.eq('account_id', ctx.accountId);
+    }
+
+    const { data: contactsData, error: contactsErr } = await contactsQuery;
 
     if (contactsErr) {
       console.error('[analytics API] contacts fetch error:', contactsErr);
-      return NextResponse.json({ error: 'Failed to fetch contacts' }, { status: 500 });
+      return NextResponse.json(
+        { error: `Failed to fetch contacts: ${contactsErr.message || contactsErr}` },
+        { status: 500 }
+      );
     }
 
     // Fetch bookings for this account
-    const { data: bookingsData, error: bookingsErr } = await ctx.supabase
+    let bookingsQuery = ctx.supabase
       .from('bookings')
       .select('*')
-      .eq('account_id', ctx.accountId)
       .order('created_at', { ascending: false });
+
+    if (ctx.accountId) {
+      bookingsQuery = bookingsQuery.eq('account_id', ctx.accountId);
+    }
+
+    const { data: bookingsData, error: bookingsErr } = await bookingsQuery;
 
     if (bookingsErr) {
       console.error('[analytics API] bookings fetch error:', bookingsErr);
-      return NextResponse.json({ error: 'Failed to fetch bookings' }, { status: 500 });
+      return NextResponse.json(
+        { error: `Failed to fetch bookings: ${bookingsErr.message || bookingsErr}` },
+        { status: 500 }
+      );
     }
 
     const contacts = (contactsData || []) as unknown as Contact[];

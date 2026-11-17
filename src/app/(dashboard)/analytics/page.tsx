@@ -48,18 +48,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { computeAnalytics } from "@/lib/analytics/analytics-service";
 import type {
   AnalyticsDateRangePreset,
   AnalyticsLeadItem,
   AnalyticsSummary,
+  DateRangeFilter,
 } from "@/lib/analytics/types";
+import type { Booking, Contact } from "@/types";
 
 export default function AnalyticsPage() {
   const router = useRouter();
   const { account } = useAuth();
   const supabase = useMemo(() => createClient(), []);
 
-  // State
+  // State - default to "all" (All Time) so user immediately sees all past data
   const [rangePreset, setRangePreset] = useState<AnalyticsDateRangePreset>("all");
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
@@ -72,7 +75,7 @@ export default function AnalyticsPage() {
   const [leadsSearch, setLeadsSearch] = useState<string>("");
   const [leadsStatusFilter, setLeadsStatusFilter] = useState<"all" | "booked" | "pending">("all");
 
-  // Fetch analytics summary from API
+  // Fetch analytics summary from API with resilient client-side fallback
   const fetchAnalytics = useCallback(async () => {
     try {
       setRefreshing(true);
@@ -90,14 +93,62 @@ export default function AnalyticsPage() {
         params.set("ad_name", selectedAdFilter);
       }
 
-      const res = await fetch(`/api/analytics?${params.toString()}`);
-      const json = await res.json();
+      let summaryData: AnalyticsSummary | null = null;
 
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || "Failed to load analytics");
+      // 1. Try server API route first
+      try {
+        const res = await fetch(`/api/analytics?${params.toString()}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            summaryData = json.data;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("[analytics] API fetch failed, falling back to direct client query:", apiErr);
       }
 
-      setSummary(json.data);
+      // 2. Client-side fallback if API route returned error or failed
+      if (!summaryData) {
+        let contactsQuery = supabase
+          .from("contacts")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (account?.id) {
+          contactsQuery = contactsQuery.eq("account_id", account.id);
+        }
+
+        const { data: contactsData, error: contactsErr } = await contactsQuery;
+        if (contactsErr) throw contactsErr;
+
+        let bookingsQuery = supabase
+          .from("bookings")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (account?.id) {
+          bookingsQuery = bookingsQuery.eq("account_id", account.id);
+        }
+
+        const { data: bookingsData, error: bookingsErr } = await bookingsQuery;
+        if (bookingsErr) throw bookingsErr;
+
+        const filter: DateRangeFilter = {
+          preset: rangePreset,
+          from: customFrom ? new Date(customFrom).toISOString() : undefined,
+          to: customTo ? new Date(customTo).toISOString() : undefined,
+        };
+
+        summaryData = computeAnalytics(
+          (contactsData || []) as Contact[],
+          (bookingsData || []) as Booking[],
+          filter,
+          selectedAdFilter !== "all" ? selectedAdFilter : undefined
+        );
+      }
+
+      setSummary(summaryData);
     } catch (err) {
       console.error("[analytics page] fetch error:", err);
       toast.error(err instanceof Error ? err.message : "Failed to load analytics");
@@ -105,7 +156,7 @@ export default function AnalyticsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [rangePreset, customFrom, customTo, selectedAdFilter]);
+  }, [rangePreset, customFrom, customTo, selectedAdFilter, supabase, account?.id]);
 
   useEffect(() => {
     fetchAnalytics();
@@ -296,12 +347,12 @@ export default function AnalyticsPage() {
                 <Calendar className="h-3.5 w-3.5" /> Date:
               </span>
               {[
+                { id: "all", label: "सब (All Time)" },
                 { id: "today", label: "आज (Today)" },
                 { id: "yesterday", label: "कल (Yesterday)" },
                 { id: "7d", label: "पिछले 7 दिन (7 Days)" },
                 { id: "30d", label: "पिछले 30 दिन (30 Days)" },
                 { id: "this_month", label: "इस महीने (This Month)" },
-                { id: "all", label: "सब (All Time)" },
                 { id: "custom", label: "कस्टम (Custom)" },
               ].map((p) => {
                 const isActive = rangePreset === p.id;
