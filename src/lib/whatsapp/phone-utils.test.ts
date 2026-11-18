@@ -7,6 +7,9 @@ import {
   phoneVariants,
   phonesMatch,
   sanitizePhoneForMeta,
+  formatCallablePhone,
+  formatTelUri,
+  formatPhoneDisplay,
 } from "./phone-utils";
 
 describe("sanitizePhoneForMeta", () => {
@@ -215,3 +218,60 @@ describe("isRecipientNotAllowedError", () => {
     expect(isRecipientNotAllowedError("")).toBe(false);
   });
 });
+
+describe("formatCallablePhone & formatTelUri", () => {
+  it("formats 12-digit Indian number starting with 91 with a + prefix", () => {
+    expect(formatCallablePhone("919876543210")).toBe("+919876543210");
+    expect(formatTelUri("919876543210")).toBe("tel:+919876543210");
+  });
+
+  it("formats 10-digit Indian number with +91 prefix", () => {
+    expect(formatCallablePhone("9876543210")).toBe("+919876543210");
+    expect(formatTelUri("9876543210")).toBe("tel:+919876543210");
+  });
+
+  it("formats 11-digit Indian number starting with trunk 0 with +91 prefix", () => {
+    expect(formatCallablePhone("09876543210")).toBe("+919876543210");
+    expect(formatTelUri("09876543210")).toBe("tel:+919876543210");
+  });
+
+  it("preserves existing + prefix", () => {
+    expect(formatCallablePhone("+919876543210")).toBe("+919876543210");
+    expect(formatTelUri("+919876543210")).toBe("tel:+919876543210");
+  });
+
+  it("handles formatted strings with spaces and dashes", () => {
+    expect(formatCallablePhone("+91 98765-43210")).toBe("+919876543210");
+    expect(formatTelUri("91 98765 43210")).toBe("tel:+919876543210");
+  });
+
+  it("handles null, undefined, and empty string safely", () => {
+    expect(formatCallablePhone(null)).toBe("");
+    expect(formatCallablePhone(undefined)).toBe("");
+    expect(formatCallablePhone("")).toBe("");
+    expect(formatTelUri(null)).toBe("");
+    expect(formatTelUri(undefined)).toBe("");
+    expect(formatTelUri("")).toBe("");
+  });
+});
+
+describe("formatPhoneDisplay", () => {
+  it("formats 12-digit Indian number nicely with +91 and spaces", () => {
+    expect(formatPhoneDisplay("919876543210")).toBe("+91 98765 43210");
+  });
+
+  it("formats 10-digit Indian number with +91 and spaces", () => {
+    expect(formatPhoneDisplay("9876543210")).toBe("+91 98765 43210");
+  });
+
+  it("formats 11-digit 0-prefixed Indian number", () => {
+    expect(formatPhoneDisplay("09876543210")).toBe("+91 98765 43210");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(formatPhoneDisplay("")).toBe("");
+    expect(formatPhoneDisplay(null)).toBe("");
+    expect(formatPhoneDisplay(undefined)).toBe("");
+  });
+});
+

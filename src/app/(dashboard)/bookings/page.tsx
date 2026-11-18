@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import type { Booking, BookingStatus, ConsultationType, Tag } from '@/types';
+import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -123,19 +124,6 @@ function downloadCsv(filename: string, content: string) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-function formatPhoneDisplay(rawPhone?: string | null): string {
-  if (!rawPhone) return '';
-  const digits = rawPhone.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('91')) {
-    const main = digits.slice(2);
-    return `+91 ${main.slice(0, 5)} ${main.slice(5)}`;
-  }
-  if (digits.length === 10) {
-    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
-  }
-  return rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
 }
 
 interface BookingTagsCellProps {
@@ -1256,7 +1244,7 @@ export default function BookingsPage() {
                               WhatsApp
                             </a>
                             <a
-                              href={`tel:${b.phone}`}
+                              href={formatTelUri(b.phone)}
                               onClick={(e) => e.stopPropagation()}
                               className="text-primary hover:underline inline-flex items-center gap-0.5"
                             >
@@ -1682,7 +1670,7 @@ export default function BookingsPage() {
             <div className="text-xs text-muted-foreground">
               {editingNoteBooking?.phone && (
                 <a
-                  href={`tel:${editingNoteBooking.phone}`}
+                  href={formatTelUri(editingNoteBooking.phone)}
                   className="text-primary hover:underline flex items-center gap-1"
                 >
                   <Phone className="h-3 w-3" />
@@ -1861,7 +1849,7 @@ export default function BookingsPage() {
             <div className="text-xs text-muted-foreground">
               {editingScheduleBooking?.phone && (
                 <a
-                  href={`tel:${editingScheduleBooking.phone}`}
+                  href={formatTelUri(editingScheduleBooking.phone)}
                   className="text-primary hover:underline flex items-center gap-1"
                 >
                   <Phone className="h-3 w-3" />
@@ -2176,7 +2164,7 @@ export default function BookingsPage() {
                   variant="outline"
                   className="w-full sm:flex-1 gap-1.5"
                   onClick={() => {
-                    window.location.href = `tel:${selectedBooking.phone}`;
+                    window.location.href = formatTelUri(selectedBooking.phone);
                   }}
                 >
                   <Phone className="h-4 w-4" />

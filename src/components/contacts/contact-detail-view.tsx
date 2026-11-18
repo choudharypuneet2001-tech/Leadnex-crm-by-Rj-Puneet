@@ -44,7 +44,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
-import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { parseInternationalPhone, formatTelUri } from '@/lib/whatsapp/phone-utils';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -433,7 +433,7 @@ export function ContactDetailView({
                     </button>
                     {contact.phone && (
                       <a
-                        href={`tel:${contact.phone}`}
+                        href={formatTelUri(contact.phone)}
                         className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white transition-colors cursor-pointer text-xs font-medium"
                         title="Call contact"
                       >

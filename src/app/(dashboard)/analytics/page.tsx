@@ -47,6 +47,7 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 import { createClient } from '@/lib/supabase/client';
 import { computeAnalytics } from '@/lib/analytics/analytics-service';
+import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
 import type {
   AnalyticsSummary,
   AnalyticsDateRangePreset,
@@ -1126,8 +1127,8 @@ export default function AnalyticsPage() {
                 <div>
                   <span className="text-slate-500">फोन नंबर:</span>
                   <div className="font-bold text-purple-700 flex items-center gap-1">
-                    <a href={`tel:${scriptModalLead.phone}`} className="hover:underline">
-                      {scriptModalLead.phone}
+                    <a href={formatTelUri(scriptModalLead.phone)} className="hover:underline">
+                      {formatPhoneDisplay(scriptModalLead.phone)}
                     </a>
                   </div>
                 </div>

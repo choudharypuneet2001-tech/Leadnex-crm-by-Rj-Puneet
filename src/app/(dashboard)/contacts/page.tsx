@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
+import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -343,16 +344,7 @@ function get10DigitPhone(rawPhone?: string | null): string {
 }
 
 function getFormattedPhone(rawPhone?: string | null): string {
-  if (!rawPhone) return '';
-  const digits = rawPhone.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('91')) {
-    const main = digits.slice(2);
-    return `+91 ${main.slice(0, 5)} ${main.slice(5)}`;
-  }
-  if (digits.length === 10) {
-    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
-  }
-  return rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
+  return formatPhoneDisplay(rawPhone);
 }
 
 export default function ContactsPage() {
@@ -1539,7 +1531,7 @@ export default function ContactsPage() {
                             Inbox
                           </Button>
                           <a
-                            href={`tel:${contact.phone}`}
+                            href={formatTelUri(contact.phone)}
                             onClick={(e) => e.stopPropagation()}
                             title={`Call ${contact.name || contact.phone}`}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all font-sans font-semibold text-[11px] shadow-xs cursor-pointer border border-emerald-500/20"
@@ -1712,12 +1704,12 @@ export default function ContactsPage() {
                           <DropdownMenuItem
                             onClick={(e) => {
                               e.stopPropagation();
-                              window.location.href = `tel:${contact.phone}`;
+                              window.location.href = formatTelUri(contact.phone);
                             }}
                             className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer"
                           >
                             <Phone className="size-4 text-emerald-500" />
-                            Call ({contact.phone})
+                            Call ({formatPhoneDisplay(contact.phone)})
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem
@@ -2013,7 +2005,7 @@ export default function ContactsPage() {
             <div className="text-xs text-muted-foreground">
               {editingNoteContact?.phone && (
                 <a
-                  href={`tel:${editingNoteContact.phone}`}
+                  href={formatTelUri(editingNoteContact.phone)}
                   className="text-primary hover:underline flex items-center gap-1"
                 >
                   <Phone className="h-3 w-3" />

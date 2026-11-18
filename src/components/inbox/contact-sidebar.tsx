@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { formatTelUri } from "@/lib/whatsapp/phone-utils";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -196,20 +197,35 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Phone */}
           <div className="mt-4 space-y-2">
-            <button
-              onClick={handleCopyPhone}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
-            >
+            <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted">
               <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">
+              <span className="flex-1 text-left truncate">
                 {contactHandle(contact)}
               </span>
-              {copied ? (
-                <Check className="h-3 w-3 text-primary" />
-              ) : (
-                <Copy className="h-3 w-3 text-muted-foreground" />
+              {contact.phone && (
+                <a
+                  href={formatTelUri(contact.phone)}
+                  onClick={(e) => e.stopPropagation()}
+                  title="Call contact"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all font-sans font-semibold text-xs shadow-2xs cursor-pointer border border-emerald-500/20"
+                >
+                  <Phone className="size-2.5 fill-current" />
+                  <span>Call</span>
+                </a>
               )}
-            </button>
+              <button
+                type="button"
+                onClick={handleCopyPhone}
+                title="Copy phone"
+                className="p-1 hover:text-foreground cursor-pointer"
+              >
+                {copied ? (
+                  <Check className="h-3 w-3 text-primary" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            </div>
 
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">

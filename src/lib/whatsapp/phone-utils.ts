@@ -138,3 +138,79 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message)
 }
+
+/**
+ * Format a phone number for dialing / tel: URI.
+ * Ensures the output always begins with "+" and includes the country code.
+ * For 10-digit Indian numbers or 12-digit Indian numbers starting with 91,
+ * it formats as +91XXXXXXXXXX so mobile dialers (Android / iOS) autofill
+ * the country code accurately with the plus prefix.
+ *
+ * e.g.
+ *   "919876543210"   -> "+919876543210"
+ *   "9876543210"     -> "+919876543210"
+ *   "09876543210"    -> "+919876543210"
+ *   "+91 9876543210" -> "+919876543210"
+ */
+export function formatCallablePhone(rawPhone?: string | null): string {
+  if (!rawPhone) return ''
+  const cleaned = rawPhone.trim()
+  if (!cleaned) return ''
+
+  const digits = cleaned.replace(/\D/g, '')
+  if (!digits) return ''
+
+  if (cleaned.startsWith('+')) {
+    return `+${digits}`
+  }
+
+  // 12 digits starting with 91 (India)
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return `+${digits}`
+  }
+
+  // 10 digits (Indian standard mobile)
+  if (digits.length === 10) {
+    return `+91${digits}`
+  }
+
+  // 11 digits starting with 0 (Indian domestic trunk prefix e.g. 09876543210)
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return `+91${digits.slice(1)}`
+  }
+
+  return `+${digits}`
+}
+
+/**
+ * Format a tel: URI with the guaranteed + prefix and country code.
+ * e.g. "919876543210" -> "tel:+919876543210"
+ */
+export function formatTelUri(rawPhone?: string | null): string {
+  const callable = formatCallablePhone(rawPhone)
+  return callable ? `tel:${callable}` : ''
+}
+
+/**
+ * Clean human-readable display of phone numbers.
+ * Displays +91 XXXXX XXXXX for Indian numbers.
+ */
+export function formatPhoneDisplay(rawPhone?: string | null): string {
+  if (!rawPhone) return ''
+  const digits = rawPhone.replace(/\D/g, '')
+  if (!digits) return rawPhone
+
+  if (digits.length === 12 && digits.startsWith('91')) {
+    const main = digits.slice(2)
+    return `+91 ${main.slice(0, 5)} ${main.slice(5)}`
+  }
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    const main = digits.slice(1)
+    return `+91 ${main.slice(0, 5)} ${main.slice(5)}`
+  }
+  return rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`
+}
+

@@ -28,6 +28,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
 import { addContactTag } from '@/lib/contacts/tag-api';
 import { createClient } from '@/lib/supabase/client';
 
@@ -348,11 +349,11 @@ export function AiPitchDialog({
         <DialogFooter className="flex flex-col sm:flex-row items-center gap-2 pt-2">
           {patient?.phone && (
             <a
-              href={`tel:${patient.phone}`}
+              href={formatTelUri(patient.phone)}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition-colors"
             >
               <Phone className="h-3.5 w-3.5 fill-current" />
-              Call Now ({patient.phone})
+              Call Now ({formatPhoneDisplay(patient.phone)})
             </a>
           )}
           <Button
