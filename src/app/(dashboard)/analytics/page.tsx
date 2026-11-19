@@ -25,11 +25,20 @@ import {
   Check,
   ChevronRight,
   ShieldAlert,
+  StickyNote,
+  Tag as TagIcon,
+  Plus,
+  X,
+  ExternalLink,
+  Share2,
+  PlayCircle,
+  Phone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -43,11 +52,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { useAuth } from '@/hooks/use-auth';
 import { createClient } from '@/lib/supabase/client';
 import { computeAnalytics } from '@/lib/analytics/analytics-service';
 import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
+import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { findDiseaseVideo, formatDiseaseVideoMessage } from '@/lib/ai/disease-video-links';
 import type {
   AnalyticsSummary,
   AnalyticsDateRangePreset,
@@ -55,12 +72,32 @@ import type {
   AnalyticsLeadItem,
   LeadIntentStage,
 } from '@/lib/analytics/types';
-import type { Booking, Contact } from '@/types';
+import type { Booking, Contact, Tag } from '@/types';
 import { toast } from 'sonner';
+
+const TAG_PRESET_COLORS = [
+  '#8b5cf6', // purple
+  '#ec4899', // pink
+  '#3b82f6', // blue
+  '#10b981', // green
+  '#f59e0b', // amber
+  '#ef4444', // red
+  '#06b6d4', // cyan
+  '#64748b', // slate
+];
+
+const QUICK_CALL_TAGS = [
+  { name: '🔥 Interested', color: '#10b981' },
+  { name: '📞 Callback', color: '#3b82f6' },
+  { name: '⚠️ Fees Hesitation', color: '#f59e0b' },
+  { name: '🏥 Clinic Visit', color: '#8b5cf6' },
+  { name: '🚫 Not Reachable', color: '#64748b' },
+  { name: '❌ Not Interested', color: '#ef4444' },
+];
 
 export default function AnalyticsPage() {
   const router = useRouter();
-  const { account } = useAuth();
+  const { account, user } = useAuth();
   const supabase = useMemo(() => createClient(), []);
 
   // State - default to "all" (All Time) so user immediately sees all past data
@@ -76,9 +113,173 @@ export default function AnalyticsPage() {
   const [leadsSearch, setLeadsSearch] = useState<string>('');
   const [intentFilter, setIntentFilter] = useState<string>('all');
 
+  // Tags & Notes state
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [contactTagsMap, setContactTagsMap] = useState<Record<string, string[]>>({});
+  const [contactNotesMap, setContactNotesMap] = useState<
+    Record<string, { id: string; note_text: string; created_at: string }[]>
+  >({});
+
   // Script Modal state
   const [scriptModalLead, setScriptModalLead] = useState<AnalyticsLeadItem | null>(null);
   const [copiedScript, setCopiedScript] = useState<boolean>(false);
+  const [copiedVideoMsg, setCopiedVideoMsg] = useState<boolean>(false);
+  const [modalNoteDraft, setModalNoteDraft] = useState<string>('');
+  const [modalSavingNote, setModalSavingNote] = useState<boolean>(false);
+
+  // Note Modal state (for clicking notes on table)
+  const [noteModalLead, setNoteModalLead] = useState<AnalyticsLeadItem | null>(null);
+  const [tableNoteDraft, setTableNoteDraft] = useState<string>('');
+  const [tableSavingNote, setTableSavingNote] = useState<boolean>(false);
+
+  // Tags Map for fast lookup
+  const tagsMap = useMemo(() => {
+    const map: Record<string, Tag> = {};
+    allTags.forEach((t) => {
+      map[t.id] = t;
+    });
+    return map;
+  }, [allTags]);
+
+  // Load all available tags from DB
+  const fetchTagsAndNotes = useCallback(async () => {
+    try {
+      // 1. Fetch tags
+      let tagsQuery = supabase.from('tags').select('*').order('name');
+      if (account?.id) {
+        tagsQuery = tagsQuery.eq('account_id', account.id);
+      }
+      const { data: tData } = await tagsQuery;
+      if (tData) setAllTags(tData);
+
+      // 2. Fetch contact_tags
+      const { data: ctData } = await supabase.from('contact_tags').select('contact_id, tag_id');
+      if (ctData) {
+        const ctMap: Record<string, string[]> = {};
+        ctData.forEach((row) => {
+          if (!ctMap[row.contact_id]) ctMap[row.contact_id] = [];
+          ctMap[row.contact_id].push(row.tag_id);
+        });
+        setContactTagsMap(ctMap);
+      }
+
+      // 3. Fetch contact_notes
+      let notesQuery = supabase
+        .from('contact_notes')
+        .select('id, contact_id, note_text, created_at')
+        .order('created_at', { ascending: false });
+      if (account?.id) {
+        notesQuery = notesQuery.eq('account_id', account.id);
+      }
+      const { data: cnData } = await notesQuery;
+      if (cnData) {
+        const cnMap: Record<string, { id: string; note_text: string; created_at: string }[]> = {};
+        cnData.forEach((row) => {
+          if (!cnMap[row.contact_id]) cnMap[row.contact_id] = [];
+          cnMap[row.contact_id].push(row);
+        });
+        setContactNotesMap(cnMap);
+      }
+    } catch (err) {
+      console.warn('[analytics] error fetching tags/notes:', err);
+    }
+  }, [supabase, account?.id]);
+
+  useEffect(() => {
+    fetchTagsAndNotes();
+  }, [fetchTagsAndNotes]);
+
+  // Tag Toggle Handler
+  const handleToggleTag = async (contactId: string, tagId: string) => {
+    if (!contactId) return;
+    const current = contactTagsMap[contactId] || [];
+    const isAssigned = current.includes(tagId);
+
+    // Optimistic UI update
+    setContactTagsMap((prev) => ({
+      ...prev,
+      [contactId]: isAssigned ? current.filter((id) => id !== tagId) : [...current, tagId],
+    }));
+
+    try {
+      if (isAssigned) {
+        await deleteContactTag(contactId, tagId);
+      } else {
+        await addContactTag(contactId, tagId);
+      }
+      toast.success(isAssigned ? 'टैग हटाया गया' : 'टैग जोड़ा गया');
+    } catch (err) {
+      console.warn('[analytics] tag toggle API fallback to DB:', err);
+      try {
+        if (isAssigned) {
+          await supabase.from('contact_tags').delete().eq('contact_id', contactId).eq('tag_id', tagId);
+        } else {
+          await supabase.from('contact_tags').insert({ contact_id: contactId, tag_id: tagId });
+        }
+        toast.success(isAssigned ? 'टैग हटाया गया' : 'टैग जोड़ा गया');
+      } catch (dbErr) {
+        // Revert
+        setContactTagsMap((prev) => ({
+          ...prev,
+          [contactId]: isAssigned ? [...current, tagId] : current.filter((id) => id !== tagId),
+        }));
+        toast.error('टैग अपडेट नहीं हो सका');
+      }
+    }
+  };
+
+  // Create Tag & Assign
+  const handleCreateAndAssignTag = async (contactId: string, name: string, color: string) => {
+    if (!name.trim() || !account?.id) return;
+    try {
+      const { data: newTag, error } = await supabase
+        .from('tags')
+        .insert({
+          account_id: account.id,
+          user_id: user?.id,
+          name: name.trim(),
+          color: color || TAG_PRESET_COLORS[0],
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (newTag) {
+        setAllTags((prev) => [...prev, newTag]);
+        await handleToggleTag(contactId, newTag.id);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'टैग नहीं बनाया जा सका');
+    }
+  };
+
+  // Save Note Handler
+  const handleSaveContactNote = async (contactId: string, text: string) => {
+    if (!contactId || !text.trim() || !account?.id) return;
+    try {
+      const { data: newNote, error } = await supabase
+        .from('contact_notes')
+        .insert({
+          contact_id: contactId,
+          account_id: account.id,
+          user_id: user?.id,
+          note_text: text.trim(),
+        })
+        .select('id, contact_id, note_text, created_at')
+        .single();
+
+      if (error) throw error;
+      if (newNote) {
+        setContactNotesMap((prev) => ({
+          ...prev,
+          [contactId]: [newNote, ...(prev[contactId] || [])],
+        }));
+        toast.success('कॉल नोट सुरक्षित हो गया!');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'नोट सेव करने में त्रुटि');
+    }
+  };
 
   // Fetch analytics summary from API with resilient client-side fallback
   const fetchAnalytics = useCallback(async () => {
@@ -119,71 +320,32 @@ export default function AnalyticsPage() {
         let bookingsData: any[] = [];
         let convData: any[] = [];
 
-        // Contacts query
         try {
-          let contactsQuery = supabase
-            .from('contacts')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-          if (account?.id) {
-            contactsQuery = contactsQuery.eq('account_id', account.id);
-          }
-
+          let contactsQuery = supabase.from('contacts').select('*').order('created_at', { ascending: false });
+          if (account?.id) contactsQuery = contactsQuery.eq('account_id', account.id);
           const cRes = await contactsQuery;
-          if (!cRes.error && cRes.data) {
-            contactsData = cRes.data;
-          } else {
-            const retryRes = await supabase
-              .from('contacts')
-              .select('*')
-              .order('created_at', { ascending: false });
-            if (retryRes.data) contactsData = retryRes.data;
-          }
+          if (!cRes.error && cRes.data) contactsData = cRes.data;
         } catch (e) {
           console.warn('[analytics] client contacts fallback err:', e);
         }
 
-        // Bookings query
         try {
-          let bookingsQuery = supabase
-            .from('bookings')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-          if (account?.id) {
-            bookingsQuery = bookingsQuery.eq('account_id', account.id);
-          }
-
+          let bookingsQuery = supabase.from('bookings').select('*').order('created_at', { ascending: false });
+          if (account?.id) bookingsQuery = bookingsQuery.eq('account_id', account.id);
           const bRes = await bookingsQuery;
-          if (!bRes.error && bRes.data) {
-            bookingsData = bRes.data;
-          } else {
-            const retryRes = await supabase
-              .from('bookings')
-              .select('*')
-              .order('created_at', { ascending: false });
-            if (retryRes.data) bookingsData = retryRes.data;
-          }
+          if (!bRes.error && bRes.data) bookingsData = bRes.data;
         } catch (e) {
           console.warn('[analytics] client bookings fallback err:', e);
         }
 
-        // Conversations query
         try {
           let convQuery = supabase
             .from('conversations')
             .select('id, contact_id, last_message_text, last_message_at')
             .order('last_message_at', { ascending: false });
-
-          if (account?.id) {
-            convQuery = convQuery.eq('account_id', account.id);
-          }
-
+          if (account?.id) convQuery = convQuery.eq('account_id', account.id);
           const convRes = await convQuery;
-          if (!convRes.error && convRes.data) {
-            convData = convRes.data;
-          }
+          if (!convRes.error && convRes.data) convData = convRes.data;
         } catch (e) {
           console.warn('[analytics] client conversations fallback err:', e);
         }
@@ -204,13 +366,14 @@ export default function AnalyticsPage() {
       }
 
       setSummary(summaryData);
+      void fetchTagsAndNotes();
     } catch (err) {
       console.error('[analytics page] fetch error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [rangePreset, customFrom, customTo, selectedAdFilter, supabase, account?.id]);
+  }, [rangePreset, customFrom, customTo, selectedAdFilter, supabase, account?.id, fetchTagsAndNotes]);
 
   useEffect(() => {
     fetchAnalytics();
@@ -222,6 +385,22 @@ export default function AnalyticsPage() {
     setCopiedScript(true);
     toast.success('कॉलिंग स्क्रिप्ट कॉपी हो गई!');
     setTimeout(() => setCopiedScript(false), 2000);
+  };
+
+  // Copy video recommendation message handler
+  const handleCopyVideoMessage = (lead: AnalyticsLeadItem) => {
+    const matched = findDiseaseVideo(
+      `${lead.health_concern || ''} ${lead.ad_name || ''} ${lead.ai_analysis?.disease_cause || ''}`
+    );
+    if (!matched) {
+      toast.info('इस समस्या के लिए कोई विशेष वीडियो लिंक नहीं मिला');
+      return;
+    }
+    const msg = formatDiseaseVideoMessage(matched);
+    navigator.clipboard.writeText(msg);
+    setCopiedVideoMsg(true);
+    toast.success('मरीज को भेजने वाला वीडियो मैसेज कॉपी हो गया!');
+    setTimeout(() => setCopiedVideoMsg(false), 2000);
   };
 
   // Export filtered leads to CSV
@@ -239,6 +418,8 @@ export default function AnalyticsPage() {
       'Meta Ad ID',
       'Health Concern',
       'AI Calling Priority',
+      'Tags',
+      'Latest Note',
       'Drop-off Reason (क्या कमी रही)',
       'Calling Pitch Script (कैसे पिच करें)',
       'Booking Status',
@@ -248,21 +429,31 @@ export default function AnalyticsPage() {
       'Created At',
     ];
 
-    const rows = summary.leads.map((l: AnalyticsLeadItem) => [
-      `"${(l.name || '').replace(/"/g, '""')}"`,
-      `"${(l.phone || '').replace(/"/g, '""')}"`,
-      `"${(l.city || '').replace(/"/g, '""')}"`,
-      `"${(l.ad_name || 'Direct / Organic').replace(/"/g, '""')}"`,
-      `"${(l.ad_id || '').replace(/"/g, '""')}"`,
-      `"${(l.health_concern || 'General').replace(/"/g, '""')}"`,
-      `"${(l.ai_analysis?.intent_label || 'Normal').replace(/"/g, '""')}"`,
-      `"${(l.ai_analysis?.dropout_reason || '').replace(/"/g, '""')}"`,
-      `"${(l.ai_analysis?.calling_pitch || '').replace(/"/g, '""')}"`,
-      `"${l.has_booking ? 'Booked' : 'Pending'}"`,
-      `"${(l.consultation_type || '').replace(/"/g, '""')}"`,
-      `"${(l.clinic_location || '').replace(/"/g, '""')}"`,
-      `"${l.created_at || ''}"`,
-    ]);
+    const rows = summary.leads.map((l: AnalyticsLeadItem) => {
+      const assignedTags = (contactTagsMap[l.id] || [])
+        .map((tid) => tagsMap[tid]?.name)
+        .filter(Boolean)
+        .join(', ');
+      const latestNote = contactNotesMap[l.id]?.[0]?.note_text || '';
+
+      return [
+        `"${(l.name || '').replace(/"/g, '""')}"`,
+        `"${(l.phone || '').replace(/"/g, '""')}"`,
+        `"${(l.city || '').replace(/"/g, '""')}"`,
+        `"${(l.ad_name || 'Direct / Organic').replace(/"/g, '""')}"`,
+        `"${(l.ad_id || '').replace(/"/g, '""')}"`,
+        `"${(l.health_concern || 'General').replace(/"/g, '""')}"`,
+        `"${(l.ai_analysis?.intent_label || 'Normal').replace(/"/g, '""')}"`,
+        `"${assignedTags.replace(/"/g, '""')}"`,
+        `"${latestNote.replace(/"/g, '""')}"`,
+        `"${(l.ai_analysis?.dropout_reason || '').replace(/"/g, '""')}"`,
+        `"${(l.ai_analysis?.calling_pitch || '').replace(/"/g, '""')}"`,
+        `"${l.has_booking ? 'Booked' : 'Pending'}"`,
+        `"${(l.consultation_type || '').replace(/"/g, '""')}"`,
+        `"${(l.clinic_location || '').replace(/"/g, '""')}"`,
+        `"${l.created_at || ''}"`,
+      ];
+    });
 
     const csvContent =
       'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
@@ -596,7 +787,7 @@ export default function AnalyticsPage() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-600 mt-2 font-medium">
-                ₹499 फीस सुनकर रुक गए — इनको लाइफटाइम फ्री कंसल्टेशन या क्लिनिक पर ₹0 एडवांस पिच करें।
+                ₹499 फीस सुनकर रुक गए — इनको डाइट प्लान से ठीक होने और क्लिनिक पर ₹0 एडवांस की पिच करें।
               </p>
               <div className="mt-2 text-[11px] text-amber-700 font-semibold flex items-center gap-1">
                 क्लिक करके लीड्स देखें <ChevronRight className="h-3 w-3" />
@@ -744,174 +935,6 @@ export default function AnalyticsPage() {
         </CardContent>
       </Card>
 
-      {/* Middle Row: Disease Breakdown & Demographics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Health Concern / Disease Breakdown */}
-        <Card className="border-slate-200 md:col-span-2">
-          <CardHeader className="p-5 pb-3">
-            <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Stethoscope className="h-5 w-5 text-pink-600" />
-              AI Health Concern & Disease Breakdown
-            </CardTitle>
-            <CardDescription className="text-xs text-slate-500">
-              AI विश्लेषण: किस बीमारी (PCOD, ट्यूब ब्लॉकेज, इनफर्टिलिटी, स्पर्म काउंट, लो AMH) से जुड़े सबसे ज्यादा मरीज आ रहे हैं
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-5 pt-0">
-            {(!summary?.health_concerns || summary.health_concerns.length === 0) && (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                No health concern data available for this range.
-              </div>
-            )}
-            <div className="space-y-3 mt-2">
-              {summary?.health_concerns?.map((item) => (
-                <div key={item.category} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-800">{item.label_hi}</span>
-                    <span className="text-slate-500">
-                      <strong className="text-slate-900">{item.count} leads</strong> (
-                      {item.percentage}%) •{' '}
-                      <span className="text-emerald-600 font-semibold">
-                        {item.bookings_count} Booked ({item.conversion_rate}%)
-                      </span>
-                    </span>
-                  </div>
-                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
-                    <div
-                      className="bg-purple-600 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(100, item.percentage)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Demographics: Gender Ratio & Top Cities */}
-        <div className="space-y-6">
-          {/* Gender Ratio */}
-          <Card className="border-slate-200">
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1.5">
-                <Users className="h-4 w-4 text-purple-600" /> Gender Ratio (महिला vs पुरुष)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-1">
-              <div className="grid grid-cols-3 gap-2 text-center mt-2">
-                <div className="p-2 bg-pink-50 rounded-lg border border-pink-100">
-                  <span className="text-[11px] text-pink-700 font-medium">महिला (Female)</span>
-                  <div className="text-lg font-bold text-pink-700">
-                    {summary?.gender_stats?.female_count || 0}
-                  </div>
-                  <span className="text-[10px] text-slate-500">
-                    {summary?.gender_stats?.female_percentage || 0}%
-                  </span>
-                </div>
-
-                <div className="p-2 bg-blue-50 rounded-lg border border-blue-100">
-                  <span className="text-[11px] text-blue-700 font-medium">पुरुष (Male)</span>
-                  <div className="text-lg font-bold text-blue-700">
-                    {summary?.gender_stats?.male_count || 0}
-                  </div>
-                  <span className="text-[10px] text-slate-500">
-                    {summary?.gender_stats?.male_percentage || 0}%
-                  </span>
-                </div>
-
-                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-[11px] text-slate-600 font-medium">Unknown</span>
-                  <div className="text-lg font-bold text-slate-700">
-                    {summary?.gender_stats?.unknown_count || 0}
-                  </div>
-                  <span className="text-[10px] text-slate-500">
-                    {summary?.gender_stats?.total
-                      ? Math.round(
-                          ((summary.gender_stats.unknown_count || 0) / summary.gender_stats.total) *
-                            100
-                        )
-                      : 0}
-                    %
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Top Cities */}
-          <Card className="border-slate-200">
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1.5">
-                <MapPin className="h-4 w-4 text-emerald-600" /> Top Patient Cities (शीर्ष शहर)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-1">
-              <div className="space-y-2 mt-1">
-                {(!summary?.top_cities || summary.top_cities.length === 0) && (
-                  <p className="text-xs text-slate-400">No city data available</p>
-                )}
-                {summary?.top_cities?.slice(0, 5).map((city, idx) => (
-                  <div key={city.city} className="flex items-center justify-between text-xs">
-                    <span className="text-slate-700 flex items-center gap-1.5">
-                      <span className="text-[11px] font-mono text-slate-400">#{idx + 1}</span>
-                      {city.city}
-                      {city.has_clinic && (
-                        <Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200">
-                          Branch
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="font-semibold text-slate-900">
-                      {city.leads_count} leads ({city.bookings_count} booked)
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* AI Ad Strategy & Recommendations */}
-      <Card className="border-purple-200 bg-purple-50/40">
-        <CardHeader className="p-5 pb-2">
-          <CardTitle className="text-base font-bold text-purple-900 flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-purple-600" />
-            AI Ad Strategy & Optimization Recommendations
-          </CardTitle>
-          <CardDescription className="text-xs text-purple-700">
-            मरीजों के प्रश्नों व डाटा विश्लेषण के आधार पर भविष्य में कैसे और किस विषय पर विज्ञापन चलाने चाहिए:
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-5 pt-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {summary?.ai_recommendations?.creative_hooks?.map((hook, i) => (
-              <div
-                key={hook.title + i}
-                className="p-4 bg-white rounded-xl border border-purple-100 shadow-2xs space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[11px] font-bold">
-                      {i + 1}
-                    </span>
-                    {hook.title}
-                  </h4>
-                  <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700">
-                    {hook.target_audience}
-                  </Badge>
-                </div>
-                <p className="text-xs text-slate-600 leading-relaxed">{hook.angle}</p>
-                <div className="p-2.5 bg-slate-50 rounded-md border border-slate-100 text-[11px] text-slate-700">
-                  <strong className="text-purple-700">Hook:</strong> &ldquo;
-                  {hook.hook_hindi}&rdquo;
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Complete Leads & Drop-off Telecaller Calling Table */}
       <Card className="border-slate-200">
         <CardHeader className="p-5 pb-3">
@@ -922,7 +945,7 @@ export default function AnalyticsPage() {
                 All Leads & Telecalling Action Center ({displayedLeads.length})
               </CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                हर लीड का AI कॉलिंग स्टेटस, क्या कमी रही (ड्रॉप-ऑफ कारण), एवं कॉल पर क्या बोलना है (AI Script)
+                हर लीड का AI कॉलिंग स्टेटस, क्या कमी रही (ड्रॉप-ऑफ कारण), टैग्स, कॉलिंग नोट्स एवं AI पिच
               </CardDescription>
             </div>
 
@@ -971,10 +994,11 @@ export default function AnalyticsPage() {
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4">Contact / Patient</th>
-                  <th className="py-3 px-4">Meta Ad Campaign</th>
-                  <th className="py-3 px-4">Calling Priority</th>
-                  <th className="py-3 px-4">AI Dropout Reason & Pitch</th>
+                  <th className="py-3 px-4 min-w-[150px]">Contact / Patient</th>
+                  <th className="py-3 px-4 min-w-[160px]">Tags</th>
+                  <th className="py-3 px-4 min-w-[140px]">Calling Priority</th>
+                  <th className="py-3 px-4 min-w-[200px]">AI Dropout Reason & Pitch</th>
+                  <th className="py-3 px-4 min-w-[160px]">Call Notes</th>
                   <th className="py-3 px-4 text-center">Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
@@ -982,7 +1006,7 @@ export default function AnalyticsPage() {
               <tbody className="divide-y divide-slate-100">
                 {displayedLeads.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
                       No leads match the selected date, ad, or filter criteria.
                     </td>
                   </tr>
@@ -994,32 +1018,121 @@ export default function AnalyticsPage() {
                   const isClinic = stage === 'clinic_opportunity';
                   const isBooked = lead.has_booking;
 
+                  const assignedTagIds = contactTagsMap[lead.id] || [];
+                  const notesList = contactNotesMap[lead.id] || [];
+                  const latestNote = notesList[0];
+
                   return (
                     <tr key={lead.id} className="hover:bg-slate-50/60 transition-colors">
                       {/* 1. Contact / Patient */}
                       <td className="py-3 px-4">
                         <div className="font-semibold text-slate-900">{lead.name || 'Unknown'}</div>
-                        <div className="text-slate-500 font-mono text-[11px]">{lead.phone}</div>
+                        <div className="text-slate-500 font-mono text-[11px] flex items-center gap-1">
+                          <a
+                            href={formatTelUri(lead.phone)}
+                            className="hover:text-purple-700 hover:underline flex items-center gap-0.5"
+                            title="Call this patient"
+                          >
+                            <Phone className="h-2.5 w-2.5 text-emerald-600 fill-current" />
+                            {formatPhoneDisplay(lead.phone)}
+                          </a>
+                        </div>
                         {lead.city && (
                           <div className="text-[11px] text-purple-700 flex items-center gap-1 mt-0.5">
                             <MapPin className="h-3 w-3" /> {lead.city}
                           </div>
-                        )}
-                      </td>
-
-                      {/* 2. Meta Ad Campaign */}
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-slate-800">
-                          {lead.ad_name || 'Direct / Organic'}
-                        </div>
-                        {lead.ad_id && (
-                          <div className="text-[10px] text-slate-400 font-mono">ID: {lead.ad_id}</div>
                         )}
                         {lead.health_concern && (
                           <Badge variant="outline" className="text-[10px] mt-1 bg-purple-50 text-purple-700">
                             {lead.health_concern}
                           </Badge>
                         )}
+                      </td>
+
+                      {/* 2. Tags Column */}
+                      <td className="py-3 px-4">
+                        <div className="flex flex-wrap items-center gap-1 max-w-[200px]">
+                          {assignedTagIds.map((tid) => {
+                            const tag = tagsMap[tid];
+                            if (!tag) return null;
+                            return (
+                              <Badge
+                                key={tag.id}
+                                variant="outline"
+                                className="text-[10px] font-medium px-1.5 py-0.5 gap-1 border shadow-2xs group/tag transition-all"
+                                style={{
+                                  backgroundColor: `${tag.color}15`,
+                                  color: tag.color,
+                                  borderColor: `${tag.color}40`,
+                                }}
+                              >
+                                <span
+                                  className="h-1.5 w-1.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: tag.color }}
+                                />
+                                <span className="truncate max-w-[90px]">{tag.name}</span>
+                                <button
+                                  type="button"
+                                  className="opacity-0 group-hover/tag:opacity-100 hover:bg-black/10 rounded-full p-0.5 cursor-pointer"
+                                  onClick={() => handleToggleTag(lead.id, tag.id)}
+                                >
+                                  <X className="h-2 w-2" />
+                                </button>
+                              </Badge>
+                            );
+                          })}
+
+                          {/* + Tag Popover */}
+                          <Popover>
+                            <PopoverTrigger
+                              className="inline-flex items-center justify-center rounded-md border border-dashed border-input bg-background hover:bg-accent hover:text-accent-foreground h-5 px-1.5 text-[10px] gap-0.5 text-slate-500 hover:text-slate-900 cursor-pointer transition-colors"
+                            >
+                              <Plus className="h-2.5 w-2.5" /> Tag
+                            </PopoverTrigger>
+                            <PopoverContent className="w-56 p-2 text-xs" align="start">
+                              <div className="font-semibold text-slate-700 mb-2 flex items-center gap-1">
+                                <TagIcon className="h-3.5 w-3.5 text-purple-600" />
+                                Select or Add Tag
+                              </div>
+                              <div className="max-h-40 overflow-y-auto space-y-1 mb-2">
+                                {allTags.map((tag) => {
+                                  const active = assignedTagIds.includes(tag.id);
+                                  return (
+                                    <div
+                                      key={tag.id}
+                                      onClick={() => handleToggleTag(lead.id, tag.id)}
+                                      className={`p-1.5 rounded-md cursor-pointer flex items-center justify-between text-xs transition-colors ${
+                                        active ? 'bg-purple-50 text-purple-900 font-medium' : 'hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <span
+                                          className="w-2 h-2 rounded-full shrink-0"
+                                          style={{ backgroundColor: tag.color }}
+                                        />
+                                        <span className="truncate">{tag.name}</span>
+                                      </div>
+                                      {active && <Check className="h-3 w-3 text-purple-600" />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="pt-2 border-t border-slate-100">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full text-xs h-7 text-purple-600 justify-start"
+                                  onClick={() => {
+                                    const name = prompt('नया टैग नाम दर्ज करें (New Tag Name):');
+                                    if (name) handleCreateAndAssignTag(lead.id, name, '#8b5cf6');
+                                  }}
+                                >
+                                  <Plus className="h-3 w-3 mr-1" /> नया टैग बनाएं (Create Tag)
+                                </Button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
                       </td>
 
                       {/* 3. Calling Priority */}
@@ -1056,7 +1169,10 @@ export default function AnalyticsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setScriptModalLead(lead)}
+                            onClick={() => {
+                              setScriptModalLead(lead);
+                              setModalNoteDraft('');
+                            }}
                             className="h-6 px-2 text-[11px] gap-1 text-purple-700 border-purple-200 hover:bg-purple-50"
                           >
                             <PhoneCall className="h-3 w-3" />
@@ -1065,7 +1181,44 @@ export default function AnalyticsPage() {
                         </div>
                       </td>
 
-                      {/* 5. Status */}
+                      {/* 5. Notes Column */}
+                      <td className="py-3 px-4 max-w-[200px]">
+                        {latestNote ? (
+                          <div
+                            onClick={() => {
+                              setNoteModalLead(lead);
+                              setTableNoteDraft(latestNote.note_text);
+                            }}
+                            className="cursor-pointer group/note"
+                            title="Click to view all notes or add new"
+                          >
+                            <div className="text-slate-800 font-medium line-clamp-2 text-[11px] group-hover/note:text-purple-700">
+                              📝 {latestNote.note_text}
+                            </div>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(latestNote.created_at).toLocaleDateString('hi-IN', {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setNoteModalLead(lead);
+                              setTableNoteDraft('');
+                            }}
+                            className="h-6 px-2 text-[11px] text-slate-400 hover:text-slate-700 gap-1 border border-dashed border-slate-200"
+                          >
+                            <StickyNote className="h-3 w-3" />
+                            + Add Note
+                          </Button>
+                        )}
+                      </td>
+
+                      {/* 6. Status */}
                       <td className="py-3 px-4 text-center">
                         {isBooked ? (
                           <Badge className="bg-emerald-600 text-white text-[11px]">Confirmed</Badge>
@@ -1076,7 +1229,7 @@ export default function AnalyticsPage() {
                         )}
                       </td>
 
-                      {/* 6. Action */}
+                      {/* 7. Action */}
                       <td className="py-3 px-4 text-right">
                         <Button
                           variant="ghost"
@@ -1097,9 +1250,9 @@ export default function AnalyticsPage() {
         </CardContent>
       </Card>
 
-      {/* Calling Script Popup Dialog */}
+      {/* Calling Script & Action Popup Dialog */}
       <Dialog open={!!scriptModalLead} onOpenChange={(open) => !open && setScriptModalLead(null)}>
-        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {scriptModalLead && (
             <div className="space-y-4">
               <DialogHeader>
@@ -1109,10 +1262,10 @@ export default function AnalyticsPage() {
                   </div>
                   <div>
                     <DialogTitle className="text-lg font-bold text-slate-900">
-                      Telecalling Script & Lead Intelligence
+                      Telecalling Script & Lead Action Center
                     </DialogTitle>
                     <DialogDescription className="text-xs text-slate-500">
-                      मरीज की चैट विश्लेषण, ड्रॉप-ऑफ का कारण एवं कॉल पर क्या बोलना है
+                      मरीज की चैट विश्लेषण, बीमारी की समझ, कॉल पर बोलने वाली स्क्रिप्ट एवं रिस्पॉन्स ट्रैकिंग
                     </DialogDescription>
                   </div>
                 </div>
@@ -1125,9 +1278,13 @@ export default function AnalyticsPage() {
                   <div className="font-bold text-slate-900">{scriptModalLead.name || 'Unknown'}</div>
                 </div>
                 <div>
-                  <span className="text-slate-500">फोन नंबर:</span>
+                  <span className="text-slate-500">फोन नंबर (क्लिक करके कॉल करें):</span>
                   <div className="font-bold text-purple-700 flex items-center gap-1">
-                    <a href={formatTelUri(scriptModalLead.phone)} className="hover:underline">
+                    <a
+                      href={formatTelUri(scriptModalLead.phone)}
+                      className="hover:underline flex items-center gap-1"
+                    >
+                      <Phone className="h-3 w-3 fill-current text-emerald-600" />
                       {formatPhoneDisplay(scriptModalLead.phone)}
                     </a>
                   </div>
@@ -1153,6 +1310,28 @@ export default function AnalyticsPage() {
                 </p>
               </div>
 
+              {/* Clinical Root-Cause & Treatment Insight */}
+              {(scriptModalLead.ai_analysis?.disease_cause || scriptModalLead.ai_analysis?.disease_treatment) && (
+                <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200 text-xs space-y-2">
+                  <div className="font-bold text-blue-950 flex items-center gap-1.5">
+                    <Stethoscope className="h-4 w-4 text-blue-600" />
+                    रोग की वजह एवं आयुर्वेदिक समाधान (Doctor Insight):
+                  </div>
+                  {scriptModalLead.ai_analysis?.disease_cause && (
+                    <div>
+                      <strong className="text-blue-900">यह समस्या क्यों होती है: </strong>
+                      <span className="text-slate-700">{scriptModalLead.ai_analysis.disease_cause}</span>
+                    </div>
+                  )}
+                  {scriptModalLead.ai_analysis?.disease_treatment && (
+                    <div>
+                      <strong className="text-blue-900">आयुर्वेदिक इलाज का तरीका: </strong>
+                      <span className="text-slate-700">{scriptModalLead.ai_analysis.disease_treatment}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Telecaller Script */}
               <div className="p-4 bg-purple-50/70 rounded-xl border border-purple-200 space-y-2">
                 <div className="flex items-center justify-between">
@@ -1176,13 +1355,104 @@ export default function AnalyticsPage() {
                 </div>
               </div>
 
+              {/* Disease YouTube Video Recommendation */}
+              <div className="p-3.5 bg-red-50/50 rounded-xl border border-red-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-red-950 flex items-center gap-1.5">
+                    <PlayCircle className="h-4 w-4 text-red-600" />
+                    YouTube वीडियो लिंक व भावनात्मक मैसेज (Patient Reassurance):
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleCopyVideoMessage(scriptModalLead)}
+                    className="h-7 text-xs gap-1 border-red-300 text-red-700 hover:bg-red-100"
+                  >
+                    {copiedVideoMsg ? <Check className="h-3 w-3" /> : <Share2 className="h-3 w-3" />}
+                    {copiedVideoMsg ? 'मैसेज कॉपी हो गया' : 'Copy Video Message'}
+                  </Button>
+                </div>
+                <p className="text-slate-600">
+                  मरीज को कॉल के दौरान या कॉल के बाद WhatsApp पर यह वीडियो लिंक और मैसेज भेजें जिससे मरीज का विश्वास बढ़े।
+                </p>
+                {scriptModalLead.ai_analysis?.video_recommendation && (
+                  <div className="text-[11px] text-red-700 font-mono break-all">
+                    Link: {scriptModalLead.ai_analysis.video_recommendation}
+                  </div>
+                )}
+              </div>
+
+              {/* Post-Call Tagging & Notes Tracking */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <TagIcon className="h-4 w-4 text-purple-600" />
+                  कॉल का नतीजा / टैग अपडेट करें (Call Result & Tags):
+                </div>
+
+                {/* Quick Call Result Tags */}
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_CALL_TAGS.map((qt) => {
+                    const matchedTag = allTags.find((t) => t.name.toLowerCase().includes(qt.name.toLowerCase()));
+                    const isAssigned = matchedTag ? (contactTagsMap[scriptModalLead.id] || []).includes(matchedTag.id) : false;
+
+                    return (
+                      <Button
+                        key={qt.name}
+                        type="button"
+                        variant={isAssigned ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={async () => {
+                          if (matchedTag) {
+                            await handleToggleTag(scriptModalLead.id, matchedTag.id);
+                          } else {
+                            await handleCreateAndAssignTag(scriptModalLead.id, qt.name, qt.color);
+                          }
+                        }}
+                        className={`text-xs h-7 px-2.5 ${
+                          isAssigned ? 'bg-purple-600 text-white' : 'text-slate-700'
+                        }`}
+                      >
+                        {qt.name} {isAssigned && <Check className="h-3 w-3 ml-1" />}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                {/* Call Notes input */}
+                <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                  <label className="font-semibold text-slate-700 flex items-center gap-1">
+                    <StickyNote className="h-3.5 w-3.5 text-slate-500" />
+                    कॉल पर क्या बात हुई (Call Note दर्ज करें):
+                  </label>
+                  <Textarea
+                    placeholder="जैसे: मरीज से बात हुई, उन्होंने कहा शाम 5 बजे पति से पूछकर बताएंगे..."
+                    value={modalNoteDraft}
+                    onChange={(e) => setModalNoteDraft(e.target.value)}
+                    rows={2}
+                    className="text-xs bg-white"
+                  />
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        if (!modalNoteDraft.trim()) return;
+                        setModalSavingNote(true);
+                        await handleSaveContactNote(scriptModalLead.id, modalNoteDraft);
+                        setModalNoteDraft('');
+                        setModalSavingNote(false);
+                      }}
+                      disabled={modalSavingNote || !modalNoteDraft.trim()}
+                      className="h-7 text-xs bg-purple-600 hover:bg-purple-700"
+                    >
+                      Save Note
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setScriptModalLead(null)}
-                >
+                <Button variant="outline" size="sm" onClick={() => setScriptModalLead(null)}>
                   बंद करें (Close)
                 </Button>
                 <Button
@@ -1194,6 +1464,73 @@ export default function AnalyticsPage() {
                   Chat पर जाएं
                 </Button>
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Standalone Note Modal (from clicking table note) */}
+      <Dialog open={!!noteModalLead} onOpenChange={(open) => !open && setNoteModalLead(null)}>
+        <DialogContent className="max-w-md">
+          {noteModalLead && (
+            <div className="space-y-4">
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-1.5">
+                  <StickyNote className="h-4 w-4 text-purple-600" />
+                  Call Notes: {noteModalLead.name || noteModalLead.phone}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  इस मरीज के लिए कॉलिंग टिप्पणियाँ और रिस्पॉन्स रिकॉर्ड
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* Existing Notes History */}
+              <div className="max-h-40 overflow-y-auto space-y-2">
+                {(contactNotesMap[noteModalLead.id] || []).length === 0 && (
+                  <p className="text-xs text-slate-400">अभी तक कोई नोट दर्ज नहीं है।</p>
+                )}
+                {(contactNotesMap[noteModalLead.id] || []).map((cn) => (
+                  <div key={cn.id} className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-xs">
+                    <p className="text-slate-800 whitespace-pre-wrap">{cn.note_text}</p>
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      {new Date(cn.created_at).toLocaleString('hi-IN')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add New Note */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                <label className="text-xs font-semibold text-slate-700">नया नोट जोड़ें:</label>
+                <Textarea
+                  placeholder="कॉल का विवरण यहाँ लिखें..."
+                  value={tableNoteDraft}
+                  onChange={(e) => setTableNoteDraft(e.target.value)}
+                  rows={3}
+                  className="text-xs bg-white"
+                />
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setNoteModalLead(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    if (!tableNoteDraft.trim()) return;
+                    setTableSavingNote(true);
+                    await handleSaveContactNote(noteModalLead.id, tableNoteDraft);
+                    setTableNoteDraft('');
+                    setTableSavingNote(false);
+                    setNoteModalLead(null);
+                  }}
+                  disabled={tableSavingNote || !tableNoteDraft.trim()}
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  Save Note
+                </Button>
+              </DialogFooter>
             </div>
           )}
         </DialogContent>

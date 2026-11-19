@@ -87,6 +87,9 @@ export interface LeadAiAnalysis {
   dropout_reason: string;
   calling_pitch: string;
   urgency: 'high' | 'medium' | 'low';
+  disease_cause?: string;
+  disease_treatment?: string;
+  video_recommendation?: string;
 }
 
 export interface AnalyticsLeadItem {
@@ -108,6 +111,7 @@ export interface AnalyticsLeadItem {
   clinic_location: string | null;
   conversation_id: string | null;
   notes: string | null;
+  tags?: string[];
   ai_analysis: LeadAiAnalysis;
 }
 
