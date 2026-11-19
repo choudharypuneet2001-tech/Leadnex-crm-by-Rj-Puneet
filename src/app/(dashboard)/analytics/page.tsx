@@ -68,6 +68,7 @@ import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { findDiseaseVideo, formatDiseaseVideoMessage } from '@/lib/ai/disease-video-links';
 import { SendDiseaseVideoModal } from '@/components/shared/send-disease-video-modal';
+import { LiveVoiceCallDialog } from '@/components/voice/live-voice-call-dialog';
 import type {
   AnalyticsSummary,
   AnalyticsDateRangePreset,
@@ -138,6 +139,10 @@ export default function AnalyticsPage() {
   // Send Educational Video modal
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [selectedVideoLead, setSelectedVideoLead] = useState<AnalyticsLeadItem | null>(null);
+
+  // Live AI Voice Call dialog
+  const [voiceCallOpen, setVoiceCallOpen] = useState(false);
+  const [selectedVoiceLead, setSelectedVoiceLead] = useState<AnalyticsLeadItem | null>(null);
 
   // Tags Map for fast lookup
   const tagsMap = useMemo(() => {
@@ -979,6 +984,20 @@ export default function AnalyticsPage() {
                   <span className="hidden sm:inline">वीडियो लिंक्स (YouTube)</span>
                 </Button>
               </Link>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedVoiceLead(null);
+                  setVoiceCallOpen(true);
+                }}
+                className="h-8 gap-1.5 text-xs text-purple-700 hover:text-purple-800 hover:bg-purple-50 border-purple-200 shrink-0 cursor-pointer"
+                title="AI Voice Calling Agent डेमो चलाएं"
+              >
+                <Phone className="h-3.5 w-3.5 text-purple-600 fill-current" />
+                <span className="hidden sm:inline">🎙️ AI Call Demo</span>
+              </Button>
             </div>
           </div>
 
@@ -1212,6 +1231,20 @@ export default function AnalyticsPage() {
                           >
                             <Video className="h-3 w-3 text-rose-600" />
                             🌸 वीडियो भेजें
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedVoiceLead(lead);
+                              setVoiceCallOpen(true);
+                            }}
+                            className="h-6 px-2 text-[11px] gap-1 text-purple-700 border-purple-300 bg-purple-50/70 hover:bg-purple-100 cursor-pointer font-medium"
+                            title="इस मरीज को AI एजेंट से लाइव वॉयस कॉल करें (Live Voice Call Demo)"
+                          >
+                            <Phone className="h-3 w-3 text-purple-600 fill-current" />
+                            🎙️ AI Call
                           </Button>
                         </div>
                       </td>
@@ -1578,6 +1611,18 @@ export default function AnalyticsPage() {
         patientName={selectedVideoLead?.name}
         phone={selectedVideoLead?.phone}
         initialConcernOrAd={selectedVideoLead?.health_concern || selectedVideoLead?.ad_name}
+      />
+
+      {/* Live AI Voice Call Dialog */}
+      <LiveVoiceCallDialog
+        open={voiceCallOpen}
+        onOpenChange={setVoiceCallOpen}
+        patientName={selectedVoiceLead?.name || 'मरीज (Patient)'}
+        phone={selectedVoiceLead?.phone || null}
+        concern={selectedVoiceLead?.health_concern || selectedVoiceLead?.ad_name || 'समस्या'}
+        city={selectedVoiceLead?.city || null}
+        adName={selectedVoiceLead?.ad_name || null}
+        contactId={selectedVoiceLead?.id || null}
       />
     </div>
   );

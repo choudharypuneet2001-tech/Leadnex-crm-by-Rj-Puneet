@@ -1,0 +1,63 @@
+import { describe, it, expect } from 'vitest';
+import {
+  buildVoiceAgentPrompt,
+  detectCallDisposition,
+} from './voice-agent-service';
+
+describe('Voice Agent Service', () => {
+  describe('buildVoiceAgentPrompt', () => {
+    it('creates empathetic voice prompt with patient name and concern', () => {
+      const prompt = buildVoiceAgentPrompt({
+        patientName: 'Priya',
+        phone: '919876543210',
+        concern: 'Tubal Blockage',
+        city: 'Jaipur',
+      });
+
+      expect(prompt).toContain('Priya जी');
+      expect(prompt).toContain('Tubal Blockage');
+      expect(prompt).toContain('Jaipur');
+      expect(prompt).toContain('5 सीनियर डॉक्टरों का विशेषज्ञ पैनल');
+      expect(prompt).toContain('₹499');
+      expect(prompt).toContain('डाइट प्लान');
+    });
+
+    it('handles defaults gracefully when options are empty', () => {
+      const prompt = buildVoiceAgentPrompt({});
+      expect(prompt).toContain('Gynocci');
+      expect(prompt).toContain('VOICE CONVERSATION GUIDELINES');
+    });
+  });
+
+  describe('detectCallDisposition', () => {
+    it('detects Booked status', () => {
+      const res = detectCallDisposition('मरीज ने कहा अपॉइंटमेंट कन्फर्म कर दीजिये');
+      expect(res.disposition).toBe('Booked');
+    });
+
+    it('detects Fees Hesitation status', () => {
+      const res = detectCallDisposition('मरीज ने बोला कि फीस बहुत ज्यादा है क्या ₹499 ही लगेगी');
+      expect(res.disposition).toBe('Fees Hesitation');
+    });
+
+    it('detects Clinic Visit status', () => {
+      const res = detectCallDisposition('मरीज जयपुर क्लिनिक आकर मिलूंगी बोला');
+      expect(res.disposition).toBe('Clinic Visit');
+    });
+
+    it('detects Callback status', () => {
+      const res = detectCallDisposition('मरीज ने बोला बाद में कॉल करना अभी बिजी हूँ');
+      expect(res.disposition).toBe('Callback');
+    });
+
+    it('detects Interested status', () => {
+      const res = detectCallDisposition('मरीज ने इलाज के बारे में जानकारी पूछी');
+      expect(res.disposition).toBe('Interested');
+    });
+
+    it('defaults to Awareness status', () => {
+      const res = detectCallDisposition('हेलो कौन बोल रहा है');
+      expect(res.disposition).toBe('Awareness');
+    });
+  });
+});

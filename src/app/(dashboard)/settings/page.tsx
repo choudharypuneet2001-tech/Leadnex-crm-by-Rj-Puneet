@@ -18,6 +18,7 @@ import { QuickRepliesManager } from '@/components/settings/quick-replies-manager
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { ClinicsSettings } from '@/components/settings/clinics-settings';
 import { DiseaseVideosSettings } from '@/components/settings/disease-videos-settings';
+import { VoiceSettings } from '@/components/settings/voice-settings';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
@@ -105,6 +106,7 @@ function SettingsPageInner() {
     fields: <FieldsAndTagsPanel />,
     clinics: <ClinicsSettings />,
     videos: <DiseaseVideosSettings />,
+    voice: <VoiceSettings />,
     deals: <DealsSettings />,
     members: canManageMembers ? <MembersTab /> : accessDeniedPanel,
     api: canManageTechSettings ? <ApiKeysSettings /> : accessDeniedPanel,
