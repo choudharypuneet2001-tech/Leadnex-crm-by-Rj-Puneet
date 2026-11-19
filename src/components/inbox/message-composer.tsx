@@ -55,6 +55,7 @@ import {
 import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
+import { EducationalVideoPicker } from "./educational-video-picker";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -154,6 +155,7 @@ export function MessageComposer({
     useState<InteractiveMessagePayload>(blankButtonsPayload);
   const [savingQuickReply, setSavingQuickReply] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
+  const [videoPickerOpen, setVideoPickerOpen] = useState(false);
 
   // Voice-to-Text Speech Recognition (Speech to type)
   const [isListening, setIsListening] = useState(false);
@@ -772,6 +774,10 @@ export function MessageComposer({
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
+              <DropdownMenuItem onClick={() => setVideoPickerOpen(true)}>
+                <Video className="mr-2 h-4 w-4 text-rose-500" />
+                Educational Video (YouTube)
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
                 <MessageSquareDashed className="mr-2 h-4 w-4" />
                 {t("interactiveMessage")}
@@ -782,6 +788,19 @@ export function MessageComposer({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <GatedButton
+            variant="ghost"
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            disabled={inputsDisabled}
+            title="YouTube वीडियो व भावनात्मक मैसेज चुनें"
+            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-rose-600"
+            onClick={() => setVideoPickerOpen(true)}
+          >
+            <Video className="h-4 w-4 text-rose-500" />
+          </GatedButton>
 
           <GatedButton
             variant="ghost"
@@ -918,6 +937,16 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+      />
+
+      {/* Disease Educational Video Picker */}
+      <EducationalVideoPicker
+        open={videoPickerOpen}
+        onOpenChange={setVideoPickerOpen}
+        onSelect={(msg) => {
+          setText(msg);
+          textareaRef.current?.focus();
+        }}
       />
     </div>
   );

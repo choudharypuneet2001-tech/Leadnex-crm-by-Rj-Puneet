@@ -66,6 +66,7 @@ import {
   CheckCircle2,
   Tag as TagIcon,
   Clock,
+  Video,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -77,6 +78,7 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { AiPitchDialog } from '@/components/inbox/ai-pitch-dialog';
+import { SendDiseaseVideoModal } from '@/components/shared/send-disease-video-modal';
 
 const PAGE_SIZE = 25;
 
@@ -419,6 +421,10 @@ export default function ContactsPage() {
   // Bulk selection (page-scoped — only the loaded rows are selectable)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  // Send Educational Video modal
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [selectedVideoContact, setSelectedVideoContact] = useState<Contact | null>(null);
 
   // All tags for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
@@ -1540,6 +1546,21 @@ export default function ContactsPage() {
                             <Phone className="size-2.5 fill-current" />
                             <span>Call</span>
                           </a>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-1.5 text-[11px] gap-1 font-semibold text-rose-600 border-rose-300 bg-rose-50/70 hover:bg-rose-100 transition-all shadow-2xs cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedVideoContact(contact);
+                              setVideoModalOpen(true);
+                            }}
+                            title="मरीज को YouTube वीडियो व भावनात्मक मैसेज भेजें"
+                          >
+                            <Video className="size-3 text-rose-600" />
+                            <span>Video</span>
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -1734,6 +1755,17 @@ export default function ContactsPage() {
                             View Booking ({contactBookingsMap[contact.id].booking_query_id})
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedVideoContact(contact);
+                            setVideoModalOpen(true);
+                          }}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground flex items-center gap-2 cursor-pointer font-medium text-rose-600"
+                        >
+                          <Video className="size-4 text-rose-600" />
+                          Send Video on WhatsApp
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
@@ -2046,6 +2078,15 @@ export default function ContactsPage() {
         onOpenChange={setAiPitchOpen}
         contactId={selectedContactForPitch?.id}
         patientName={selectedContactForPitch?.name}
+      />
+
+      {/* 1-Click Send Disease Video Modal */}
+      <SendDiseaseVideoModal
+        open={videoModalOpen}
+        onOpenChange={setVideoModalOpen}
+        patientName={selectedVideoContact?.name}
+        phone={selectedVideoContact?.phone}
+        initialConcernOrAd={selectedVideoContact?.ad_name || selectedVideoContact?.company}
       />
     </div>
   );

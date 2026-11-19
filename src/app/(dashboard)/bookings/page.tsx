@@ -359,6 +359,12 @@ export default function BookingsPage() {
   const [scheduleTimeDraft, setScheduleTimeDraft] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
 
+  // Edit Patient Name Modal state
+  const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [editingNameBooking, setEditingNameBooking] = useState<Booking | null>(null);
+  const [patientNameDraft, setPatientNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
   // Selected booking modal
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -616,6 +622,70 @@ export default function BookingsPage() {
       toast.error('Failed to save schedule');
     } finally {
       setSavingSchedule(false);
+    }
+  };
+
+  const handleOpenEditName = (booking: Booking, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingNameBooking(booking);
+    setPatientNameDraft(booking.patient_name || '');
+    setNameModalOpen(true);
+  };
+
+  const handleSavePatientName = async () => {
+    if (!editingNameBooking) return;
+    const cleanName = patientNameDraft.trim();
+    if (!cleanName) {
+      toast.error('मरीज का नाम खाली नहीं हो सकता');
+      return;
+    }
+
+    setSavingName(true);
+    try {
+      // 1. Update bookings table
+      const { error: bookingErr } = await supabase
+        .from('bookings')
+        .update({
+          patient_name: cleanName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingNameBooking.id);
+
+      if (bookingErr) throw bookingErr;
+
+      // 2. Also update contacts table if contact_id exists
+      if (editingNameBooking.contact_id) {
+        try {
+          await supabase
+            .from('contacts')
+            .update({
+              name: cleanName,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', editingNameBooking.contact_id);
+        } catch (contactErr) {
+          console.warn('[bookings] contact name update fallback notice:', contactErr);
+        }
+      }
+
+      // 3. Update local state
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === editingNameBooking.id ? { ...b, patient_name: cleanName } : b
+        )
+      );
+
+      if (selectedBooking?.id === editingNameBooking.id) {
+        setSelectedBooking((prev) => (prev ? { ...prev, patient_name: cleanName } : null));
+      }
+
+      toast.success('मरीज का नाम सफलतापूर्वक अपडेट हो गया!');
+      setNameModalOpen(false);
+      setEditingNameBooking(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'नाम अपडेट करने में त्रुटि आई');
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -1214,9 +1284,17 @@ export default function BookingsPage() {
                       {/* Patient Details */}
                       <TableCell>
                         <div className="space-y-1">
-                          <div className="font-medium text-foreground text-sm flex items-center gap-1.5">
+                          <div className="font-medium text-foreground text-sm flex items-center gap-1.5 group/name">
                             <User className="h-3.5 w-3.5 text-muted-foreground" />
-                            {b.patient_name}
+                            <span>{b.patient_name}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenEditName(b, e)}
+                              className="text-muted-foreground hover:text-primary hover:bg-muted p-1 rounded cursor-pointer transition-colors"
+                              title="Edit Patient Name (मरीज का नाम बदलें)"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             <span>{formatPhoneDisplay(b.phone)}</span>
@@ -1550,6 +1628,10 @@ export default function BookingsPage() {
                                 }}
                               >
                                 View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenEditName(b)}>
+                                <Pencil className="h-4 w-4 mr-2 text-primary" />
+                                Edit Patient Name (नाम बदलें)
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleOpenInbox(b)}>
                                 <MessageSquare className="h-4 w-4 mr-2 text-primary" />
@@ -1921,7 +2003,18 @@ export default function BookingsPage() {
                 <div className="flex items-center justify-between">
                   <div className="font-semibold text-base text-foreground flex items-center gap-2">
                     <User className="h-4 w-4 text-primary" />
-                    {selectedBooking.patient_name}
+                    <span>{selectedBooking.patient_name}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleOpenEditName(selectedBooking)}
+                      className="h-6 px-1.5 text-xs text-muted-foreground hover:text-primary gap-1 cursor-pointer"
+                      title="Edit Patient Name"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      <span>Edit Name</span>
+                    </Button>
                   </div>
                   <div className="text-xs text-muted-foreground">
                     Booked {new Date(selectedBooking.created_at).toLocaleString()}
@@ -2208,6 +2301,68 @@ export default function BookingsPage() {
             )}
             <Button variant="secondary" onClick={() => setDetailOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Patient Name Modal */}
+      <Dialog open={nameModalOpen} onOpenChange={setNameModalOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-primary" />
+              मरीज का नाम बदलें (Edit Patient Name)
+            </DialogTitle>
+            <DialogDescription>
+              Update patient name for booking{' '}
+              <strong className="font-mono text-foreground">
+                {editingNameBooking?.booking_query_id}
+              </strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                Patient Name (मरीज का नाम):
+              </label>
+              <Input
+                value={patientNameDraft}
+                onChange={(e) => setPatientNameDraft(e.target.value)}
+                placeholder="Enter patient name..."
+                className="text-sm font-medium"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSavePatientName();
+                  }
+                }}
+              />
+            </div>
+            {editingNameBooking?.phone && (
+              <div className="text-xs text-muted-foreground flex items-center gap-1 font-mono">
+                <Phone className="h-3 w-3" />
+                {formatPhoneDisplay(editingNameBooking.phone)}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setNameModalOpen(false)}
+              disabled={savingName}
+            >
+              रद्द करें
+            </Button>
+            <Button
+              onClick={handleSavePatientName}
+              disabled={savingName || !patientNameDraft.trim()}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+            >
+              {savingName ? 'Saving...' : 'सुरक्षित करें (Save Name)'}
             </Button>
           </DialogFooter>
         </DialogContent>

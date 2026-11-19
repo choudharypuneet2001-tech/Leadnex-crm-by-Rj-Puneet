@@ -67,6 +67,7 @@ import { computeAnalytics } from '@/lib/analytics/analytics-service';
 import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { findDiseaseVideo, formatDiseaseVideoMessage } from '@/lib/ai/disease-video-links';
+import { SendDiseaseVideoModal } from '@/components/shared/send-disease-video-modal';
 import type {
   AnalyticsSummary,
   AnalyticsDateRangePreset,
@@ -133,6 +134,10 @@ export default function AnalyticsPage() {
   const [noteModalLead, setNoteModalLead] = useState<AnalyticsLeadItem | null>(null);
   const [tableNoteDraft, setTableNoteDraft] = useState<string>('');
   const [tableSavingNote, setTableSavingNote] = useState<boolean>(false);
+
+  // Send Educational Video modal
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [selectedVideoLead, setSelectedVideoLead] = useState<AnalyticsLeadItem | null>(null);
 
   // Tags Map for fast lookup
   const tagsMap = useMemo(() => {
@@ -1189,10 +1194,24 @@ export default function AnalyticsPage() {
                               setScriptModalLead(lead);
                               setModalNoteDraft('');
                             }}
-                            className="h-6 px-2 text-[11px] gap-1 text-purple-700 border-purple-200 hover:bg-purple-50"
+                            className="h-6 px-2 text-[11px] gap-1 text-purple-700 border-purple-200 hover:bg-purple-50 cursor-pointer"
                           >
                             <PhoneCall className="h-3 w-3" />
                             📞 AI Script देखें
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedVideoLead(lead);
+                              setVideoModalOpen(true);
+                            }}
+                            className="h-6 px-2 text-[11px] gap-1 text-rose-700 border-rose-300 bg-rose-50/70 hover:bg-rose-100 cursor-pointer font-medium"
+                            title="मरीज को 1-क्लिक में YouTube वीडियो व भावनात्मक मैसेज भेजें"
+                          >
+                            <Video className="h-3 w-3 text-rose-600" />
+                            🌸 वीडियो भेजें
                           </Button>
                         </div>
                       </td>
@@ -1551,6 +1570,15 @@ export default function AnalyticsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 1-Click Send Disease Video Modal */}
+      <SendDiseaseVideoModal
+        open={videoModalOpen}
+        onOpenChange={setVideoModalOpen}
+        patientName={selectedVideoLead?.name}
+        phone={selectedVideoLead?.phone}
+        initialConcernOrAd={selectedVideoLead?.health_concern || selectedVideoLead?.ad_name}
+      />
     </div>
   );
 }
