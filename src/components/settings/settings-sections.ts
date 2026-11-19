@@ -10,6 +10,7 @@ import {
   Tags,
   User,
   UsersRound,
+  Video,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ export const SETTINGS_SECTIONS = [
   'quick-replies',
   'fields',
   'clinics',
+  'videos',
   'deals',
   'members',
   'api',
@@ -61,6 +63,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace' },
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
   clinics: { id: 'clinics', label: 'Clinics & Branches', icon: Building2, group: 'workspace' },
+  videos: { id: 'videos', label: 'Educational Videos', icon: Video, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace', adminOnly: true },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace', techOnly: true },

@@ -7,6 +7,7 @@ import {
   formatAllClinicsList,
   formatNoClinicCityMessage,
 } from './clinics'
+import { formatDiseaseVideosForPrompt, type DiseaseVideoEntry } from './disease-video-links'
 
 // ============================================================
 // Tunables + prompt scaffold for the AI reply assistant.
@@ -117,8 +118,10 @@ export function buildSystemPrompt(args: {
   targetLanguage?: DetectedLanguage | null
   /** The latest user message text */
   latestUserMsg?: string
+  /** Managed disease educational videos & emotional reassurance links */
+  diseaseVideos?: DiseaseVideoEntry[]
 }): string {
-  const { userPrompt, mode, knowledge, contact, isEnglish, targetLanguage, latestUserMsg } = args
+  const { userPrompt, mode, knowledge, contact, isEnglish, targetLanguage, latestUserMsg, diseaseVideos } = args
 
   const now = new Date()
   const istDateString = now.toLocaleDateString('en-IN', {
@@ -186,7 +189,8 @@ export function buildSystemPrompt(args: {
       '  5. Low AMH (लो एएमएच)\n' +
       '  6. Male Infertility & Low Sperm Count / Motility (पुरुषों में स्पर्म से जुड़ी समस्या)\n' +
       '  7. Endometriosis, Adenomyosis, Uterine Fibroids & Hormonal Imbalance.\n' +
-      '• If patient already stated their concern (e.g. "sperm count low hai", "tubal block hai"): NEVER ask "Aapko kya takleef hai" again! Directly address their issue with compassionate understanding and reassurance.',
+      '• If patient already stated their concern (e.g. "sperm count low hai", "tubal block hai"): NEVER ask "Aapko kya takleef hai" again! Directly address their issue with compassionate understanding and reassurance.\n' +
+      (diseaseVideos && diseaseVideos.length > 0 ? '\n' + formatDiseaseVideosForPrompt(diseaseVideos) : '\n' + formatDiseaseVideosForPrompt()),
     '4. FEES PITCHING, DEEP TRUST & EMOTIONAL CONNECTION SCRIPT (STRICT RULE):\n' +
       '• CLINIC VISIT PATIENTS (STRICT RULE - NEVER ASK TO PAY ONLINE):\n' +
       '  - For Clinic Visit patients, YOU MUST CLEARLY ASSURE THEM:\n' +

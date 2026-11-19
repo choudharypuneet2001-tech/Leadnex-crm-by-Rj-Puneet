@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   TrendingUp,
   Users,
@@ -33,6 +34,7 @@ import {
   Share2,
   PlayCircle,
   Phone,
+  Video,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -949,15 +951,29 @@ export default function AnalyticsPage() {
               </CardDescription>
             </div>
 
-            {/* Local Search */}
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-              <Input
-                placeholder="Search name, phone, city, ad..."
-                value={leadsSearch}
-                onChange={(e) => setLeadsSearch(e.target.value)}
-                className="h-8 pl-8 text-xs bg-white"
-              />
+            {/* Search and Video Links Action */}
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="relative w-full md:w-64">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <Input
+                  placeholder="Search name, phone, city, ad..."
+                  value={leadsSearch}
+                  onChange={(e) => setLeadsSearch(e.target.value)}
+                  className="h-8 pl-8 text-xs bg-white"
+                />
+              </div>
+
+              <Link href="/settings?tab=videos">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 shrink-0 cursor-pointer"
+                  title="YouTube वीडियो लिंक्स व भावनात्मक मैसेज प्रबंधित करें"
+                >
+                  <Video className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">वीडियो लिंक्स (YouTube)</span>
+                </Button>
+              </Link>
             </div>
           </div>
 

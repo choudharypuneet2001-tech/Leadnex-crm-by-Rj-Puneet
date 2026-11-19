@@ -31,6 +31,7 @@ import {
   formatAllClinicsList,
   formatNoClinicCityMessage,
 } from './clinics'
+import { getManagedDiseaseVideos } from './disease-video-links'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -106,8 +107,8 @@ export async function dispatchInboundToAiReply(
     }
 
     // Parallelize pre-checks for minimum latency: automations, conversation status,
-    // recent context messages, contact details, and account name are fetched simultaneously.
-    const [autoRespondersRes, convRes, messages, contactRes, accountRes] = await Promise.all([
+    // recent context messages, contact details, account name, and managed disease video links are fetched simultaneously.
+    const [autoRespondersRes, convRes, messages, contactRes, accountRes, managedVideos] = await Promise.all([
       db
         .from('automations')
         .select('id')
@@ -131,6 +132,7 @@ export async function dispatchInboundToAiReply(
         .select('name')
         .eq('id', accountId)
         .maybeSingle(),
+      getManagedDiseaseVideos(db, accountId),
     ])
 
     const autoResponders = autoRespondersRes.data
@@ -252,6 +254,7 @@ export async function dispatchInboundToAiReply(
       isEnglish,
       targetLanguage,
       latestUserMsg: userMsg,
+      diseaseVideos: managedVideos,
     })
 
     const { text, handoff, usage, contactUpdate, bookingConfirmed } = await generateReply({
