@@ -32,7 +32,11 @@ import {
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag } from '@/lib/contacts/tag-api';
-import type { VoicePersona } from '@/lib/voice/voice-agent-service';
+import {
+  ELEVENLABS_INDIAN_FEMALE_VOICES,
+  type VoicePersona,
+  type VoiceProvider,
+} from '@/lib/voice/voice-agent-service';
 
 interface LiveVoiceCallDialogProps {
   open: boolean;
@@ -76,14 +80,31 @@ export function LiveVoiceCallDialog({
   const [detectedDisposition, setDetectedDisposition] = useState<string>('Interested');
   const [tagColor, setTagColor] = useState<string>('#8b5cf6');
 
-  // Selected Female Voice Persona
-  const [voicePersona, setVoicePersona] = useState<VoicePersona>('shimmer');
+  // Selected Voice Provider and Voice Persona (Defaults to ElevenLabs Monika Sogam)
+  const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>('elevenlabs');
+  const [voicePersona, setVoicePersona] = useState<string>('monika_sogam');
+  const [customVoiceId, setCustomVoiceId] = useState<string>('');
+  const [elevenLabsApiKey, setElevenLabsApiKey] = useState<string>('');
 
   // Audio elements & timers
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Sync voice preference from localStorage whenever opened
+  useEffect(() => {
+    if (typeof window !== 'undefined' && open) {
+      const p = (localStorage.getItem('gynocci_voice_provider') as VoiceProvider) || 'elevenlabs';
+      const v = localStorage.getItem('gynocci_voice_id') || 'monika_sogam';
+      const c = localStorage.getItem('gynocci_custom_voice_id') || '';
+      const k = localStorage.getItem('gynocci_elevenlabs_key') || '';
+      setVoiceProvider(p);
+      setVoicePersona(v);
+      setCustomVoiceId(c);
+      setElevenLabsApiKey(k);
+    }
+  }, [open]);
 
   // Format Call Timer (00:00)
   const formatTimer = (seconds: number) => {
@@ -111,6 +132,13 @@ export function LiveVoiceCallDialog({
     };
   }, [callState]);
 
+  const resolveActiveVoiceId = () => {
+    if (voicePersona === 'custom') {
+      return customVoiceId.trim() || ELEVENLABS_INDIAN_FEMALE_VOICES.monika_sogam.id;
+    }
+    return ELEVENLABS_INDIAN_FEMALE_VOICES[voicePersona]?.id || ELEVENLABS_INDIAN_FEMALE_VOICES.monika_sogam.id;
+  };
+
   // Start Live Audio Call
   const startCall = async () => {
     setCallState('ringing');
@@ -133,18 +161,26 @@ export function LiveVoiceCallDialog({
       };
 
       setTranscript([initialItem]);
-      await playSpeechAudio(initialGreeting, voicePersona);
+      await playSpeechAudio(initialGreeting);
     }, 1500);
   };
 
-  // Play Speech Audio via OpenAI TTS or browser fallback
-  const playSpeechAudio = async (text: string, voice: VoicePersona) => {
+  // Play Speech Audio via ElevenLabs / OpenAI TTS or browser fallback
+  const playSpeechAudio = async (text: string) => {
     setIsAiSpeaking(true);
     try {
+      const activeVoiceId = resolveActiveVoiceId();
+
       const res = await fetch('/api/voice/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice }),
+        body: JSON.stringify({
+          text,
+          provider: voiceProvider,
+          voice: voicePersona,
+          voiceId: activeVoiceId,
+          customElevenLabsApiKey: elevenLabsApiKey.trim() || undefined,
+        }),
       });
 
       if (res.ok) {
@@ -157,6 +193,9 @@ export function LiveVoiceCallDialog({
           audioPlayerRef.current.onended = () => {
             setIsAiSpeaking(false);
           };
+          audioPlayerRef.current.onerror = () => {
+            setIsAiSpeaking(false);
+          };
           await audioPlayerRef.current.play();
           return;
         }
@@ -165,7 +204,7 @@ export function LiveVoiceCallDialog({
       console.warn('[live-voice-call] audio playback fallback to browser speech:', err);
     }
 
-    // Browser Speech Synthesis Fallback (zero latency, zero cost)
+    // Browser Speech Synthesis Fallback
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -203,6 +242,8 @@ export function LiveVoiceCallDialog({
         content: t.text,
       }));
 
+      const activeVoiceId = resolveActiveVoiceId();
+
       const res = await fetch('/api/voice/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -215,6 +256,9 @@ export function LiveVoiceCallDialog({
           city,
           adName,
           voice: voicePersona,
+          voiceProvider,
+          voiceId: activeVoiceId,
+          customElevenLabsApiKey: elevenLabsApiKey.trim() || undefined,
         }),
       });
 
@@ -240,9 +284,10 @@ export function LiveVoiceCallDialog({
         audioPlayerRef.current.src = data.audioBase64;
         setIsAiSpeaking(true);
         audioPlayerRef.current.onended = () => setIsAiSpeaking(false);
+        audioPlayerRef.current.onerror = () => setIsAiSpeaking(false);
         await audioPlayerRef.current.play();
       } else {
-        await playSpeechAudio(aiReplyText, voicePersona);
+        await playSpeechAudio(aiReplyText);
       }
     } catch (err: any) {
       toast.error(err.message || 'कॉल में त्रुटि आई');
@@ -387,9 +432,14 @@ export function LiveVoiceCallDialog({
               {callState === 'connected' ? `LIVE • ${formatTimer(callDuration)}` : callState.toUpperCase()}
             </Badge>
           </div>
-          <DialogDescription className="text-xs text-slate-400 mt-1">
-            डॉ. शिखा (प्राकृतिक महिला स्वास्थ्य विशेषज्ञ) • Natural Female Human Voice
-          </DialogDescription>
+          <div className="flex items-center justify-between text-xs text-slate-400 mt-1">
+            <span>डॉ. शिखा (प्राकृतिक महिला स्वास्थ्य विशेषज्ञ)</span>
+            <Badge variant="secondary" className="text-[10px] bg-slate-850 text-rose-300 border border-rose-500/30">
+              {voiceProvider === 'elevenlabs'
+                ? `Voice: ${voicePersona === 'custom' ? 'कनिष्का / Custom' : 'Monika Sogam'}`
+                : 'Voice: OpenAI Shimmer'}
+            </Badge>
+          </div>
         </DialogHeader>
 
         {/* Call Visual Stage */}

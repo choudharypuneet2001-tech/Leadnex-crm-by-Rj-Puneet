@@ -5,6 +5,31 @@ import { findDiseaseVideo, DEFAULT_DISEASE_VIDEOS } from '@/lib/ai/disease-video
 
 export type VoiceGender = 'female' | 'male';
 export type VoicePersona = 'shimmer' | 'nova' | 'sage' | 'coral' | 'alloy';
+export type VoiceProvider = 'elevenlabs' | 'openai';
+
+export interface ElevenLabsVoiceConfig {
+  id: string;
+  name: string;
+  tone: string;
+}
+
+export const ELEVENLABS_INDIAN_FEMALE_VOICES: Record<string, ElevenLabsVoiceConfig> = {
+  monika_sogam: {
+    id: '1qEiC6qsybMkmnNdVMbK',
+    name: 'Monika Sogam (Hindi Natural Doctor)',
+    tone: 'बेहद शांत, स्वाभाविक और हमदर्द भारतीय हिंदी महिला स्वर (Best for Gynocci Healthcare)',
+  },
+  kanishka: {
+    id: '1qEiC6qsybMkmnNdVMbK', // Default mapped to Monika Sogam, overridable by custom ID
+    name: 'कनिष्का / Monika (Natural Hindi Female)',
+    tone: 'प्राकृतिक बोलचाल की हिंदी टोन — बिना किसी बनावटीपन या अंग्रेजी लहजे के',
+  },
+  db_indian: {
+    id: '2F1KINpxsttim2WfMbVs',
+    name: 'DB Indian (Expressive Hindi)',
+    tone: 'मधुर, स्पष्ट व दोस्ताना भारतीय महिला टोन',
+  },
+};
 
 export interface VoiceCallOptions {
   patientName?: string | null;
@@ -13,6 +38,8 @@ export interface VoiceCallOptions {
   city?: string | null;
   adName?: string | null;
   voice?: VoicePersona;
+  voiceProvider?: VoiceProvider;
+  elevenLabsVoiceId?: string;
   speed?: number;
 }
 
@@ -93,6 +120,50 @@ export async function synthesizeOpenAiSpeech(args: {
   if (!res.ok) {
     const errorBody = await res.text().catch(() => '');
     throw new Error(`OpenAI TTS Error (${res.status}): ${errorBody || res.statusText}`);
+  }
+
+  return await res.arrayBuffer();
+}
+
+/**
+ * Synthesizes ultra-natural Indian Hindi speech using ElevenLabs API.
+ * Supports native Hindi female voices (e.g. Monika Sogam, Kanishka clone, etc.)
+ * with authentic Indian accent, emotional warmth, and zero robotic cadence.
+ */
+export async function synthesizeElevenLabsSpeech(args: {
+  apiKey: string;
+  text: string;
+  voiceId: string;
+  modelId?: string;
+}): Promise<ArrayBuffer> {
+  const { apiKey, text, voiceId, modelId = 'eleven_multilingual_v2' } = args;
+
+  if (!voiceId) {
+    throw new Error('ElevenLabs Voice ID is required for speech synthesis.');
+  }
+
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+    },
+    body: JSON.stringify({
+      text,
+      model_id: modelId,
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.8,
+        style: 0.25,
+        use_speaker_boost: true,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => '');
+    throw new Error(`ElevenLabs TTS Error (${res.status}): ${errorBody || res.statusText}`);
   }
 
   return await res.arrayBuffer();
