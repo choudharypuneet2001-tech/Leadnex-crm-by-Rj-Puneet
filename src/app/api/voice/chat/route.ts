@@ -23,10 +23,10 @@ export async function POST(req: Request) {
       concern,
       city,
       adName,
-      voice = 'monika_sogam',
-      voiceProvider = 'elevenlabs',
+      voice = 'nova',
+      voiceProvider = 'openai',
       voiceId,
-      speed = 1.0,
+      speed = 0.93,
       customApiKey,
       customElevenLabsApiKey,
     } = body;

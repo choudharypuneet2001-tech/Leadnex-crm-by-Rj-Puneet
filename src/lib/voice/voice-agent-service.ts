@@ -4,8 +4,54 @@ import { loadAiConfig } from '@/lib/ai/config';
 import { findDiseaseVideo, DEFAULT_DISEASE_VIDEOS } from '@/lib/ai/disease-video-links';
 
 export type VoiceGender = 'female' | 'male';
-export type VoicePersona = 'shimmer' | 'nova' | 'sage' | 'coral' | 'alloy';
-export type VoiceProvider = 'elevenlabs' | 'openai';
+export type VoicePersona = 'nova' | 'shimmer' | 'sage' | 'alloy' | 'coral';
+export type VoiceProvider = 'openai' | 'elevenlabs';
+
+/**
+ * Normalizes Hindi text specifically for TTS to eliminate robotic pronunciation.
+ * When TTS engines receive raw numbers (₹499, 5, 9), medical acronyms (IVF, PCOD),
+ * or English brand names (Gynocci), they stutter with an awkward American robot accent.
+ *
+ * This normalizer converts numbers to Hindi words, maps medical terms phonetically,
+ * and adds soft breathing pauses for a warm, human-like Indian female cadence.
+ */
+export function normalizeHindiForSpeech(rawText: string): string {
+  if (!rawText) return '';
+
+  let text = rawText;
+
+  // 1. Brand & Clinic Names
+  text = text.replace(/gynocci\s*femtech/gi, 'गायनोसी फेमटेक');
+  text = text.replace(/gynocci/gi, 'गायनोसी');
+
+  // 2. Fees & Currency (Crucial: prevents robot "four-nine-nine rupees")
+  text = text.replace(/₹\s*499|499\s*(रुपये|रु|rs|inr)?/gi, 'चार सौ निन्यानवे रुपये');
+  text = text.replace(/₹\s*(\d+)/g, '$1 रुपये');
+
+  // 3. Numbers to Hindi words
+  text = text.replace(/100%/g, 'सौ प्रतिशत');
+  text = text.replace(/\b45\s*(मिनट|min)/gi, 'पैंतालीस मिनट');
+  text = text.replace(/\b5\s*(सीनियर|डॉक्टर|doctors)/gi, 'पाँच सीनियर डॉक्टर');
+  text = text.replace(/\b9\s*(शहर|क्लिनिक|cities)/gi, 'नौ शहरों');
+
+  // 4. Medical acronyms to phonetic Hindi
+  text = text.replace(/\bIVF\b/gi, 'आई.वी.एफ.');
+  text = text.replace(/\bPCOD\b/gi, 'पी.सी.ओ.डी.');
+  text = text.replace(/\bPCOS\b/gi, 'पी.सी.ओ.एस.');
+  text = text.replace(/\bAMH\b/gi, 'ए.एम.एच.');
+  text = text.replace(/\bHSG\b/gi, 'एच.एस.जी.');
+  text = text.replace(/\bIUI\b/gi, 'आई.यू.आई.');
+  text = text.replace(/\bDr\.?\s*/gi, 'डॉक्टर ');
+
+  // 5. Conversational breath marks (commas after natural discourse markers)
+  text = text.replace(/^(नमस्ते|हेलो|हाँजी|जी)\s+/i, '$1, ');
+  text = text.replace(/\s+(बिल्कुल निश्चिंत रहिये|चिंता मत कीजिये)/g, ', $1');
+
+  // 6. Clean markdown formatting
+  text = text.replace(/[#*_~`]/g, '');
+
+  return text.trim();
+}
 
 export interface ElevenLabsVoiceConfig {
   id: string;
@@ -71,19 +117,22 @@ export function buildVoiceAgentPrompt(options: VoiceCallOptions): string {
 - समस्या/पूछताछ: ${concern}
 - शहर: ${city}
 
-[महत्वपूर्ण कॉलिंग नियम - VOICE CONVERSATION GUIDELINES]:
+[महत्वपूर्ण कॉलिंग नियम - NATURAL VOICE & HUMAN CADENCE]:
 1. बातचीत बिल्कुल स्वाभाविक, विनम्र, हमदर्दी भरी और बोलचाल की हिंदी में होनी चाहिए।
-2. बहुत बड़े पैराग्राफ नहीं बोलने हैं! एक बार में सिर्फ 1 या 2 छोटे वाक्य ही बोलें, ताकि सामने वाला अपनी बात कह सके।
-3. आवाज का टोन: बेहद शांत, सकारात्मक और हिम्मत देने वाला (Empathic & Reassuring)।
-4. संस्थान की विशेषता:
-   - Gynocci में 100% प्राकृतिक आयुर्वेदिक इलाज होता है बिना किसी सर्जरी या साइड-इफेक्ट के।
-   - हमारे पास 5 सीनियर डॉक्टरों का विशेषज्ञ पैनल है जो हर मरीज की केस हिस्ट्री और रिपोर्ट्स की गहराई से जांच करता है।
-5. फीस पर हिचकिचाहट का भरोसा:
-   - "मैम/सर, आप बिल्कुल निश्चिंत रहिये। जरूरी नहीं है कि आपको कोई महंगा इलाज या भारी दवाइयां लेनी ही पड़ें। कई बार सिर्फ सही डाइट प्लान और लाइफस्टाइल में छोटे बदलाव से ही समस्या सही हो जाती है। आप पहले हमारे 5 सीनियर डॉक्टरों के पैनल से केवल ₹499 में अपनी रिपोर्ट्स समझ लीजिये।"
-6. क्लिनिक शहर (सिर्फ 9 शहरों में फिजिकल क्लिनिक हैं):
+2. बहुत बड़े पैराग्राफ नहीं बोलने हैं! एक बार में सिर्फ 1 या 2 छोटे वाक्य ही बोलें, ताकि बातचीत असली फोन कॉल जैसी लगे।
+3. आवाज का टोन: एक अनुभवी, हमदर्द भारतीय सीनियर महिला डॉक्टर जैसा — शांत, सकारात्मक और हिम्मत देने वाला।
+4. उच्चारण व वर्तनी नियम (Speech Normalization):
+   - किसी भी संख्या को अंकों में न लिखें, हमेशा हिंदी शब्दों में लिखें (उदा. 'चार सौ निन्यानवे रुपये' लिखें, '499' या '₹499' न लिखें; 'पाँच डॉक्टर' लिखें, '5' न लिखें)।
+   - अंग्रेजी शब्दों या शॉर्टफॉर्म्स से बचें (उदा. 'गायनोसी' लिखें, 'आई.वी.एफ.' लिखें, 'पी.सी.ओ.डी.' लिखें)।
+5. संस्थान की विशेषता:
+   - गायनोसी में शत-प्रतिशत प्राकृतिक आयुर्वेदिक इलाज होता है बिना किसी सर्जरी या साइड-इफेक्ट के।
+   - हमारे पास पाँच सीनियर डॉक्टरों का विशेषज्ञ पैनल है जो हर मरीज की केस हिस्ट्री और रिपोर्ट्स की गहराई से जांच करता है।
+6. फीस पर हिचकिचाहट का भरोसा:
+   - "मैम, आप बिल्कुल निश्चिंत रहिये। जरूरी नहीं है कि आपको कोई महंगा इलाज या भारी दवाइयां लेनी ही पड़ें। कई बार सिर्फ सही डाइट प्लान और जीवनशैली में छोटे बदलाव से ही समस्या सही हो जाती है। आप पहले हमारे पाँच सीनियर डॉक्टरों के पैनल से केवल चार सौ निन्यानवे रुपये में अपनी रिपोर्ट्स समझ लीजिये।"
+7. क्लिनिक शहर (सिर्फ नौ शहरों में फिजिकल क्लिनिक हैं):
    - जयपुर, दिल्ली, लखनऊ, अमृतसर, लुधियाना, पटना, रांची, हिसार, रेवाड़ी।
-   - बाकी सभी शहरों के लिए: 45 मिनट का ऑनलाइन वीडियो कंसल्टेशन।
-7. बातचीत का लक्ष्य:
+   - बाकी सभी शहरों के लिए: पैंतालीस मिनट का ऑनलाइन वीडियो कंसल्टेशन।
+8. बातचीत का लक्ष्य:
    - मरीज की समस्या और तकलीफ को ध्यान से सुनना।
    - उन्हें नई उम्मीद और सही दिशा देना।
    - उनकी कंसल्टेशन या क्लिनिक विज़िट बुक करने में मदद करना।
@@ -91,8 +140,9 @@ export function buildVoiceAgentPrompt(options: VoiceCallOptions): string {
 }
 
 /**
- * Synthesizes speech using OpenAI TTS API with natural female voices ('shimmer' or 'nova').
- * Returns audio as an ArrayBuffer or base64 data string.
+ * Synthesizes studio-quality speech using OpenAI TTS API with natural female voices ('nova' or 'shimmer').
+ * Uses `tts-1-hd` (High Definition) and `normalizeHindiForSpeech` to eliminate robotic cadence.
+ * Returns audio as an ArrayBuffer.
  */
 export async function synthesizeOpenAiSpeech(args: {
   apiKey: string;
@@ -100,9 +150,37 @@ export async function synthesizeOpenAiSpeech(args: {
   voice?: VoicePersona;
   speed?: number;
 }): Promise<ArrayBuffer> {
-  const { apiKey, text, voice = 'shimmer', speed = 1.0 } = args;
+  const { apiKey, text, voice = 'nova', speed = 0.93 } = args;
 
-  const res = await fetch('https://api.openai.com/v1/audio/speech', {
+  // Normalize phonetic Hindi to remove robotic cadence and awkward pronunciation
+  const normalizedText = normalizeHindiForSpeech(text);
+
+  // Try High-Definition studio model first (vastly more natural than tts-1)
+  try {
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'tts-1-hd',
+        input: normalizedText,
+        voice,
+        response_format: 'mp3',
+        speed: Math.max(0.85, Math.min(1.05, speed || 0.93)),
+      }),
+    });
+
+    if (res.ok) {
+      return await res.arrayBuffer();
+    }
+  } catch {
+    // fallback to standard tts-1 below
+  }
+
+  // Fallback to standard tts-1 if tts-1-hd fails
+  const fallbackRes = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -110,19 +188,19 @@ export async function synthesizeOpenAiSpeech(args: {
     },
     body: JSON.stringify({
       model: 'tts-1',
-      input: text,
+      input: normalizedText,
       voice,
       response_format: 'mp3',
-      speed,
+      speed: speed || 0.93,
     }),
   });
 
-  if (!res.ok) {
-    const errorBody = await res.text().catch(() => '');
-    throw new Error(`OpenAI TTS Error (${res.status}): ${errorBody || res.statusText}`);
+  if (!fallbackRes.ok) {
+    const errorBody = await fallbackRes.text().catch(() => '');
+    throw new Error(`OpenAI TTS Error (${fallbackRes.status}): ${errorBody || fallbackRes.statusText}`);
   }
 
-  return await res.arrayBuffer();
+  return await fallbackRes.arrayBuffer();
 }
 
 /**

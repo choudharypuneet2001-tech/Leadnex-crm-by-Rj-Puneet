@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildVoiceAgentPrompt,
   detectCallDisposition,
+  normalizeHindiForSpeech,
 } from './voice-agent-service';
 
 describe('Voice Agent Service', () => {
@@ -17,15 +18,34 @@ describe('Voice Agent Service', () => {
       expect(prompt).toContain('Priya जी');
       expect(prompt).toContain('Tubal Blockage');
       expect(prompt).toContain('Jaipur');
-      expect(prompt).toContain('5 सीनियर डॉक्टरों का विशेषज्ञ पैनल');
-      expect(prompt).toContain('₹499');
+      expect(prompt).toContain('गायनोसी');
+      expect(prompt).toContain('चार सौ निन्यानवे रुपये');
       expect(prompt).toContain('डाइट प्लान');
     });
 
     it('handles defaults gracefully when options are empty', () => {
       const prompt = buildVoiceAgentPrompt({});
-      expect(prompt).toContain('Gynocci');
-      expect(prompt).toContain('VOICE CONVERSATION GUIDELINES');
+      expect(prompt).toContain('गायनोसी');
+      expect(prompt).toContain('NATURAL VOICE & HUMAN CADENCE');
+    });
+  });
+
+  describe('normalizeHindiForSpeech', () => {
+    it('normalizes numbers and brand names into fluent spoken Hindi words', () => {
+      const normalized = normalizeHindiForSpeech(
+        'Gynocci में ₹499 में 5 डॉक्टरों का पैनल IVF और PCOD की जांच करता है'
+      );
+
+      expect(normalized).toContain('गायनोसी');
+      expect(normalized).toContain('चार सौ निन्यानवे रुपये');
+      expect(normalized).toContain('पाँच सीनियर डॉक्टर');
+      expect(normalized).toContain('आई.वी.एफ.');
+      expect(normalized).toContain('पी.सी.ओ.डी.');
+    });
+
+    it('adds natural breathing pause after greeting', () => {
+      const normalized = normalizeHindiForSpeech('नमस्ते जी मैं डॉ. शिखा हूँ');
+      expect(normalized).toContain('नमस्ते, जी');
     });
   });
 

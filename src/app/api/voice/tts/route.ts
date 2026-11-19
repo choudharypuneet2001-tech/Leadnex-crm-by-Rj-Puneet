@@ -14,10 +14,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     const {
       text,
-      provider = 'elevenlabs',
-      voice = 'shimmer',
+      provider = 'openai',
+      voice = 'nova',
       voiceId,
-      speed = 1.0,
+      speed = 0.93,
       customApiKey,
       customElevenLabsApiKey,
     } = body;

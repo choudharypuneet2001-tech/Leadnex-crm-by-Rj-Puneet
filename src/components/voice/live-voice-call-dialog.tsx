@@ -80,11 +80,12 @@ export function LiveVoiceCallDialog({
   const [detectedDisposition, setDetectedDisposition] = useState<string>('Interested');
   const [tagColor, setTagColor] = useState<string>('#8b5cf6');
 
-  // Selected Voice Provider and Voice Persona (Defaults to ElevenLabs Monika Sogam)
-  const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>('elevenlabs');
-  const [voicePersona, setVoicePersona] = useState<string>('monika_sogam');
+  // Selected Voice Provider and Voice Persona (Defaults to OpenAI Nova HD - Zero Extra Cost)
+  const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>('openai');
+  const [voicePersona, setVoicePersona] = useState<string>('nova');
   const [customVoiceId, setCustomVoiceId] = useState<string>('');
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState<string>('');
+  const [speechSpeed, setSpeechSpeed] = useState<number>(0.93);
 
   // Audio elements & timers
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -95,14 +96,16 @@ export function LiveVoiceCallDialog({
   // Sync voice preference from localStorage whenever opened
   useEffect(() => {
     if (typeof window !== 'undefined' && open) {
-      const p = (localStorage.getItem('gynocci_voice_provider') as VoiceProvider) || 'elevenlabs';
-      const v = localStorage.getItem('gynocci_voice_id') || 'monika_sogam';
+      const p = (localStorage.getItem('gynocci_voice_provider') as VoiceProvider) || 'openai';
+      const v = localStorage.getItem('gynocci_voice_id') || 'nova';
       const c = localStorage.getItem('gynocci_custom_voice_id') || '';
       const k = localStorage.getItem('gynocci_elevenlabs_key') || '';
+      const s = Number(localStorage.getItem('gynocci_voice_speed')) || 0.93;
       setVoiceProvider(p);
       setVoicePersona(v);
       setCustomVoiceId(c);
       setElevenLabsApiKey(k);
+      setSpeechSpeed(s);
     }
   }, [open]);
 
@@ -151,7 +154,7 @@ export function LiveVoiceCallDialog({
 
       // AI initial greeting
       const pName = patientName && patientName !== 'Unknown' ? `${patientName} जी` : 'जी';
-      const initialGreeting = `नमस्ते ${pName}! मैं Gynocci Femtech से डॉ. शिखा बात कर रही हूँ। आशा है आप और आपका परिवार सकुशल हैं?`;
+      const initialGreeting = `नमस्ते ${pName}, मैं गायनोसी फेमटेक से डॉ. शिखा बात कर रही हूँ। क्या मेरी बात आपसे हो रही है?`;
 
       const initialItem: TranscriptItem = {
         id: Math.random().toString(),
@@ -179,6 +182,7 @@ export function LiveVoiceCallDialog({
           provider: voiceProvider,
           voice: voicePersona,
           voiceId: activeVoiceId,
+          speed: speechSpeed,
           customElevenLabsApiKey: elevenLabsApiKey.trim() || undefined,
         }),
       });
@@ -258,6 +262,7 @@ export function LiveVoiceCallDialog({
           voice: voicePersona,
           voiceProvider,
           voiceId: activeVoiceId,
+          speed: speechSpeed,
           customElevenLabsApiKey: elevenLabsApiKey.trim() || undefined,
         }),
       });
@@ -437,7 +442,7 @@ export function LiveVoiceCallDialog({
             <Badge variant="secondary" className="text-[10px] bg-slate-850 text-rose-300 border border-rose-500/30">
               {voiceProvider === 'elevenlabs'
                 ? `Voice: ${voicePersona === 'custom' ? 'कनिष्का / Custom' : 'Monika Sogam'}`
-                : 'Voice: OpenAI Shimmer'}
+                : `Voice: डॉ. शिखा (${voicePersona.toUpperCase()} HD)`}
             </Badge>
           </div>
         </DialogHeader>
