@@ -219,7 +219,7 @@ export default function AnalyticsPage() {
       } else {
         await addContactTag(contactId, tagId);
       }
-      toast.success(isAssigned ? 'टैग हटाया गया' : 'टैग जोड़ा गया');
+      toast.success(isAssigned ? 'Tag removed' : 'Tag added');
     } catch (err) {
       console.warn('[analytics] tag toggle API fallback to DB:', err);
       try {
@@ -228,14 +228,14 @@ export default function AnalyticsPage() {
         } else {
           await supabase.from('contact_tags').insert({ contact_id: contactId, tag_id: tagId });
         }
-        toast.success(isAssigned ? 'टैग हटाया गया' : 'टैग जोड़ा गया');
+        toast.success(isAssigned ? 'Tag removed' : 'Tag added');
       } catch (dbErr) {
         // Revert
         setContactTagsMap((prev) => ({
           ...prev,
           [contactId]: isAssigned ? [...current, tagId] : current.filter((id) => id !== tagId),
         }));
-        toast.error('टैग अपडेट नहीं हो सका');
+        toast.error('Tag update nahi ho saka');
       }
     }
   };
@@ -261,7 +261,7 @@ export default function AnalyticsPage() {
         await handleToggleTag(contactId, newTag.id);
       }
     } catch (err: any) {
-      toast.error(err?.message || 'टैग नहीं बनाया जा सका');
+      toast.error(err?.message || 'Tag create nahi ho saka');
     }
   };
 
@@ -286,10 +286,10 @@ export default function AnalyticsPage() {
           ...prev,
           [contactId]: [newNote, ...(prev[contactId] || [])],
         }));
-        toast.success('कॉल नोट सुरक्षित हो गया!');
+        toast.success('Call note successfully save ho gaya!');
       }
     } catch (err: any) {
-      toast.error(err?.message || 'नोट सेव करने में त्रुटि');
+      toast.error(err?.message || 'Note save karne mein error aayi');
     }
   };
 
@@ -395,7 +395,7 @@ export default function AnalyticsPage() {
   const handleCopyScript = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedScript(true);
-    toast.success('कॉलिंग स्क्रिप्ट कॉपी हो गई!');
+    toast.success('Calling script copied!');
     setTimeout(() => setCopiedScript(false), 2000);
   };
 
@@ -405,20 +405,20 @@ export default function AnalyticsPage() {
       `${lead.health_concern || ''} ${lead.ad_name || ''} ${lead.ai_analysis?.disease_cause || ''}`
     );
     if (!matched) {
-      toast.info('इस समस्या के लिए कोई विशेष वीडियो लिंक नहीं मिला');
+      toast.info('Is bimari ke liye koi specific video link nahi mila');
       return;
     }
     const msg = formatDiseaseVideoMessage(matched);
     navigator.clipboard.writeText(msg);
     setCopiedVideoMsg(true);
-    toast.success('मरीज को भेजने वाला वीडियो मैसेज कॉपी हो गया!');
+    toast.success('Patient WhatsApp video message copied!');
     setTimeout(() => setCopiedVideoMsg(false), 2000);
   };
 
   // Export filtered leads to CSV
   const handleExportCsv = () => {
     if (!summary || summary.leads.length === 0) {
-      toast.error('एक्सपोर्ट के लिए कोई डेटा नहीं है');
+      toast.error('Export ke liye koi data nahi hai');
       return;
     }
 
@@ -432,8 +432,8 @@ export default function AnalyticsPage() {
       'AI Calling Priority',
       'Tags',
       'Latest Note',
-      'Drop-off Reason (क्या कमी रही)',
-      'Calling Pitch Script (कैसे पिच करें)',
+      'Drop-off Reason',
+      'Calling Pitch Script',
       'Booking Status',
       'Consultation Type',
       'Clinic Branch',
@@ -479,7 +479,7 @@ export default function AnalyticsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success('CSV सफलतापूर्वक एक्सपोर्ट हो गई!');
+    toast.success('CSV successfully export ho gayi!');
   };
 
   // Filtered leads list for UI table
@@ -528,7 +528,7 @@ export default function AnalyticsPage() {
                 </Badge>
               </h1>
               <p className="text-sm text-slate-500">
-                मेटा विज्ञापनों (Meta Ads), ड्रॉप-ऑफ कॉलिंग लीड्स, बीमारियों (Health Concerns) एवं AI पिच सुझावों का संपूर्ण विश्लेषण
+                Meta Ads, drop-off calling leads, bimariyan (Health Concerns) aur AI pitch suggestions ka complete analysis
               </p>
             </div>
           </div>
@@ -569,13 +569,13 @@ export default function AnalyticsPage() {
             </span>
             {(
               [
-                { key: 'all' as const, label: 'सब (All Time)' },
-                { key: 'today' as const, label: 'आज (Today)' },
-                { key: 'yesterday' as const, label: 'कल (Yesterday)' },
-                { key: '7d' as const, label: 'पिछले 7 दिन (7 Days)' },
-                { key: '30d' as const, label: 'पिछले 30 दिन (30 Days)' },
-                { key: 'this_month' as const, label: 'इस महीने (This Month)' },
-                { key: 'custom' as const, label: 'कस्टम (Custom)' },
+                { key: 'all' as const, label: 'All Time' },
+                { key: 'today' as const, label: 'Today' },
+                { key: 'yesterday' as const, label: 'Yesterday' },
+                { key: '7d' as const, label: 'Last 7 Days' },
+                { key: '30d' as const, label: 'Last 30 Days' },
+                { key: 'this_month' as const, label: 'This Month' },
+                { key: 'custom' as const, label: 'Custom' },
               ]
             ).map((preset) => (
               <Button
@@ -602,10 +602,10 @@ export default function AnalyticsPage() {
               onValueChange={(val) => setSelectedAdFilter(val || 'all')}
             >
               <SelectTrigger className="h-8 text-xs w-[260px]">
-                <SelectValue placeholder="All Ad Campaigns (सभी विज्ञापन)" />
+                <SelectValue placeholder="All Ad Campaigns" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Ad Campaigns (सभी विज्ञापन)</SelectItem>
+                <SelectItem value="all">All Ad Campaigns</SelectItem>
                 {summary?.ad_performance?.map((ad) => (
                   <SelectItem key={ad.ad_name} value={ad.ad_name}>
                     {ad.ad_name} ({ad.leads_count} Leads)
@@ -739,7 +739,7 @@ export default function AnalyticsPage() {
                 AI Lead Qualification & Drop-Off Calling Pipeline
               </CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                AI ने चैट विश्लेषण करके बताया कि किन लीड्स को तुरंत कॉल करने पर बुकिंग कंफर्म हो सकती है
+                AI ne chat analyze karke bataya ki kin leads ko call karne par booking confirm ho sakti hai
               </CardDescription>
             </div>
             <Badge className="bg-purple-100 text-purple-800 border-purple-200 self-start sm:self-auto">
@@ -771,10 +771,10 @@ export default function AnalyticsPage() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-600 mt-2 font-medium">
-                High Intent — गंभीर समस्या बताई, बस एक दोस्ताना फोन कॉल और 5-डॉक्टर पैनल की जरूरत है।
+                High Intent — Serious health issue bataya, bus friendly call aur 5-doctor panel consultation pitch karein.
               </p>
               <div className="mt-2 text-[11px] text-purple-700 font-semibold flex items-center gap-1">
-                क्लिक करके लीड्स देखें <ChevronRight className="h-3 w-3" />
+                Click to view leads <ChevronRight className="h-3 w-3" />
               </div>
             </div>
 
@@ -799,10 +799,10 @@ export default function AnalyticsPage() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-600 mt-2 font-medium">
-                ₹499 फीस सुनकर रुक गए — इनको डाइट प्लान से ठीक होने और क्लिनिक पर ₹0 एडवांस की पिच करें।
+                Rs. 499 fees sunkar ruke — Diet plan se relief aur clinic par Rs. 0 advance fees pitch karein.
               </p>
               <div className="mt-2 text-[11px] text-amber-700 font-semibold flex items-center gap-1">
-                क्लिक करके लीड्स देखें <ChevronRight className="h-3 w-3" />
+                Click to view leads <ChevronRight className="h-3 w-3" />
               </div>
             </div>
 
@@ -827,10 +827,10 @@ export default function AnalyticsPage() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-600 mt-2 font-medium">
-                क्लिनिक ब्रांच के पास हैं — नाड़ी परीक्षण और क्लिनिक पर ही फीस देने की सुविधा पिच करें।
+                Clinic branch ke paas hain — Nadi parikshan aur clinic par direct milne ki suvidha pitch karein.
               </p>
               <div className="mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-                क्लिक करके लीड्स देखें <ChevronRight className="h-3 w-3" />
+                Click to view leads <ChevronRight className="h-3 w-3" />
               </div>
             </div>
 
@@ -855,10 +855,10 @@ export default function AnalyticsPage() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-600 mt-2 font-medium">
-                सिर्फ सामान्य जानकारी या जिज्ञासा के लिए आए थे, अभी कोई गंभीर लक्षण साझा नहीं किए।
+                Sirf general information ya hi-hello kiya, abhi tak symptoms share nahi kiye.
               </p>
               <div className="mt-2 text-[11px] text-slate-600 font-semibold flex items-center gap-1">
-                क्लिक करके लीड्स देखें <ChevronRight className="h-3 w-3" />
+                Click to view leads <ChevronRight className="h-3 w-3" />
               </div>
             </div>
           </div>
@@ -873,7 +873,7 @@ export default function AnalyticsPage() {
             Meta Ads Performance & Attribution Leaderboard
           </CardTitle>
           <CardDescription className="text-xs text-slate-500">
-            विज्ञापनों की रैंकिंग — किस Ad Campaign से सबसे ज्यादा Leads और Appointments Book हुईं
+            Ad Campaign ranking — kis ad campaign se sabse zyada leads aur appointments book hui hain
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -957,7 +957,7 @@ export default function AnalyticsPage() {
                 All Leads & Telecalling Action Center ({displayedLeads.length})
               </CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                हर लीड का AI कॉलिंग स्टेटस, क्या कमी रही (ड्रॉप-ऑफ कारण), टैग्स, कॉलिंग नोट्स एवं AI पिच
+                Lead AI Calling Status, Drop-off Reason, Tags, Call Notes aur AI Pitch
               </CardDescription>
             </div>
 
@@ -978,10 +978,10 @@ export default function AnalyticsPage() {
                   variant="outline"
                   size="sm"
                   className="h-8 gap-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 shrink-0 cursor-pointer"
-                  title="YouTube वीडियो लिंक्स व भावनात्मक मैसेज प्रबंधित करें"
+                  title="YouTube video links aur emotional message manage karein"
                 >
                   <Video className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">वीडियो लिंक्स (YouTube)</span>
+                  <span className="hidden sm:inline">Video Links (YouTube)</span>
                 </Button>
               </Link>
 
@@ -993,7 +993,7 @@ export default function AnalyticsPage() {
                   setVoiceCallOpen(true);
                 }}
                 className="h-8 gap-1.5 text-xs text-purple-700 hover:text-purple-800 hover:bg-purple-50 border-purple-200 shrink-0 cursor-pointer"
-                title="AI Voice Calling Agent डेमो चलाएं"
+                title="AI Voice Calling Agent live demo chalayein"
               >
                 <Phone className="h-3.5 w-3.5 text-purple-600 fill-current" />
                 <span className="hidden sm:inline">🎙️ AI Call Demo</span>
@@ -1005,7 +1005,7 @@ export default function AnalyticsPage() {
           <div className="flex flex-wrap items-center gap-1.5 pt-3 border-t border-slate-100">
             <span className="text-xs font-medium text-slate-500 mr-1">Filter by AI Stage:</span>
             {[
-              { key: 'all', label: 'All Leads (सब)' },
+              { key: 'all', label: 'All Leads' },
               { key: 'ready_to_convert', label: '🔥 Ready to Convert' },
               { key: 'fees_hesitation', label: '⚠️ Fees Hesitation' },
               { key: 'clinic_opportunity', label: '🏥 Clinic Pitch' },
@@ -1190,11 +1190,11 @@ export default function AnalyticsPage() {
                                   size="sm"
                                   className="w-full text-xs h-7 text-purple-600 justify-start"
                                   onClick={() => {
-                                    const name = prompt('नया टैग नाम दर्ज करें (New Tag Name):');
+                                    const name = prompt('New Tag Name:');
                                     if (name) handleCreateAndAssignTag(lead.id, name, '#8b5cf6');
                                   }}
                                 >
-                                  <Plus className="h-3 w-3 mr-1" /> नया टैग बनाएं (Create Tag)
+                                  <Plus className="h-3 w-3 mr-1" /> New Tag (Create Tag)
                                 </Button>
                               </div>
                             </PopoverContent>
@@ -1230,7 +1230,7 @@ export default function AnalyticsPage() {
                       {/* 4. AI Dropout Reason & Pitch */}
                       <td className="py-3 px-4 max-w-sm">
                         <div className="text-slate-700 font-medium line-clamp-1">
-                          {lead.ai_analysis?.dropout_reason || 'कोई ड्रॉप-ऑफ नहीं'}
+                          {lead.ai_analysis?.dropout_reason || 'No drop-off noted'}
                         </div>
                         <div className="mt-1 flex items-center gap-2">
                           <Button
@@ -1243,7 +1243,7 @@ export default function AnalyticsPage() {
                             className="h-6 px-2 text-[11px] gap-1 text-purple-700 border-purple-200 hover:bg-purple-50 cursor-pointer"
                           >
                             <PhoneCall className="h-3 w-3" />
-                            📞 AI Script देखें
+                            📞 View AI Script
                           </Button>
 
                           <Button
@@ -1254,10 +1254,10 @@ export default function AnalyticsPage() {
                               setVideoModalOpen(true);
                             }}
                             className="h-6 px-2 text-[11px] gap-1 text-rose-700 border-rose-300 bg-rose-50/70 hover:bg-rose-100 cursor-pointer font-medium"
-                            title="मरीज को 1-क्लिक में YouTube वीडियो व भावनात्मक मैसेज भेजें"
+                            title="Patient ko 1-click mein YouTube video aur emotional message bhejein"
                           >
                             <Video className="h-3 w-3 text-rose-600" />
-                            🌸 वीडियो भेजें
+                            🌸 Send Video
                           </Button>
 
                           <Button
@@ -1268,10 +1268,10 @@ export default function AnalyticsPage() {
                               setVoiceCallOpen(true);
                             }}
                             className="h-6 px-2 text-[11px] gap-1 text-purple-700 border-purple-300 bg-purple-50/70 hover:bg-purple-100 cursor-pointer font-medium"
-                            title="इस मरीज को AI एजेंट से लाइव वॉयस कॉल करें (Live Voice Call Demo)"
+                            title="Is patient ko AI agent se live voice call demo chalayein"
                           >
                             <Phone className="h-3 w-3 text-purple-600 fill-current" />
-                            🎙️ AI Call
+                            🎙️ AI Call Demo
                           </Button>
                         </div>
                       </td>
@@ -1360,7 +1360,7 @@ export default function AnalyticsPage() {
                       Telecalling Script & Lead Action Center
                     </DialogTitle>
                     <DialogDescription className="text-xs text-slate-500">
-                      मरीज की चैट विश्लेषण, बीमारी की समझ, कॉल पर बोलने वाली स्क्रिप्ट एवं रिस्पॉन्स ट्रैकिंग
+                      Patient chat analysis, bimari ki samajh, telecalling script aur response tracking
                     </DialogDescription>
                   </div>
                 </div>
@@ -1369,11 +1369,11 @@ export default function AnalyticsPage() {
               {/* Patient Info Card */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-slate-500">मरीज का नाम:</span>
+                  <span className="text-slate-500">Patient Name:</span>
                   <div className="font-bold text-slate-900">{scriptModalLead.name || 'Unknown'}</div>
                 </div>
                 <div>
-                  <span className="text-slate-500">फोन नंबर (क्लिक करके कॉल करें):</span>
+                  <span className="text-slate-500">Phone Number (Click to call):</span>
                   <div className="font-bold text-purple-700 flex items-center gap-1">
                     <a
                       href={formatTelUri(scriptModalLead.phone)}
@@ -1385,11 +1385,11 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
                 <div>
-                  <span className="text-slate-500">शहर / लोकेशन:</span>
-                  <div className="font-semibold text-slate-800">{scriptModalLead.city || 'जानकारी नहीं'}</div>
+                  <span className="text-slate-500">City / Location:</span>
+                  <div className="font-semibold text-slate-800">{scriptModalLead.city || 'Not specified'}</div>
                 </div>
                 <div>
-                  <span className="text-slate-500">बीमारी / समस्या:</span>
+                  <span className="text-slate-500">Health Concern / Disease:</span>
                   <div className="font-semibold text-pink-700">{scriptModalLead.health_concern || 'General'}</div>
                 </div>
               </div>
@@ -1398,10 +1398,10 @@ export default function AnalyticsPage() {
               <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-xs space-y-1">
                 <div className="font-bold text-amber-900 flex items-center gap-1.5">
                   <AlertCircle className="h-4 w-4 text-amber-600" />
-                  क्या कमी रही (Why Did Lead Drop Off?):
+                  Why Did Lead Drop Off? (Drop-off Reason):
                 </div>
                 <p className="text-amber-800 leading-relaxed font-medium">
-                  {scriptModalLead.ai_analysis?.dropout_reason || 'कोई विशेष ड्रॉप-ऑफ संकेत नहीं मिला।'}
+                  {scriptModalLead.ai_analysis?.dropout_reason || 'Koi specific drop-off signal nahi mila.'}
                 </p>
               </div>
 
@@ -1410,17 +1410,17 @@ export default function AnalyticsPage() {
                 <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200 text-xs space-y-2">
                   <div className="font-bold text-blue-950 flex items-center gap-1.5">
                     <Stethoscope className="h-4 w-4 text-blue-600" />
-                    रोग की वजह एवं आयुर्वेदिक समाधान (Doctor Insight):
+                    Doctor Insight (Karan aur Ayurvedic Solution):
                   </div>
                   {scriptModalLead.ai_analysis?.disease_cause && (
                     <div>
-                      <strong className="text-blue-900">यह समस्या क्यों होती है: </strong>
+                      <strong className="text-blue-900">Problem kyun hoti hai: </strong>
                       <span className="text-slate-700">{scriptModalLead.ai_analysis.disease_cause}</span>
                     </div>
                   )}
                   {scriptModalLead.ai_analysis?.disease_treatment && (
                     <div>
-                      <strong className="text-blue-900">आयुर्वेदिक इलाज का तरीका: </strong>
+                      <strong className="text-blue-900">Ayurvedic ilaaj ka tareeka: </strong>
                       <span className="text-slate-700">{scriptModalLead.ai_analysis.disease_treatment}</span>
                     </div>
                   )}
@@ -1432,7 +1432,7 @@ export default function AnalyticsPage() {
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-xs text-purple-950 flex items-center gap-1.5">
                     <Sparkles className="h-4 w-4 text-purple-600" />
-                    कॉल पर बोलने वाली पिच (Telecalling Script):
+                    Telecalling Script (Call par bolne wali pitch):
                   </div>
                   <Button
                     size="sm"
@@ -1441,7 +1441,7 @@ export default function AnalyticsPage() {
                     className="h-7 text-xs gap-1 border-purple-300 text-purple-700 hover:bg-purple-100"
                   >
                     {copiedScript ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                    {copiedScript ? 'कॉपी हो गया' : 'Copy Script'}
+                    {copiedScript ? 'Copied!' : 'Copy Script'}
                   </Button>
                 </div>
 
@@ -1455,7 +1455,7 @@ export default function AnalyticsPage() {
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-red-950 flex items-center gap-1.5">
                     <PlayCircle className="h-4 w-4 text-red-600" />
-                    YouTube वीडियो लिंक व भावनात्मक मैसेज (Patient Reassurance):
+                    YouTube Video Link & Emotional Message (Patient Reassurance):
                   </div>
                   <Button
                     size="sm"
@@ -1464,11 +1464,11 @@ export default function AnalyticsPage() {
                     className="h-7 text-xs gap-1 border-red-300 text-red-700 hover:bg-red-100"
                   >
                     {copiedVideoMsg ? <Check className="h-3 w-3" /> : <Share2 className="h-3 w-3" />}
-                    {copiedVideoMsg ? 'मैसेज कॉपी हो गया' : 'Copy Video Message'}
+                    {copiedVideoMsg ? 'Message Copied!' : 'Copy Video Message'}
                   </Button>
                 </div>
                 <p className="text-slate-600">
-                  मरीज को कॉल के दौरान या कॉल के बाद WhatsApp पर यह वीडियो लिंक और मैसेज भेजें जिससे मरीज का विश्वास बढ़े।
+                  Patient ko call ke dauran ya baad mein WhatsApp par ye video link aur emotional message bhejein jisse patient ka trust build ho.
                 </p>
                 {scriptModalLead.ai_analysis?.video_recommendation && (
                   <div className="text-[11px] text-red-700 font-mono break-all">
@@ -1481,7 +1481,7 @@ export default function AnalyticsPage() {
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3">
                 <div className="font-bold text-slate-900 flex items-center gap-1.5">
                   <TagIcon className="h-4 w-4 text-purple-600" />
-                  कॉल का नतीजा / टैग अपडेट करें (Call Result & Tags):
+                  Call Result & Tags Update:
                 </div>
 
                 {/* Quick Call Result Tags */}
@@ -1517,10 +1517,10 @@ export default function AnalyticsPage() {
                 <div className="space-y-1.5 pt-2 border-t border-slate-200">
                   <label className="font-semibold text-slate-700 flex items-center gap-1">
                     <StickyNote className="h-3.5 w-3.5 text-slate-500" />
-                    कॉल पर क्या बात हुई (Call Note दर्ज करें):
+                    Call Note (Kya baat hui):
                   </label>
                   <Textarea
-                    placeholder="जैसे: मरीज से बात हुई, उन्होंने कहा शाम 5 बजे पति से पूछकर बताएंगे..."
+                    placeholder="e.g. Patient se baat hui, unhone kaha shaam 5 baje call karein..."
                     value={modalNoteDraft}
                     onChange={(e) => setModalNoteDraft(e.target.value)}
                     rows={2}
@@ -1548,7 +1548,7 @@ export default function AnalyticsPage() {
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <Button variant="outline" size="sm" onClick={() => setScriptModalLead(null)}>
-                  बंद करें (Close)
+                  Close
                 </Button>
                 <Button
                   size="sm"
@@ -1556,7 +1556,7 @@ export default function AnalyticsPage() {
                   className="bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   <MessageSquare className="h-4 w-4 mr-1.5" />
-                  Chat पर जाएं
+                  Open Inbox Chat
                 </Button>
               </div>
             </div>
@@ -1575,14 +1575,14 @@ export default function AnalyticsPage() {
                   Call Notes: {noteModalLead.name || noteModalLead.phone}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500">
-                  इस मरीज के लिए कॉलिंग टिप्पणियाँ और रिस्पॉन्स रिकॉर्ड
+                  Is patient ke liye calling notes aur response history
                 </DialogDescription>
               </DialogHeader>
 
               {/* Existing Notes History */}
               <div className="max-h-40 overflow-y-auto space-y-2">
                 {(contactNotesMap[noteModalLead.id] || []).length === 0 && (
-                  <p className="text-xs text-slate-400">अभी तक कोई नोट दर्ज नहीं है।</p>
+                  <p className="text-xs text-slate-400">Abhi tak koi note save nahi hai.</p>
                 )}
                 {(contactNotesMap[noteModalLead.id] || []).map((cn) => (
                   <div key={cn.id} className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-xs">
@@ -1596,9 +1596,9 @@ export default function AnalyticsPage() {
 
               {/* Add New Note */}
               <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                <label className="text-xs font-semibold text-slate-700">नया नोट जोड़ें:</label>
+                <label className="text-xs font-semibold text-slate-700">Add New Note:</label>
                 <Textarea
-                  placeholder="कॉल का विवरण यहाँ लिखें..."
+                  placeholder="Call details yahan likhein..."
                   value={tableNoteDraft}
                   onChange={(e) => setTableNoteDraft(e.target.value)}
                   rows={3}
@@ -1644,9 +1644,9 @@ export default function AnalyticsPage() {
       <LiveVoiceCallDialog
         open={voiceCallOpen}
         onOpenChange={setVoiceCallOpen}
-        patientName={selectedVoiceLead?.name || 'मरीज (Patient)'}
+        patientName={selectedVoiceLead?.name || 'Patient'}
         phone={selectedVoiceLead?.phone || null}
-        concern={selectedVoiceLead?.health_concern || selectedVoiceLead?.ad_name || 'समस्या'}
+        concern={selectedVoiceLead?.health_concern || selectedVoiceLead?.ad_name || 'Ayurvedic Consultation'}
         city={selectedVoiceLead?.city || null}
         adName={selectedVoiceLead?.ad_name || null}
         contactId={selectedVoiceLead?.id || null}

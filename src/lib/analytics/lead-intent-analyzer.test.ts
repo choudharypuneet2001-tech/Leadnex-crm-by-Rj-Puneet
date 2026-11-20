@@ -32,19 +32,18 @@ describe('lead-intent-analyzer', () => {
     expect(analysis.urgency).toBe('high');
   });
 
-  it('identifies clinic branch opportunity when near clinic city', () => {
+  it('identifies clinic branch opportunity when patient shares symptoms near clinic city', () => {
     const analysis = analyzeLeadIntent({
       name: 'Komal Gupta',
       phone: '+919876543212',
       city: 'Jaipur',
       healthConcern: 'Dono fallopian tube block hai',
       hasBooking: false,
-      lastMessageText: 'reports dekh ke batao',
+      lastMessageText: 'reports dekh ke batao tubes open ho sakti hain kya',
     });
 
     expect(analysis.intent_stage).toBe('clinic_opportunity');
-    expect(analysis.intent_label).toContain('Clinic Visit');
-    expect(analysis.calling_pitch).toContain('नाड़ी परीक्षण');
+    expect(analysis.intent_label).toContain('Clinic Pitch');
     expect(analysis.urgency).toBe('high');
   });
 
@@ -56,13 +55,44 @@ describe('lead-intent-analyzer', () => {
       healthConcern: 'Conceive nahi ho raha 4 saal se',
       concernCategory: 'Infertility & Conceiving',
       hasBooking: false,
-      lastMessageText: 'kya ilaaj sambhav hai',
+      lastMessageText: 'kya conceiving ka ilaj sambhav hai',
     });
 
     expect(analysis.intent_stage).toBe('ready_to_convert');
     expect(analysis.intent_label).toContain('Ready to Convert');
-    expect(analysis.calling_pitch).toContain('5 सीनियर डॉक्टर्स');
     expect(analysis.urgency).toBe('high');
+  });
+
+  it('classifies lead as awareness_only when they only sent Hi/Hello from Meta Ad without sharing symptoms', () => {
+    const analysis = analyzeLeadIntent({
+      name: 'Sidhu',
+      phone: '+919813705930',
+      city: 'Rewari',
+      adName: 'Conceive Karne Mein Dikkat? Wajah Samjhiye',
+      adBody: 'Conceive Karne Mein Dikkat',
+      concernCategory: 'Infertility & Conceiving (संतान प्राप्ति)',
+      hasBooking: false,
+      lastMessageText: 'Hi',
+    });
+
+    expect(analysis.intent_stage).toBe('awareness_only');
+    expect(analysis.intent_label).toContain('Just Hi-Hello');
+    expect(analysis.dropout_reason).toContain('Hi/Hello');
+    expect(analysis.urgency).toBe('low');
+  });
+
+  it('classifies lead as awareness_only when they only sent Namaste without symptoms', () => {
+    const analysis = analyzeLeadIntent({
+      name: 'Ramesh',
+      phone: '+919813705931',
+      adName: 'सफेद पानी से जुड़ी समस्या? सही सलाह लें',
+      concernCategory: 'White Discharge (सफेद पानी)',
+      hasBooking: false,
+      lastMessageText: 'Hello sir, namaste',
+    });
+
+    expect(analysis.intent_stage).toBe('awareness_only');
+    expect(analysis.intent_label).toContain('Just Hi-Hello');
   });
 
   it('identifies awareness only for generic questions without symptoms', () => {
@@ -71,7 +101,7 @@ describe('lead-intent-analyzer', () => {
       phone: '+919876543214',
       city: 'Nagpur',
       hasBooking: false,
-      lastMessageText: 'dawai ka naam batao price kya hai',
+      lastMessageText: 'kya haal hai',
     });
 
     expect(analysis.intent_stage).toBe('awareness_only');

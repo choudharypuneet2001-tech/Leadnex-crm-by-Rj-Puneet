@@ -375,6 +375,10 @@ export default function BookingsPage() {
   const [outcomeFilter, setOutcomeFilter] = useState<
     'all' | 'converted' | 'non_converted' | 'not_visited' | 'pending_visit'
   >('all');
+  const [dateFilter, setDateFilter] = useState<
+    'all' | 'today' | 'tomorrow' | 'yesterday' | 'this_week' | 'this_month'
+  >('all');
+  const [clinicFilter, setClinicFilter] = useState<string>('all');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
 
   // New Booking Modal state
@@ -662,10 +666,10 @@ export default function BookingsPage() {
         setSelectedBooking((prev) => (prev ? { ...prev, website_status: newStatus } : null));
       }
       toast.success(
-        `वेबसाइट स्टेटस: ${newStatus === 'done' ? 'Done (वेबसाइट पर बुक हो गया)' : 'Pending (बुक होना बाकी)'}`
+        `Website Status: ${newStatus === 'done' ? 'Done (Website par live)' : 'Pending (Website par dalna baaki)'}`
       );
     } catch (err: any) {
-      toast.error('वेबसाइट स्टेटस अपडेट करने में समस्या आई');
+      toast.error('Website status update karne mein error aayi');
     }
   };
 
@@ -706,31 +710,31 @@ export default function BookingsPage() {
       }
 
       const labelMap: Record<string, string> = {
-        converted: 'Converted (कन्वर्टेड / इलाज शुरू)',
-        non_converted: 'Non Converted (नॉन-कन्वर्टेड)',
-        not_visited: 'Not Visited (नॉट-विजिटेड / नहीं आया)',
-        pending_visit: 'Awaiting Visit (विजिट प्रतीक्षित)',
+        converted: 'Converted (Treatment Shuru)',
+        non_converted: 'Non Converted (Aaye par shuru nahi kiya)',
+        not_visited: 'Not Visited (No-Show)',
+        pending_visit: 'Awaiting Visit (Visit Baaki Hai)',
       };
-      toast.success(`मरीज का आउटकम: ${labelMap[newOutcome] || newOutcome}`);
+      toast.success(`Patient Outcome: ${labelMap[newOutcome] || newOutcome}`);
     } catch (err: any) {
-      toast.error('आउटकम अपडेट करने में समस्या आई');
+      toast.error('Outcome update karne mein error aayi');
     }
   };
 
   const handleCreateBooking = async () => {
     if (!account?.id) {
-      toast.error('खाता संदर्भ लोड नहीं हो सका');
+      toast.error('Account reference load nahi ho saka');
       return;
     }
     const cleanName = newPatientName.trim();
     const cleanPhone = newPhone.trim().replace(/\s+/g, '');
 
     if (!cleanName) {
-      toast.error('कृपया मरीज का नाम दर्ज करें');
+      toast.error('Please enter patient name');
       return;
     }
     if (!cleanPhone || cleanPhone.length < 10) {
-      toast.error('कृपया सही मोबाइल नंबर (कम से कम 10 अंक) दर्ज करें');
+      toast.error('Please enter valid 10-digit mobile number');
       return;
     }
 
@@ -826,7 +830,7 @@ export default function BookingsPage() {
         setBookings((prev) => [insertedBooking!, ...prev]);
       }
 
-      toast.success(`नई बुकिंग सफलतापूर्वक दर्ज हो गई! (ID: ${queryId})`);
+      toast.success(`New booking successfully saved! (ID: ${queryId})`);
       setCreateModalOpen(false);
 
       // Reset form
@@ -840,7 +844,7 @@ export default function BookingsPage() {
       setNewVisitOutcome('pending_visit');
     } catch (err: any) {
       console.error('[bookings] create error:', err);
-      toast.error(err?.message || 'बुकिंग सेव करने में त्रुटि आई');
+      toast.error(err?.message || 'Booking save karne mein error aayi');
     } finally {
       setCreatingBooking(false);
     }
@@ -906,7 +910,7 @@ export default function BookingsPage() {
     if (!editingNameBooking) return;
     const cleanName = patientNameDraft.trim();
     if (!cleanName) {
-      toast.error('मरीज का नाम खाली नहीं हो सकता');
+      toast.error('Patient name empty nahi ho sakta');
       return;
     }
 
@@ -949,11 +953,11 @@ export default function BookingsPage() {
         setSelectedBooking((prev) => (prev ? { ...prev, patient_name: cleanName } : null));
       }
 
-      toast.success('मरीज का नाम सफलतापूर्वक अपडेट हो गया!');
+      toast.success('Patient name successfully updated!');
       setNameModalOpen(false);
       setEditingNameBooking(null);
     } catch (err: any) {
-      toast.error(err?.message || 'नाम अपडेट करने में त्रुटि आई');
+      toast.error(err?.message || 'Patient name update karne mein error aayi');
     } finally {
       setSavingName(false);
     }
@@ -1230,6 +1234,80 @@ export default function BookingsPage() {
     router.push('/inbox');
   };
 
+  // Available clinics for filtering
+  const availableClinics = useMemo(() => {
+    const set = new Set<string>();
+    activeClinics.forEach((c) => {
+      if (c.city) set.add(c.city.trim());
+    });
+    bookings.forEach((b) => {
+      if (b.clinic_location) set.add(b.clinic_location.trim());
+      else if (b.city) set.add(b.city.trim());
+    });
+    ['Jaipur', 'Delhi', 'Lucknow', 'Amritsar', 'Ludhiana', 'Chandigarh', 'Indore', 'Patna', 'Rewari'].forEach(
+      (c) => set.add(c)
+    );
+    return Array.from(set).sort();
+  }, [activeClinics, bookings]);
+
+  // Date filter matcher helper
+  const matchesDate = useCallback(
+    (b: Booking): boolean => {
+      if (dateFilter === 'all') return true;
+
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const yesterdayStr = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
+
+      const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const todayFormatted = `${now.getDate()} ${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+      const tomorrowFormatted = `${tomorrow.getDate()} ${monthNames[tomorrow.getMonth()]} ${tomorrow.getFullYear()}`;
+      const yesterdayFormatted = `${yesterday.getDate()} ${monthNames[yesterday.getMonth()]} ${yesterday.getFullYear()}`;
+
+      const prefDate = (b.preferred_date || '').toLowerCase();
+      const createdAtStr = (b.created_at || '').slice(0, 10);
+
+      if (dateFilter === 'today') {
+        return (
+          prefDate.includes(todayStr) ||
+          prefDate.includes(todayFormatted) ||
+          prefDate.includes('today') ||
+          createdAtStr === todayStr
+        );
+      }
+      if (dateFilter === 'tomorrow') {
+        return (
+          prefDate.includes(tomorrowStr) ||
+          prefDate.includes(tomorrowFormatted) ||
+          prefDate.includes('tomorrow')
+        );
+      }
+      if (dateFilter === 'yesterday') {
+        return (
+          prefDate.includes(yesterdayStr) ||
+          prefDate.includes(yesterdayFormatted) ||
+          createdAtStr === yesterdayStr
+        );
+      }
+      if (dateFilter === 'this_week') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return new Date(b.created_at) >= weekAgo;
+      }
+      if (dateFilter === 'this_month') {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        return new Date(b.created_at) >= monthStart;
+      }
+      return true;
+    },
+    [dateFilter]
+  );
+
   // Filtered list
   const filteredBookings = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1238,6 +1316,17 @@ export default function BookingsPage() {
       if (typeFilter !== 'all' && b.consultation_type !== typeFilter) return false;
       if (websiteFilter !== 'all' && getEffectiveWebsiteStatus(b) !== websiteFilter) return false;
       if (outcomeFilter !== 'all' && getEffectiveVisitOutcome(b) !== outcomeFilter) return false;
+
+      // Clinic Filter
+      if (clinicFilter !== 'all') {
+        const cLow = clinicFilter.toLowerCase();
+        const bClinic = (b.clinic_location || '').toLowerCase();
+        const bCity = (b.city || '').toLowerCase();
+        if (!bClinic.includes(cLow) && !bCity.includes(cLow)) return false;
+      }
+
+      // Date Filter
+      if (!matchesDate(b)) return false;
 
       // Tag filter
       if (selectedTagFilter) {
@@ -1270,6 +1359,8 @@ export default function BookingsPage() {
     typeFilter,
     websiteFilter,
     outcomeFilter,
+    clinicFilter,
+    matchesDate,
     selectedTagFilter,
     contactTagsMap,
     tagsMap,
@@ -1333,7 +1424,7 @@ export default function BookingsPage() {
             className="h-9 gap-1.5 cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-xs"
           >
             <Plus className="h-4 w-4" />
-            <span>+ New Booking (नई बुकिंग)</span>
+            <span>+ New Booking</span>
           </Button>
 
           <Button
@@ -1447,6 +1538,126 @@ export default function BookingsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          {/* Date Filter */}
+          <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  'h-7 px-2.5 text-xs font-medium border rounded-md flex items-center gap-1.5 transition-colors cursor-pointer',
+                  dateFilter !== 'all'
+                    ? 'bg-primary/10 border-primary text-primary font-semibold'
+                    : 'bg-muted/30 text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <Calendar className="h-3.5 w-3.5 text-primary" />
+                <span>
+                  {dateFilter === 'all'
+                    ? 'Date: All'
+                    : dateFilter === 'today'
+                    ? '📅 Today'
+                    : dateFilter === 'tomorrow'
+                    ? '📅 Tomorrow'
+                    : dateFilter === 'yesterday'
+                    ? '📅 Yesterday'
+                    : dateFilter === 'this_week'
+                    ? '📅 This Week'
+                    : '📅 This Month'}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48 p-1">
+                <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Filter by Appointment Date
+                </div>
+                <DropdownMenuItem
+                  onClick={() => setDateFilter('all')}
+                  className={cn("text-xs cursor-pointer", dateFilter === 'all' && "font-semibold text-primary")}
+                >
+                  All Dates (Sabhi Dates)
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setDateFilter('today')}
+                  className={cn("text-xs cursor-pointer", dateFilter === 'today' && "font-semibold text-primary bg-primary/10")}
+                >
+                  📅 Today (Aaj Ke Appointments)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setDateFilter('tomorrow')}
+                  className={cn("text-xs cursor-pointer", dateFilter === 'tomorrow' && "font-semibold text-primary bg-primary/10")}
+                >
+                  📅 Tomorrow (Kal Ke Appointments)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setDateFilter('yesterday')}
+                  className={cn("text-xs cursor-pointer", dateFilter === 'yesterday' && "font-semibold text-primary bg-primary/10")}
+                >
+                  📅 Yesterday (Beeta Hua Kal)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setDateFilter('this_week')}
+                  className={cn("text-xs cursor-pointer", dateFilter === 'this_week' && "font-semibold text-primary bg-primary/10")}
+                >
+                  📅 This Week (Last 7 Days)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setDateFilter('this_month')}
+                  className={cn("text-xs cursor-pointer", dateFilter === 'this_month' && "font-semibold text-primary bg-primary/10")}
+                >
+                  📅 This Month (Is Mahine Ke)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Clinic Location Filter */}
+          <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  'h-7 px-2.5 text-xs font-medium border rounded-md flex items-center gap-1.5 transition-colors cursor-pointer',
+                  clinicFilter !== 'all'
+                    ? 'bg-amber-500/10 border-amber-500 text-amber-800 dark:text-amber-200 font-semibold'
+                    : 'bg-muted/30 text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <Building2 className="h-3.5 w-3.5 text-amber-600" />
+                <span>{clinicFilter === 'all' ? 'Clinic: All' : `🏥 ${clinicFilter}`}</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52 p-1 max-h-64 overflow-y-auto">
+                <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Filter by Clinic / City
+                </div>
+                <DropdownMenuItem
+                  onClick={() => setClinicFilter('all')}
+                  className={cn("text-xs cursor-pointer", clinicFilter === 'all' && "font-semibold text-primary")}
+                >
+                  All Clinics & Cities
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {availableClinics.map((clinicCity) => (
+                  <DropdownMenuItem
+                    key={clinicCity}
+                    onClick={() => setClinicFilter(clinicCity)}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      clinicFilter.toLowerCase() === clinicCity.toLowerCase() && 'bg-amber-500/10 font-semibold text-amber-800'
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="h-3 w-3 text-rose-500" />
+                      {clinicCity} Clinic
+                    </span>
+                    {clinicFilter.toLowerCase() === clinicCity.toLowerCase() && (
+                      <Check className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           {/* Mode Filter */}
           <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
             <Button
@@ -1493,7 +1704,7 @@ export default function BookingsPage() {
               size="sm"
               onClick={() => setWebsiteFilter('done')}
               className="h-7 text-xs px-2 gap-1 text-emerald-700 dark:text-emerald-300 font-medium"
-              title="वेबसाइट पर दर्ज बुकिंग्स (Done)"
+              title="Website Status Done"
             >
               <Globe className="h-3 w-3" />
               🌐 Done ({stats.websiteDone})
@@ -1503,7 +1714,7 @@ export default function BookingsPage() {
               size="sm"
               onClick={() => setWebsiteFilter('pending')}
               className="h-7 text-xs px-2 gap-1 text-amber-700 dark:text-amber-300 font-medium"
-              title="वेबसाइट पर दर्ज करना बाकी है (Pending)"
+              title="Website Status Pending"
             >
               <Clock className="h-3 w-3" />
               ⏳ Pending ({stats.websitePending})
@@ -1540,35 +1751,35 @@ export default function BookingsPage() {
                   onClick={() => setOutcomeFilter('all')}
                   className="text-xs cursor-pointer"
                 >
-                  All Outcomes (सभी परिणाम)
+                  All Outcomes
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => setOutcomeFilter('converted')}
                   className="text-xs cursor-pointer text-emerald-700 font-medium flex items-center justify-between"
                 >
-                  <span>✅ Converted (कन्वर्जन हुआ)</span>
+                  <span>✅ Converted (Treatment Shuru)</span>
                   <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded">{stats.converted}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setOutcomeFilter('non_converted')}
                   className="text-xs cursor-pointer text-amber-700 font-medium flex items-center justify-between"
                 >
-                  <span>⚠️ Non Converted (विज़िट की, कन्वर्ट नहीं)</span>
+                  <span>⚠️ Non Converted (Dawa Nahi Li)</span>
                   <span className="text-[10px] bg-amber-100 px-1.5 py-0.5 rounded">{stats.nonConverted}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setOutcomeFilter('not_visited')}
                   className="text-xs cursor-pointer text-rose-700 font-medium flex items-center justify-between"
                 >
-                  <span>❌ Not Visited (नहीं आए / No-Show)</span>
+                  <span>❌ Not Visited (No-Show)</span>
                   <span className="text-[10px] bg-rose-100 px-1.5 py-0.5 rounded">{stats.notVisited}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setOutcomeFilter('pending_visit')}
                   className="text-xs cursor-pointer text-blue-700 font-medium flex items-center justify-between"
                 >
-                  <span>🕒 Awaiting Visit (विज़िट पेंडिंग)</span>
+                  <span>🕒 Awaiting Visit (Aana Baaki)</span>
                   <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded">{stats.awaitingVisit}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -1675,7 +1886,7 @@ export default function BookingsPage() {
                   <TableHead className="min-w-[165px]">Consultation Mode</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead className="min-w-[170px]">Preferred Schedule</TableHead>
-                  <TableHead>Health Concern (तकलीफ)</TableHead>
+                  <TableHead>Health Concern / Disease</TableHead>
                   <TableHead>Meta Ad Referral</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Booked On</TableHead>
@@ -1727,7 +1938,7 @@ export default function BookingsPage() {
                               type="button"
                               onClick={(e) => handleOpenEditName(b, e)}
                               className="text-muted-foreground hover:text-primary hover:bg-muted p-1 rounded cursor-pointer transition-colors"
-                              title="Edit Patient Name (मरीज का नाम बदलें)"
+                              title="Edit Patient Name"
                             >
                               <Pencil className="h-3 w-3" />
                             </button>
@@ -1777,7 +1988,7 @@ export default function BookingsPage() {
                               type="button"
                               onClick={(e) => handleUpdateWebsiteStatus(b.id, 'pending', e)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-200 cursor-pointer transition-colors shadow-2xs"
-                              title="वेबसाइट पर दर्ज है। पेंडिंग करने के लिए क्लिक करें।"
+                              title="Website Status: Done. Click to toggle to Pending."
                             >
                               <Globe className="h-3 w-3 text-emerald-600" />
                               <span>Website Done</span>
@@ -1792,7 +2003,7 @@ export default function BookingsPage() {
                               type="button"
                               onClick={(e) => handleUpdateWebsiteStatus(b.id, 'done', e)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 border border-amber-300 dark:border-amber-800 hover:bg-emerald-100 hover:text-emerald-900 hover:border-emerald-300 cursor-pointer transition-all shadow-2xs group/web"
-                              title="वेबसाइट पर बुकिंग दर्ज करने के बाद 'Done' मार्क करने के लिए क्लिक करें"
+                              title="Click to mark Done on Website"
                             >
                               <Clock className="h-3 w-3 text-amber-600 group-hover/web:hidden" />
                               <Check className="h-3 w-3 text-emerald-600 hidden group-hover/web:inline" />
@@ -1800,7 +2011,7 @@ export default function BookingsPage() {
                               <span className="hidden group-hover/web:inline text-emerald-800">Mark as Done</span>
                             </button>
                             <div className="text-[10px] text-amber-700 dark:text-amber-400 font-medium pl-1">
-                              वेबसाइट पर डालना बाकी
+                              Website par dalna baaki
                             </div>
                           </div>
                         )}
@@ -1814,7 +2025,7 @@ export default function BookingsPage() {
                               <button
                                 type="button"
                                 className="group/outcome inline-flex items-center gap-1.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/60 p-1 text-left transition-all focus:outline-hidden cursor-pointer"
-                                title="क्लिक करके पेशेंट का विज़िट / कन्वर्जन परिणाम बदलें"
+                                title="Click to update patient visit outcome"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             }
@@ -1859,7 +2070,7 @@ export default function BookingsPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" className="w-56 p-1.5" onClick={(e) => e.stopPropagation()}>
                             <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                              Update Visit Outcome (परिणाम)
+                              Update Patient Outcome
                             </div>
                             <DropdownMenuItem
                               onClick={() => handleUpdateVisitOutcome(b.id, 'converted')}
@@ -1868,8 +2079,8 @@ export default function BookingsPage() {
                               <div className="flex items-center gap-2">
                                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                                 <div>
-                                  <div>Converted (कन्वर्जन हुआ)</div>
-                                  <div className="text-[10px] text-muted-foreground">मरीज ने दवा / ट्रीटमेंट लिया</div>
+                                  <div>Converted (Treatment Shuru)</div>
+                                  <div className="text-[10px] text-muted-foreground">Patient ne dawa / ilaaj shuru kiya</div>
                                 </div>
                               </div>
                               {getEffectiveVisitOutcome(b) === 'converted' && (
@@ -1884,7 +2095,7 @@ export default function BookingsPage() {
                                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
                                 <div>
                                   <div>Non Converted</div>
-                                  <div className="text-[10px] text-muted-foreground">आए पर अभी शुरू नहीं किया</div>
+                                  <div className="text-[10px] text-muted-foreground">Aaye par abhi dawa nahi li</div>
                                 </div>
                               </div>
                               {getEffectiveVisitOutcome(b) === 'non_converted' && (
@@ -1898,8 +2109,8 @@ export default function BookingsPage() {
                               <div className="flex items-center gap-2">
                                 <XCircle className="h-3.5 w-3.5 text-rose-600" />
                                 <div>
-                                  <div>Not Visited (नहीं आए)</div>
-                                  <div className="text-[10px] text-muted-foreground">No-Show / मिस हुआ</div>
+                                  <div>Not Visited (No-Show)</div>
+                                  <div className="text-[10px] text-muted-foreground">Appointment par nahi aaye</div>
                                 </div>
                               </div>
                               {getEffectiveVisitOutcome(b) === 'not_visited' && (
@@ -1914,7 +2125,7 @@ export default function BookingsPage() {
                                 <Clock className="h-3.5 w-3.5 text-slate-500" />
                                 <div>
                                   <div>Awaiting Visit</div>
-                                  <div className="text-[10px] text-muted-foreground">विज़िट अभी बाकी है</div>
+                                  <div className="text-[10px] text-muted-foreground">Visit abhi baaki hai</div>
                                 </div>
                               </div>
                               {getEffectiveVisitOutcome(b) === 'pending_visit' && (
@@ -1985,7 +2196,7 @@ export default function BookingsPage() {
                               <button
                                 type="button"
                                 className="group/mode inline-flex items-center gap-1.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/60 p-1.5 text-left transition-all focus:outline-hidden cursor-pointer"
-                                title="Click to change consultation mode / कंसल्टेशन का प्रकार बदलें"
+                                title="Click to change consultation mode"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             }
@@ -2081,7 +2292,7 @@ export default function BookingsPage() {
                         <div
                           className="group/schedule flex items-center justify-between gap-1.5 p-1.5 -m-1.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/50 cursor-pointer transition-all"
                           onClick={() => handleOpenScheduleModal(b)}
-                          title="Click to edit date and time / अपॉइंटमेंट की तारीख व समय बदलें"
+                          title="Click to edit date and time"
                         >
                           <div className="space-y-0.5 text-xs">
                             {b.preferred_date ? (
@@ -2223,7 +2434,7 @@ export default function BookingsPage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleOpenEditName(b)}>
                                 <Pencil className="h-4 w-4 mr-2 text-primary" />
-                                Edit Patient Name (नाम बदलें)
+                                Edit Patient Name
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleOpenInbox(b)}>
                                 <MessageSquare className="h-4 w-4 mr-2 text-primary" />
@@ -2385,7 +2596,7 @@ export default function BookingsPage() {
           <DialogHeader>
             <DialogTitle className="text-lg flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-primary" />
-              Reschedule Appointment (तारीख व समय बदलें)
+              Reschedule Appointment
             </DialogTitle>
             <DialogDescription>
               Update preferred appointment date and consultation time for{' '}
@@ -2399,7 +2610,7 @@ export default function BookingsPage() {
             <div className="space-y-2">
               <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5 text-primary" />
-                <span>Preferred Date (अपॉइंटमेंट की तारीख)</span>
+                <span>Preferred Date</span>
               </label>
               <div className="flex gap-2">
                 <Input
@@ -2438,9 +2649,9 @@ export default function BookingsPage() {
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 <span className="text-[11px] text-muted-foreground mr-1">Quick:</span>
                 {[
-                  { label: 'Today (आज)', days: 0 },
-                  { label: 'Tomorrow (कल)', days: 1 },
-                  { label: '+2 Days (परसों)', days: 2 },
+                  { label: 'Today', days: 0 },
+                  { label: 'Tomorrow', days: 1 },
+                  { label: '+2 Days', days: 2 },
                   { label: '+3 Days', days: 3 },
                   { label: '+5 Days', days: 5 },
                   { label: '+7 Days', days: 7 },
@@ -2461,7 +2672,7 @@ export default function BookingsPage() {
             <div className="space-y-2">
               <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-primary" />
-                <span>Preferred Time (परामर्श का समय)</span>
+                <span>Preferred Time</span>
               </label>
               <Input
                 type="text"
@@ -2514,7 +2725,7 @@ export default function BookingsPage() {
                   setScheduleTimeDraft('');
                 }}
               >
-                Reset to Flexible (समय तय नहीं)
+                Reset to Flexible
               </Button>
             </div>
           </div>
@@ -2823,12 +3034,12 @@ export default function BookingsPage() {
                       {getEffectiveWebsiteStatus(selectedBooking) === 'done' ? (
                         <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-semibold text-xs">
                           <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                          <span>वेबसाइट पर दर्ज है (Done)</span>
+                          <span>Live on Website (Done)</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold text-xs">
                           <Clock className="h-4 w-4 text-amber-600" />
-                          <span>वेबसाइट पर दर्ज नहीं है (Pending)</span>
+                          <span>Pending on Website</span>
                         </div>
                       )}
                     </div>
@@ -3005,7 +3216,7 @@ export default function BookingsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-4 w-4 text-primary" />
-              मरीज का नाम बदलें (Edit Patient Name)
+              Edit Patient Name
             </DialogTitle>
             <DialogDescription>
               Update patient name for booking{' '}
@@ -3018,7 +3229,7 @@ export default function BookingsPage() {
           <div className="space-y-3 py-2">
             <div>
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                Patient Name (मरीज का नाम):
+                Patient Name:
               </label>
               <Input
                 value={patientNameDraft}
@@ -3048,14 +3259,14 @@ export default function BookingsPage() {
               onClick={() => setNameModalOpen(false)}
               disabled={savingName}
             >
-              रद्द करें
+              Cancel
             </Button>
             <Button
               onClick={handleSavePatientName}
               disabled={savingName || !patientNameDraft.trim()}
               className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
             >
-              {savingName ? 'Saving...' : 'सुरक्षित करें (Save Name)'}
+              {savingName ? 'Saving...' : 'Save Name'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3099,10 +3310,10 @@ export default function BookingsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Plus className="h-5 w-5 text-emerald-600" />
-              नई बुकिंग दर्ज करें (Create New Booking)
+              Create New Booking
             </DialogTitle>
             <DialogDescription>
-              मरीज का विवरण, लोकेशन, कंसल्टेशन मोड और वेबसाइट स्टेटस सीधे CRM में दर्ज करें।
+              Patient details, location, consultation mode and website status seedhe CRM mein save karein.
             </DialogDescription>
           </DialogHeader>
 
@@ -3111,19 +3322,19 @@ export default function BookingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="font-semibold text-foreground">
-                  Patient Name (मरीज का नाम) <span className="text-rose-500">*</span>
+                  Patient Name <span className="text-rose-500">*</span>
                 </label>
                 <Input
                   value={newPatientName}
                   onChange={(e) => setNewPatientName(e.target.value)}
-                  placeholder="e.g. सुनीता शर्मा"
+                  placeholder="e.g. Sunita Sharma"
                   className="h-9 text-xs"
                 />
               </div>
 
               <div className="space-y-1">
                 <label className="font-semibold text-foreground">
-                  Mobile Number (फ़ोन नंबर) <span className="text-rose-500">*</span>
+                  Mobile Number <span className="text-rose-500">*</span>
                 </label>
                 <Input
                   value={newPhone}
@@ -3137,7 +3348,7 @@ export default function BookingsPage() {
             {/* Consultation Mode */}
             <div className="space-y-1.5">
               <label className="font-semibold text-foreground">
-                Consultation Mode (कंसल्टेशन का प्रकार)
+                Consultation Mode
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -3153,7 +3364,7 @@ export default function BookingsPage() {
                   <Building2 className="h-4 w-4 text-amber-600 shrink-0" />
                   <div>
                     <div className="text-xs font-semibold">🏥 Clinic Visit</div>
-                    <div className="text-[10px] text-muted-foreground">क्लीनिक पर मिलना</div>
+                    <div className="text-[10px] text-muted-foreground">In-person Clinic Visit</div>
                   </div>
                 </button>
 
@@ -3170,7 +3381,7 @@ export default function BookingsPage() {
                   <Video className="h-4 w-4 text-blue-600 shrink-0" />
                   <div>
                     <div className="text-xs font-semibold">📹 Video Call</div>
-                    <div className="text-[10px] text-muted-foreground">ऑनलाइन डॉक्टर कंसल्ट</div>
+                    <div className="text-[10px] text-muted-foreground">Online Doctor Consult</div>
                   </div>
                 </button>
               </div>
@@ -3179,7 +3390,7 @@ export default function BookingsPage() {
             {/* City / Clinic Location */}
             <div className="space-y-1.5">
               <label className="font-semibold text-foreground">
-                Clinic Location / City (शहर / क्लीनिक शाखा)
+                Clinic Location / City
               </label>
               <div className="flex flex-wrap gap-1.5 mb-1.5">
                 {['Jaipur', 'Delhi', 'Lucknow', 'Amritsar', 'Ludhiana', 'Chandigarh', 'Indore', 'Patna', 'Rewari'].map(
@@ -3217,7 +3428,7 @@ export default function BookingsPage() {
             {/* Preferred Schedule (Date & Time) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="font-semibold text-foreground">Preferred Date (अपॉइंटमेंट तारीख)</label>
+                <label className="font-semibold text-foreground">Preferred Date</label>
                 <div className="flex gap-1 mb-1">
                   <button
                     type="button"
@@ -3250,7 +3461,7 @@ export default function BookingsPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-foreground">Preferred Time (समय)</label>
+                <label className="font-semibold text-foreground">Preferred Time</label>
                 <div className="flex gap-1 mb-1">
                   {['11:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'].map((slot) => (
                     <button
@@ -3279,13 +3490,13 @@ export default function BookingsPage() {
 
             {/* Health Concern */}
             <div className="space-y-1.5">
-              <label className="font-semibold text-foreground">Health Concern (समस्या / तकलीफ)</label>
+              <label className="font-semibold text-foreground">Health Concern / Disease</label>
               <div className="flex flex-wrap gap-1 mb-1">
                 {[
-                  'Infertility / गर्भधारण समस्या',
-                  'Tubal Blockage (फेलोपियन ट्यूब)',
+                  'Infertility / Conceiving Issue',
+                  'Tubal Blockage',
                   'PCOD / PCOS',
-                  'White Discharge (सफेद पानी)',
+                  'White Discharge',
                   'Irregular Periods',
                   'Low AMH / Egg Quality',
                   'Male Infertility / Nil Sperm',
@@ -3318,7 +3529,7 @@ export default function BookingsPage() {
               <div className="space-y-1">
                 <label className="font-semibold text-foreground flex items-center gap-1">
                   <Globe className="h-3.5 w-3.5 text-emerald-600" />
-                  Website Status (वेबसाइट पर दर्ज)
+                  Website Booking Status
                 </label>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
@@ -3351,24 +3562,24 @@ export default function BookingsPage() {
               <div className="space-y-1">
                 <label className="font-semibold text-foreground flex items-center gap-1">
                   <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
-                  Visit Outcome (विज़िट परिणाम)
+                  Patient Outcome
                 </label>
                 <select
                   value={newVisitOutcome}
                   onChange={(e) => setNewVisitOutcome(e.target.value as PatientVisitOutcome)}
                   className="w-full h-9 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:outline-hidden"
                 >
-                  <option value="pending_visit">🕒 Awaiting Visit (विज़िट बाकी है)</option>
-                  <option value="converted">✅ Converted (कन्वर्जन हुआ)</option>
-                  <option value="non_converted">⚠️ Non Converted (आए पर दवा नहीं ली)</option>
-                  <option value="not_visited">❌ Not Visited (नहीं आए / No-Show)</option>
+                  <option value="pending_visit">🕒 Awaiting Visit (Visit Baaki Hai)</option>
+                  <option value="converted">✅ Converted (Treatment Shuru)</option>
+                  <option value="non_converted">⚠️ Non Converted (Aaye par dawa nahi li)</option>
+                  <option value="not_visited">❌ Not Visited (No-Show / Nahi Aaye)</option>
                 </select>
               </div>
             </div>
 
             {/* Notes */}
             <div className="space-y-1">
-              <label className="font-semibold text-foreground">Follow-up Notes (अतिरिक्त टिप्पणी)</label>
+              <label className="font-semibold text-foreground">Follow-up Notes</label>
               <Textarea
                 rows={2}
                 value={newNotes}
@@ -3385,7 +3596,7 @@ export default function BookingsPage() {
               onClick={() => setCreateModalOpen(false)}
               disabled={creatingBooking}
             >
-              रद्द करें
+              Cancel
             </Button>
             <Button
               onClick={handleCreateBooking}
@@ -3395,12 +3606,12 @@ export default function BookingsPage() {
               {creatingBooking ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  बुकिंग दर्ज हो रही है...
+                  Saving Booking...
                 </>
               ) : (
                 <>
                   <Plus className="h-4 w-4" />
-                  बुकिंग सुरक्षित करें (Save Booking)
+                  Save Booking
                 </>
               )}
             </Button>
