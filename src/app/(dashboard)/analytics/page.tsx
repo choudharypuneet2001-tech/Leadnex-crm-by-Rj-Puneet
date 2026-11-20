@@ -1035,10 +1035,11 @@ export default function AnalyticsPage() {
               <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4 min-w-[150px]">Contact / Patient</th>
-                  <th className="py-3 px-4 min-w-[160px]">Tags</th>
+                  <th className="py-3 px-4 min-w-[180px]">Meta Ad Campaign</th>
+                  <th className="py-3 px-4 min-w-[150px]">Tags</th>
                   <th className="py-3 px-4 min-w-[140px]">Calling Priority</th>
-                  <th className="py-3 px-4 min-w-[200px]">AI Dropout Reason & Pitch</th>
-                  <th className="py-3 px-4 min-w-[160px]">Call Notes</th>
+                  <th className="py-3 px-4 min-w-[220px]">AI Dropout Reason & Pitch</th>
+                  <th className="py-3 px-4 min-w-[150px]">Call Notes</th>
                   <th className="py-3 px-4 text-center">Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
@@ -1046,7 +1047,7 @@ export default function AnalyticsPage() {
               <tbody className="divide-y divide-slate-100">
                 {displayedLeads.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
                       No leads match the selected date, ad, or filter criteria.
                     </td>
                   </tr>
@@ -1089,7 +1090,33 @@ export default function AnalyticsPage() {
                         )}
                       </td>
 
-                      {/* 2. Tags Column */}
+                      {/* 2. Meta Ad Campaign */}
+                      <td className="py-3 px-4 min-w-[180px] max-w-[240px]">
+                        {lead.ad_name ? (
+                          <div className="space-y-0.5">
+                            <div className="font-medium text-slate-800 line-clamp-2 leading-snug">
+                              {lead.ad_name}
+                            </div>
+                            {lead.ad_id && (
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                ID: {lead.ad_id}
+                              </div>
+                            )}
+                            {lead.concern_category && (
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-200 mt-0.5"
+                              >
+                                {lead.concern_category}
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">Direct / Organic</span>
+                        )}
+                      </td>
+
+                      {/* 3. Tags Column */}
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap items-center gap-1 max-w-[200px]">
                           {assignedTagIds.map((tid) => {

@@ -4,7 +4,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
-import type { Booking, BookingStatus, ConsultationType, Tag } from '@/types';
+import type {
+  Booking,
+  BookingStatus,
+  ConsultationType,
+  Tag,
+  WebsiteBookingStatus,
+  PatientVisitOutcome,
+} from '@/types';
 import { formatTelUri, formatPhoneDisplay } from '@/lib/whatsapp/phone-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,6 +76,9 @@ import {
   FileText,
   X,
   Loader2,
+  Globe,
+  AlertTriangle,
+  CheckCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
@@ -107,6 +117,27 @@ function getQuickDate(daysFromNow: number): string {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   return `${day} ${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+export function getEffectiveWebsiteStatus(b: Booking): 'done' | 'pending' {
+  if (b.website_status === 'done' || b.website_status === 'pending') {
+    return b.website_status;
+  }
+  if (b.notes?.includes('[Website: DONE]')) return 'done';
+  return 'pending';
+}
+
+export function getEffectiveVisitOutcome(b: Booking): PatientVisitOutcome {
+  if (
+    b.visit_outcome &&
+    ['converted', 'non_converted', 'not_visited', 'pending_visit'].includes(b.visit_outcome)
+  ) {
+    return b.visit_outcome as PatientVisitOutcome;
+  }
+  if (b.notes?.includes('[Outcome: CONVERTED]')) return 'converted';
+  if (b.notes?.includes('[Outcome: NON_CONVERTED]')) return 'non_converted';
+  if (b.notes?.includes('[Outcome: NOT_VISITED]')) return 'not_visited';
+  return 'pending_visit';
 }
 
 function toCsv(rows: string[][]): string {
@@ -340,7 +371,26 @@ export default function BookingsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | BookingStatus>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'clinic_visit' | 'video_consultation'>('all');
+  const [websiteFilter, setWebsiteFilter] = useState<'all' | 'done' | 'pending'>('all');
+  const [outcomeFilter, setOutcomeFilter] = useState<
+    'all' | 'converted' | 'non_converted' | 'not_visited' | 'pending_visit'
+  >('all');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
+
+  // New Booking Modal state
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [newPatientName, setNewPatientName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newConsultationType, setNewConsultationType] = useState<ConsultationType>('clinic_visit');
+  const [newClinicLocation, setNewClinicLocation] = useState('Jaipur');
+  const [newCity, setNewCity] = useState('Jaipur');
+  const [newPreferredDate, setNewPreferredDate] = useState('');
+  const [newPreferredTime, setNewPreferredTime] = useState('11:00 AM');
+  const [newHealthConcern, setNewHealthConcern] = useState('');
+  const [newWebsiteStatus, setNewWebsiteStatus] = useState<WebsiteBookingStatus>('pending');
+  const [newVisitOutcome, setNewVisitOutcome] = useState<PatientVisitOutcome>('pending_visit');
+  const [newNotes, setNewNotes] = useState('');
+  const [creatingBooking, setCreatingBooking] = useState(false);
 
   // Tags state
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -573,6 +623,226 @@ export default function BookingsPage() {
     } catch (err) {
       console.error('[bookings] update consultation type error:', err);
       toast.error('Failed to update consultation type');
+    }
+  };
+
+  const handleUpdateWebsiteStatus = async (
+    bookingId: string,
+    newStatus: WebsiteBookingStatus,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          website_status: newStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', bookingId);
+
+      if (error) {
+        console.warn('Direct column update failed, checking notes fallback:', error);
+        const b = bookings.find((item) => item.id === bookingId);
+        const prefix = `[Website: ${newStatus.toUpperCase()}]`;
+        const cleanNotes = (b?.notes || '')
+          .replace(/\[Website:\s*(DONE|PENDING)\]/gi, '')
+          .trim();
+        const updatedNotes = `${prefix} ${cleanNotes}`.trim();
+        await supabase
+          .from('bookings')
+          .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
+          .eq('id', bookingId);
+      }
+
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, website_status: newStatus } : b))
+      );
+      if (selectedBooking?.id === bookingId) {
+        setSelectedBooking((prev) => (prev ? { ...prev, website_status: newStatus } : null));
+      }
+      toast.success(
+        `वेबसाइट स्टेटस: ${newStatus === 'done' ? 'Done (वेबसाइट पर बुक हो गया)' : 'Pending (बुक होना बाकी)'}`
+      );
+    } catch (err: any) {
+      toast.error('वेबसाइट स्टेटस अपडेट करने में समस्या आई');
+    }
+  };
+
+  const handleUpdateVisitOutcome = async (
+    bookingId: string,
+    newOutcome: PatientVisitOutcome,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          visit_outcome: newOutcome,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', bookingId);
+
+      if (error) {
+        console.warn('Direct outcome column update failed, checking notes fallback:', error);
+        const b = bookings.find((item) => item.id === bookingId);
+        const prefix = `[Outcome: ${newOutcome.toUpperCase()}]`;
+        const cleanNotes = (b?.notes || '')
+          .replace(/\[Outcome:\s*(CONVERTED|NON_CONVERTED|NOT_VISITED|PENDING_VISIT)\]/gi, '')
+          .trim();
+        const updatedNotes = `${prefix} ${cleanNotes}`.trim();
+        await supabase
+          .from('bookings')
+          .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
+          .eq('id', bookingId);
+      }
+
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, visit_outcome: newOutcome } : b))
+      );
+      if (selectedBooking?.id === bookingId) {
+        setSelectedBooking((prev) => (prev ? { ...prev, visit_outcome: newOutcome } : null));
+      }
+
+      const labelMap: Record<string, string> = {
+        converted: 'Converted (कन्वर्टेड / इलाज शुरू)',
+        non_converted: 'Non Converted (नॉन-कन्वर्टेड)',
+        not_visited: 'Not Visited (नॉट-विजिटेड / नहीं आया)',
+        pending_visit: 'Awaiting Visit (विजिट प्रतीक्षित)',
+      };
+      toast.success(`मरीज का आउटकम: ${labelMap[newOutcome] || newOutcome}`);
+    } catch (err: any) {
+      toast.error('आउटकम अपडेट करने में समस्या आई');
+    }
+  };
+
+  const handleCreateBooking = async () => {
+    if (!account?.id) {
+      toast.error('खाता संदर्भ लोड नहीं हो सका');
+      return;
+    }
+    const cleanName = newPatientName.trim();
+    const cleanPhone = newPhone.trim().replace(/\s+/g, '');
+
+    if (!cleanName) {
+      toast.error('कृपया मरीज का नाम दर्ज करें');
+      return;
+    }
+    if (!cleanPhone || cleanPhone.length < 10) {
+      toast.error('कृपया सही मोबाइल नंबर (कम से कम 10 अंक) दर्ज करें');
+      return;
+    }
+
+    setCreatingBooking(true);
+    try {
+      // 1. Find or create contact
+      let contactId: string | null = null;
+      try {
+        const last10 = cleanPhone.replace(/\D/g, '').slice(-10);
+        const { data: existingContacts } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('account_id', account.id)
+          .ilike('phone', `%${last10}%`)
+          .limit(1);
+
+        if (existingContacts && existingContacts[0]) {
+          contactId = existingContacts[0].id;
+        } else {
+          const { data: newContact } = await supabase
+            .from('contacts')
+            .insert({
+              account_id: account.id,
+              name: cleanName,
+              phone: cleanPhone,
+              company: newConsultationType === 'clinic_visit' ? newClinicLocation : newCity,
+            })
+            .select('id')
+            .single();
+
+          if (newContact) {
+            contactId = newContact.id;
+          }
+        }
+      } catch (cErr) {
+        console.warn('[bookings] contact find/create notice:', cErr);
+      }
+
+      // 2. Generate unique booking_query_id
+      const queryId = `GYN-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      // 3. Prepare notes with metadata
+      const metaPrefix = `[Website: ${newWebsiteStatus.toUpperCase()}] [Outcome: ${newVisitOutcome.toUpperCase()}]`;
+      const combinedNotes = newNotes.trim() ? `${metaPrefix} ${newNotes.trim()}` : metaPrefix;
+
+      const payload: Record<string, any> = {
+        account_id: account.id,
+        contact_id: contactId,
+        booking_query_id: queryId,
+        patient_name: cleanName,
+        phone: cleanPhone,
+        city: newConsultationType === 'clinic_visit' ? newClinicLocation : newCity || 'Online',
+        consultation_type: newConsultationType,
+        clinic_location: newConsultationType === 'clinic_visit' ? newClinicLocation : null,
+        preferred_date: newPreferredDate.trim() || getQuickDate(0),
+        preferred_time: newPreferredTime.trim() || '11:00 AM',
+        health_concern: newHealthConcern.trim() || null,
+        status: 'confirmed',
+        website_status: newWebsiteStatus,
+        visit_outcome: newVisitOutcome,
+        notes: combinedNotes,
+      };
+
+      let insertedBooking: Booking | null = null;
+
+      const { data: directInsert, error: directErr } = await supabase
+        .from('bookings')
+        .insert(payload)
+        .select('*')
+        .single();
+
+      if (directErr) {
+        console.warn('[bookings] direct insert failed, retrying without new columns:', directErr);
+        delete payload.website_status;
+        delete payload.visit_outcome;
+        const { data: fallbackInsert, error: fbErr } = await supabase
+          .from('bookings')
+          .insert(payload)
+          .select('*')
+          .single();
+
+        if (fbErr) throw fbErr;
+        insertedBooking = {
+          ...fallbackInsert,
+          website_status: newWebsiteStatus,
+          visit_outcome: newVisitOutcome,
+        };
+      } else {
+        insertedBooking = directInsert;
+      }
+
+      if (insertedBooking) {
+        setBookings((prev) => [insertedBooking!, ...prev]);
+      }
+
+      toast.success(`नई बुकिंग सफलतापूर्वक दर्ज हो गई! (ID: ${queryId})`);
+      setCreateModalOpen(false);
+
+      // Reset form
+      setNewPatientName('');
+      setNewPhone('');
+      setNewHealthConcern('');
+      setNewPreferredDate('');
+      setNewPreferredTime('11:00 AM');
+      setNewNotes('');
+      setNewWebsiteStatus('pending');
+      setNewVisitOutcome('pending_visit');
+    } catch (err: any) {
+      console.error('[bookings] create error:', err);
+      toast.error(err?.message || 'बुकिंग सेव करने में त्रुटि आई');
+    } finally {
+      setCreatingBooking(false);
     }
   };
 
@@ -853,6 +1123,8 @@ export default function BookingsPage() {
       'Booking Query ID',
       'Patient Name',
       'Phone Number',
+      'Website Booking Status',
+      'Patient Visit Outcome',
       'City',
       'Consultation Mode',
       'Clinic Location',
@@ -876,6 +1148,8 @@ export default function BookingsPage() {
         b.booking_query_id,
         b.patient_name,
         b.phone,
+        getEffectiveWebsiteStatus(b) === 'done' ? 'Website Done' : 'Website Pending',
+        getEffectiveVisitOutcome(b),
         b.city || '',
         b.consultation_type === 'clinic_visit' ? 'Clinic Visit' : 'Video Consultation',
         b.clinic_location || b.city || '',
@@ -962,6 +1236,8 @@ export default function BookingsPage() {
     return bookings.filter((b) => {
       if (statusFilter !== 'all' && b.status !== statusFilter) return false;
       if (typeFilter !== 'all' && b.consultation_type !== typeFilter) return false;
+      if (websiteFilter !== 'all' && getEffectiveWebsiteStatus(b) !== websiteFilter) return false;
+      if (outcomeFilter !== 'all' && getEffectiveVisitOutcome(b) !== outcomeFilter) return false;
 
       // Tag filter
       if (selectedTagFilter) {
@@ -987,7 +1263,17 @@ export default function BookingsPage() {
         (b.clinic_location && b.clinic_location.toLowerCase().includes(q))
       );
     });
-  }, [bookings, search, statusFilter, typeFilter, selectedTagFilter, contactTagsMap, tagsMap]);
+  }, [
+    bookings,
+    search,
+    statusFilter,
+    typeFilter,
+    websiteFilter,
+    outcomeFilter,
+    selectedTagFilter,
+    contactTagsMap,
+    tagsMap,
+  ]);
 
   // Stats
   const stats = useMemo(() => {
@@ -995,7 +1281,29 @@ export default function BookingsPage() {
     const confirmed = bookings.filter((b) => b.status === 'confirmed').length;
     const clinicVisits = bookings.filter((b) => b.consultation_type === 'clinic_visit').length;
     const videoConsultations = bookings.filter((b) => b.consultation_type !== 'clinic_visit').length;
-    return { total, confirmed, clinicVisits, videoConsultations };
+
+    // Website sync
+    const websiteDone = bookings.filter((b) => getEffectiveWebsiteStatus(b) === 'done').length;
+    const websitePending = bookings.filter((b) => getEffectiveWebsiteStatus(b) === 'pending').length;
+
+    // Visit / Conversion Outcomes
+    const converted = bookings.filter((b) => getEffectiveVisitOutcome(b) === 'converted').length;
+    const nonConverted = bookings.filter((b) => getEffectiveVisitOutcome(b) === 'non_converted').length;
+    const notVisited = bookings.filter((b) => getEffectiveVisitOutcome(b) === 'not_visited').length;
+    const awaitingVisit = bookings.filter((b) => getEffectiveVisitOutcome(b) === 'pending_visit').length;
+
+    return {
+      total,
+      confirmed,
+      clinicVisits,
+      videoConsultations,
+      websiteDone,
+      websitePending,
+      converted,
+      nonConverted,
+      notVisited,
+      awaitingVisit,
+    };
   }, [bookings]);
 
   return (
@@ -1019,6 +1327,15 @@ export default function BookingsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => setCreateModalOpen(true)}
+            className="h-9 gap-1.5 cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-xs"
+          >
+            <Plus className="h-4 w-4" />
+            <span>+ New Booking (नई बुकिंग)</span>
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -1054,25 +1371,44 @@ export default function BookingsPage() {
       </div>
 
       {/* KPI Stats Cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <div className="rounded-xl border bg-card p-4 shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-medium uppercase tracking-wider">Total Bookings</span>
             <CalendarDays className="h-4 w-4 text-primary" />
           </div>
           <div className="mt-2 text-2xl font-bold text-foreground">{stats.total}</div>
-          <p className="text-xs text-muted-foreground mt-0.5">All appointments received</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{stats.confirmed} Confirmed</p>
         </div>
 
+        {/* 🌐 Website Status Sync Card */}
         <div className="rounded-xl border bg-card p-4 shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium uppercase tracking-wider">Confirmed</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            <span className="text-xs font-medium uppercase tracking-wider">Website Booking</span>
+            <Globe className="h-4 w-4 text-emerald-600" />
           </div>
           <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-            {stats.confirmed}
+            {stats.websiteDone}{' '}
+            <span className="text-sm font-normal text-muted-foreground">Done</span>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">Ready for Gynocci team</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+            ⏳ {stats.websitePending} Pending on website
+          </p>
+        </div>
+
+        {/* 🎯 Patient Conversion Card */}
+        <div className="rounded-xl border bg-card p-4 shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-medium uppercase tracking-wider">Patient Outcomes</span>
+            <CheckCheck className="h-4 w-4 text-emerald-500" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">
+            {stats.converted}{' '}
+            <span className="text-xs font-normal text-emerald-600">Converted</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            ⚠️ {stats.nonConverted} Non-Conv • ❌ {stats.notVisited} No-Show
+          </p>
         </div>
 
         <div className="rounded-xl border bg-card p-4 shadow-xs">
@@ -1139,6 +1475,104 @@ export default function BookingsPage() {
               <Video className="h-3 w-3" />
               Video Call
             </Button>
+          </div>
+
+          {/* Website Booking Status Filter */}
+          <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
+            <Button
+              variant={websiteFilter === 'all' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setWebsiteFilter('all')}
+              className="h-7 text-xs px-2"
+              title="All Website Status"
+            >
+              Web: All
+            </Button>
+            <Button
+              variant={websiteFilter === 'done' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setWebsiteFilter('done')}
+              className="h-7 text-xs px-2 gap-1 text-emerald-700 dark:text-emerald-300 font-medium"
+              title="वेबसाइट पर दर्ज बुकिंग्स (Done)"
+            >
+              <Globe className="h-3 w-3" />
+              🌐 Done ({stats.websiteDone})
+            </Button>
+            <Button
+              variant={websiteFilter === 'pending' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setWebsiteFilter('pending')}
+              className="h-7 text-xs px-2 gap-1 text-amber-700 dark:text-amber-300 font-medium"
+              title="वेबसाइट पर दर्ज करना बाकी है (Pending)"
+            >
+              <Clock className="h-3 w-3" />
+              ⏳ Pending ({stats.websitePending})
+            </Button>
+          </div>
+
+          {/* Patient Outcome Filter */}
+          <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  'h-7 px-2.5 text-xs font-medium border rounded-md flex items-center gap-1.5 transition-colors cursor-pointer',
+                  outcomeFilter !== 'all'
+                    ? 'bg-primary/10 border-primary text-primary'
+                    : 'bg-muted/30 text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                <span>
+                  {outcomeFilter === 'all'
+                    ? 'All Outcomes'
+                    : outcomeFilter === 'converted'
+                    ? '✅ Converted'
+                    : outcomeFilter === 'non_converted'
+                    ? '⚠️ Non Converted'
+                    : outcomeFilter === 'not_visited'
+                    ? '❌ Not Visited'
+                    : '🕒 Awaiting Visit'}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 p-1">
+                <DropdownMenuItem
+                  onClick={() => setOutcomeFilter('all')}
+                  className="text-xs cursor-pointer"
+                >
+                  All Outcomes (सभी परिणाम)
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setOutcomeFilter('converted')}
+                  className="text-xs cursor-pointer text-emerald-700 font-medium flex items-center justify-between"
+                >
+                  <span>✅ Converted (कन्वर्जन हुआ)</span>
+                  <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded">{stats.converted}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setOutcomeFilter('non_converted')}
+                  className="text-xs cursor-pointer text-amber-700 font-medium flex items-center justify-between"
+                >
+                  <span>⚠️ Non Converted (विज़िट की, कन्वर्ट नहीं)</span>
+                  <span className="text-[10px] bg-amber-100 px-1.5 py-0.5 rounded">{stats.nonConverted}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setOutcomeFilter('not_visited')}
+                  className="text-xs cursor-pointer text-rose-700 font-medium flex items-center justify-between"
+                >
+                  <span>❌ Not Visited (नहीं आए / No-Show)</span>
+                  <span className="text-[10px] bg-rose-100 px-1.5 py-0.5 rounded">{stats.notVisited}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setOutcomeFilter('pending_visit')}
+                  className="text-xs cursor-pointer text-blue-700 font-medium flex items-center justify-between"
+                >
+                  <span>🕒 Awaiting Visit (विज़िट पेंडिंग)</span>
+                  <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded">{stats.awaitingVisit}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Status Filter */}
@@ -1234,6 +1668,8 @@ export default function BookingsPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-[125px]">Query ID</TableHead>
                   <TableHead className="min-w-[190px]">Patient Details</TableHead>
+                  <TableHead className="min-w-[140px]">Website Status</TableHead>
+                  <TableHead className="min-w-[155px]">Patient Outcome</TableHead>
                   <TableHead className="min-w-[150px]">Tags</TableHead>
                   <TableHead className="min-w-[180px]">Follow-up Notes</TableHead>
                   <TableHead className="min-w-[165px]">Consultation Mode</TableHead>
@@ -1331,6 +1767,162 @@ export default function BookingsPage() {
                             </a>
                           </div>
                         </div>
+                      </TableCell>
+
+                      {/* Website Booking Status */}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {getEffectiveWebsiteStatus(b) === 'done' ? (
+                          <div className="space-y-1">
+                            <button
+                              type="button"
+                              onClick={(e) => handleUpdateWebsiteStatus(b.id, 'pending', e)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-200 cursor-pointer transition-colors shadow-2xs"
+                              title="वेबसाइट पर दर्ज है। पेंडिंग करने के लिए क्लिक करें।"
+                            >
+                              <Globe className="h-3 w-3 text-emerald-600" />
+                              <span>Website Done</span>
+                            </button>
+                            <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium pl-1">
+                              ✓ Live on Website
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <button
+                              type="button"
+                              onClick={(e) => handleUpdateWebsiteStatus(b.id, 'done', e)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 border border-amber-300 dark:border-amber-800 hover:bg-emerald-100 hover:text-emerald-900 hover:border-emerald-300 cursor-pointer transition-all shadow-2xs group/web"
+                              title="वेबसाइट पर बुकिंग दर्ज करने के बाद 'Done' मार्क करने के लिए क्लिक करें"
+                            >
+                              <Clock className="h-3 w-3 text-amber-600 group-hover/web:hidden" />
+                              <Check className="h-3 w-3 text-emerald-600 hidden group-hover/web:inline" />
+                              <span className="group-hover/web:hidden">Website Pending</span>
+                              <span className="hidden group-hover/web:inline text-emerald-800">Mark as Done</span>
+                            </button>
+                            <div className="text-[10px] text-amber-700 dark:text-amber-400 font-medium pl-1">
+                              वेबसाइट पर डालना बाकी
+                            </div>
+                          </div>
+                        )}
+                      </TableCell>
+
+                      {/* Patient Outcome (Converted / Non-Converted / Not Visited / Pending) */}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <button
+                                type="button"
+                                className="group/outcome inline-flex items-center gap-1.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/60 p-1 text-left transition-all focus:outline-hidden cursor-pointer"
+                                title="क्लिक करके पेशेंट का विज़िट / कन्वर्जन परिणाम बदलें"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            }
+                          >
+                            {(() => {
+                              const outcome = getEffectiveVisitOutcome(b);
+                              if (outcome === 'converted') {
+                                return (
+                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 gap-1 text-xs font-semibold cursor-pointer">
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                    <span>Converted</span>
+                                    <ChevronDown className="h-2.5 w-2.5 opacity-60 ml-0.5" />
+                                  </Badge>
+                                );
+                              }
+                              if (outcome === 'non_converted') {
+                                return (
+                                  <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 gap-1 text-xs font-semibold cursor-pointer">
+                                    <AlertTriangle className="h-3 w-3 text-amber-600" />
+                                    <span>Non Converted</span>
+                                    <ChevronDown className="h-2.5 w-2.5 opacity-60 ml-0.5" />
+                                  </Badge>
+                                );
+                              }
+                              if (outcome === 'not_visited') {
+                                return (
+                                  <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 gap-1 text-xs font-semibold cursor-pointer">
+                                    <XCircle className="h-3 w-3 text-rose-600" />
+                                    <span>Not Visited</span>
+                                    <ChevronDown className="h-2.5 w-2.5 opacity-60 ml-0.5" />
+                                  </Badge>
+                                );
+                              }
+                              return (
+                                <Badge variant="secondary" className="gap-1 text-xs font-medium cursor-pointer text-slate-600 dark:text-slate-300">
+                                  <Clock className="h-3 w-3 text-slate-500" />
+                                  <span>Awaiting Visit</span>
+                                  <ChevronDown className="h-2.5 w-2.5 opacity-60 ml-0.5" />
+                                </Badge>
+                              );
+                            })()}
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-56 p-1.5" onClick={(e) => e.stopPropagation()}>
+                            <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                              Update Visit Outcome (परिणाम)
+                            </div>
+                            <DropdownMenuItem
+                              onClick={() => handleUpdateVisitOutcome(b.id, 'converted')}
+                              className="flex items-center justify-between text-xs cursor-pointer py-1.5 px-2 rounded-md hover:bg-emerald-50 text-emerald-800 font-medium"
+                            >
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                <div>
+                                  <div>Converted (कन्वर्जन हुआ)</div>
+                                  <div className="text-[10px] text-muted-foreground">मरीज ने दवा / ट्रीटमेंट लिया</div>
+                                </div>
+                              </div>
+                              {getEffectiveVisitOutcome(b) === 'converted' && (
+                                <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleUpdateVisitOutcome(b.id, 'non_converted')}
+                              className="flex items-center justify-between text-xs cursor-pointer py-1.5 px-2 rounded-md hover:bg-amber-50 text-amber-800 font-medium"
+                            >
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                                <div>
+                                  <div>Non Converted</div>
+                                  <div className="text-[10px] text-muted-foreground">आए पर अभी शुरू नहीं किया</div>
+                                </div>
+                              </div>
+                              {getEffectiveVisitOutcome(b) === 'non_converted' && (
+                                <Check className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleUpdateVisitOutcome(b.id, 'not_visited')}
+                              className="flex items-center justify-between text-xs cursor-pointer py-1.5 px-2 rounded-md hover:bg-rose-50 text-rose-800 font-medium"
+                            >
+                              <div className="flex items-center gap-2">
+                                <XCircle className="h-3.5 w-3.5 text-rose-600" />
+                                <div>
+                                  <div>Not Visited (नहीं आए)</div>
+                                  <div className="text-[10px] text-muted-foreground">No-Show / मिस हुआ</div>
+                                </div>
+                              </div>
+                              {getEffectiveVisitOutcome(b) === 'not_visited' && (
+                                <Check className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleUpdateVisitOutcome(b.id, 'pending_visit')}
+                              className="flex items-center justify-between text-xs cursor-pointer py-1.5 px-2 rounded-md hover:bg-slate-100 text-slate-700"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-3.5 w-3.5 text-slate-500" />
+                                <div>
+                                  <div>Awaiting Visit</div>
+                                  <div className="text-[10px] text-muted-foreground">विज़िट अभी बाकी है</div>
+                                </div>
+                              </div>
+                              {getEffectiveVisitOutcome(b) === 'pending_visit' && (
+                                <Check className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+                              )}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
 
                       {/* Tags Column */}
@@ -2213,6 +2805,107 @@ export default function BookingsPage() {
                 </p>
               </div>
 
+              {/* Website Booking Sync & Patient Outcome Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Website Booking Status */}
+                <div className="p-3.5 rounded-lg border bg-muted/40 space-y-2">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Globe className="h-3.5 w-3.5 text-emerald-600" />
+                      Website Booking Status
+                    </span>
+                    <span className="text-[11px] font-normal text-muted-foreground">
+                      {selectedBooking.clinic_location || selectedBooking.city || 'Jaipur'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <div>
+                      {getEffectiveWebsiteStatus(selectedBooking) === 'done' ? (
+                        <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-semibold text-xs">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          <span>वेबसाइट पर दर्ज है (Done)</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold text-xs">
+                          <Clock className="h-4 w-4 text-amber-600" />
+                          <span>वेबसाइट पर दर्ज नहीं है (Pending)</span>
+                        </div>
+                      )}
+                    </div>
+                    {getEffectiveWebsiteStatus(selectedBooking) === 'done' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          handleUpdateWebsiteStatus(selectedBooking.id, 'pending', e);
+                          setSelectedBooking((prev) =>
+                            prev ? { ...prev, website_status: 'pending' } : null
+                          );
+                        }}
+                        className="h-7 text-xs px-2"
+                      >
+                        Mark as Pending
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={(e) => {
+                          handleUpdateWebsiteStatus(selectedBooking.id, 'done', e);
+                          setSelectedBooking((prev) =>
+                            prev ? { ...prev, website_status: 'done' } : null
+                          );
+                        }}
+                        className="h-7 text-xs px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                      >
+                        ✓ Mark Done on Website
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Patient Visit & Conversion Outcome */}
+                <div className="p-3.5 rounded-lg border bg-muted/40 space-y-2">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
+                      Patient Visit Outcome
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 pt-1">
+                    {[
+                      { key: 'converted', label: '✅ Converted', color: 'hover:bg-emerald-50 text-emerald-700' },
+                      { key: 'non_converted', label: '⚠️ Non Conv', color: 'hover:bg-amber-50 text-amber-700' },
+                      { key: 'not_visited', label: '❌ Not Visited', color: 'hover:bg-rose-50 text-rose-700' },
+                      { key: 'pending_visit', label: '🕒 Awaiting', color: 'hover:bg-slate-100 text-slate-700' },
+                    ].map((item) => {
+                      const active = getEffectiveVisitOutcome(selectedBooking) === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => {
+                            handleUpdateVisitOutcome(selectedBooking.id, item.key as PatientVisitOutcome);
+                            setSelectedBooking((prev) =>
+                              prev ? { ...prev, visit_outcome: item.key as PatientVisitOutcome } : null
+                            );
+                          }}
+                          className={cn(
+                            'px-2 py-1.5 rounded text-xs font-medium border text-center transition-all cursor-pointer',
+                            active
+                              ? 'bg-primary text-primary-foreground border-primary font-semibold shadow-2xs'
+                              : `bg-card border-border ${item.color}`
+                          )}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               {/* Meta Ad Referral if any */}
               {selectedBooking.ad_name && (
                 <div className="p-3 rounded-lg border bg-purple-50/50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900 space-y-1">
@@ -2395,6 +3088,321 @@ export default function BookingsPage() {
               disabled={deleting}
             >
               {deleting ? 'Deleting...' : 'Delete Booking'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create New Booking Modal */}
+      <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Plus className="h-5 w-5 text-emerald-600" />
+              नई बुकिंग दर्ज करें (Create New Booking)
+            </DialogTitle>
+            <DialogDescription>
+              मरीज का विवरण, लोकेशन, कंसल्टेशन मोड और वेबसाइट स्टेटस सीधे CRM में दर्ज करें।
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            {/* Patient Name & Phone */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">
+                  Patient Name (मरीज का नाम) <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  value={newPatientName}
+                  onChange={(e) => setNewPatientName(e.target.value)}
+                  placeholder="e.g. सुनीता शर्मा"
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">
+                  Mobile Number (फ़ोन नंबर) <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="e.g. 9876543210"
+                  className="h-9 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Consultation Mode */}
+            <div className="space-y-1.5">
+              <label className="font-semibold text-foreground">
+                Consultation Mode (कंसल्टेशन का प्रकार)
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewConsultationType('clinic_visit')}
+                  className={cn(
+                    'p-2.5 rounded-lg border flex items-center gap-2 text-left transition-all cursor-pointer',
+                    newConsultationType === 'clinic_visit'
+                      ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-semibold ring-1 ring-amber-500'
+                      : 'border-border hover:bg-muted/50 text-muted-foreground'
+                  )}
+                >
+                  <Building2 className="h-4 w-4 text-amber-600 shrink-0" />
+                  <div>
+                    <div className="text-xs font-semibold">🏥 Clinic Visit</div>
+                    <div className="text-[10px] text-muted-foreground">क्लीनिक पर मिलना</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNewConsultationType('video_consultation')}
+                  className={cn(
+                    'p-2.5 rounded-lg border flex items-center gap-2 text-left transition-all cursor-pointer',
+                    newConsultationType === 'video_consultation'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 font-semibold ring-1 ring-blue-500'
+                      : 'border-border hover:bg-muted/50 text-muted-foreground'
+                  )}
+                >
+                  <Video className="h-4 w-4 text-blue-600 shrink-0" />
+                  <div>
+                    <div className="text-xs font-semibold">📹 Video Call</div>
+                    <div className="text-[10px] text-muted-foreground">ऑनलाइन डॉक्टर कंसल्ट</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* City / Clinic Location */}
+            <div className="space-y-1.5">
+              <label className="font-semibold text-foreground">
+                Clinic Location / City (शहर / क्लीनिक शाखा)
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {['Jaipur', 'Delhi', 'Lucknow', 'Amritsar', 'Ludhiana', 'Chandigarh', 'Indore', 'Patna', 'Rewari'].map(
+                  (city) => (
+                    <button
+                      key={city}
+                      type="button"
+                      onClick={() => {
+                        setNewCity(city);
+                        setNewClinicLocation(city);
+                      }}
+                      className={cn(
+                        'px-2 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer',
+                        newCity.toLowerCase() === city.toLowerCase()
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-muted/40 hover:bg-muted border-border text-foreground'
+                      )}
+                    >
+                      {city}
+                    </button>
+                  )
+                )}
+              </div>
+              <Input
+                value={newCity}
+                onChange={(e) => {
+                  setNewCity(e.target.value);
+                  setNewClinicLocation(e.target.value);
+                }}
+                placeholder="Or type custom city..."
+                className="h-8 text-xs"
+              />
+            </div>
+
+            {/* Preferred Schedule (Date & Time) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Preferred Date (अपॉइंटमेंट तारीख)</label>
+                <div className="flex gap-1 mb-1">
+                  <button
+                    type="button"
+                    onClick={() => setNewPreferredDate(getQuickDate(0))}
+                    className="px-1.5 py-0.5 text-[10px] rounded bg-muted hover:bg-muted/80 text-foreground border border-border cursor-pointer"
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewPreferredDate(getQuickDate(1))}
+                    className="px-1.5 py-0.5 text-[10px] rounded bg-muted hover:bg-muted/80 text-foreground border border-border cursor-pointer"
+                  >
+                    Tomorrow
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewPreferredDate(getQuickDate(2))}
+                    className="px-1.5 py-0.5 text-[10px] rounded bg-muted hover:bg-muted/80 text-foreground border border-border cursor-pointer"
+                  >
+                    +2 Days
+                  </button>
+                </div>
+                <Input
+                  value={newPreferredDate}
+                  onChange={(e) => setNewPreferredDate(e.target.value)}
+                  placeholder="e.g. 21 Nov 2026"
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Preferred Time (समय)</label>
+                <div className="flex gap-1 mb-1">
+                  {['11:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'].map((slot) => (
+                    <button
+                      key={slot}
+                      type="button"
+                      onClick={() => setNewPreferredTime(slot)}
+                      className={cn(
+                        'px-1.5 py-0.5 text-[10px] rounded border transition-colors cursor-pointer',
+                        newPreferredTime === slot
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-muted hover:bg-muted/80 border-border text-foreground'
+                      )}
+                    >
+                      {slot}
+                    </button>
+                  ))}
+                </div>
+                <Input
+                  value={newPreferredTime}
+                  onChange={(e) => setNewPreferredTime(e.target.value)}
+                  placeholder="e.g. 11:30 AM"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Health Concern */}
+            <div className="space-y-1.5">
+              <label className="font-semibold text-foreground">Health Concern (समस्या / तकलीफ)</label>
+              <div className="flex flex-wrap gap-1 mb-1">
+                {[
+                  'Infertility / गर्भधारण समस्या',
+                  'Tubal Blockage (फेलोपियन ट्यूब)',
+                  'PCOD / PCOS',
+                  'White Discharge (सफेद पानी)',
+                  'Irregular Periods',
+                  'Low AMH / Egg Quality',
+                  'Male Infertility / Nil Sperm',
+                ].map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => setNewHealthConcern(chip)}
+                    className={cn(
+                      'px-2 py-0.5 text-[10px] rounded-md border transition-colors cursor-pointer',
+                      newHealthConcern === chip
+                        ? 'bg-purple-100 text-purple-900 border-purple-300 font-medium'
+                        : 'bg-muted/40 hover:bg-muted border-border text-muted-foreground'
+                    )}
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+              <Input
+                value={newHealthConcern}
+                onChange={(e) => setNewHealthConcern(e.target.value)}
+                placeholder="Type patient's condition or disease..."
+                className="h-8 text-xs"
+              />
+            </div>
+
+            {/* Website Status & Patient Visit Outcome */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/20">
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground flex items-center gap-1">
+                  <Globe className="h-3.5 w-3.5 text-emerald-600" />
+                  Website Status (वेबसाइट पर दर्ज)
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setNewWebsiteStatus('pending')}
+                    className={cn(
+                      'p-2 rounded border text-center transition-all cursor-pointer text-xs',
+                      newWebsiteStatus === 'pending'
+                        ? 'border-amber-500 bg-amber-50 text-amber-900 font-semibold'
+                        : 'border-border text-muted-foreground hover:bg-muted'
+                    )}
+                  >
+                    ⏳ Pending
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewWebsiteStatus('done')}
+                    className={cn(
+                      'p-2 rounded border text-center transition-all cursor-pointer text-xs',
+                      newWebsiteStatus === 'done'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-900 font-semibold'
+                        : 'border-border text-muted-foreground hover:bg-muted'
+                    )}
+                  >
+                    🌐 Done
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground flex items-center gap-1">
+                  <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  Visit Outcome (विज़िट परिणाम)
+                </label>
+                <select
+                  value={newVisitOutcome}
+                  onChange={(e) => setNewVisitOutcome(e.target.value as PatientVisitOutcome)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:outline-hidden"
+                >
+                  <option value="pending_visit">🕒 Awaiting Visit (विज़िट बाकी है)</option>
+                  <option value="converted">✅ Converted (कन्वर्जन हुआ)</option>
+                  <option value="non_converted">⚠️ Non Converted (आए पर दवा नहीं ली)</option>
+                  <option value="not_visited">❌ Not Visited (नहीं आए / No-Show)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <label className="font-semibold text-foreground">Follow-up Notes (अतिरिक्त टिप्पणी)</label>
+              <Textarea
+                rows={2}
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                placeholder="Add any special instructions or doctor preference..."
+                className="text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateModalOpen(false)}
+              disabled={creatingBooking}
+            >
+              रद्द करें
+            </Button>
+            <Button
+              onClick={handleCreateBooking}
+              disabled={creatingBooking || !newPatientName.trim() || !newPhone.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5"
+            >
+              {creatingBooking ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  बुकिंग दर्ज हो रही है...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  बुकिंग सुरक्षित करें (Save Booking)
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

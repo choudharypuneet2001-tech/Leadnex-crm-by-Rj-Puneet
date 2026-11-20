@@ -136,6 +136,8 @@ export interface Contact {
 
 export type BookingStatus = 'confirmed' | 'completed' | 'cancelled';
 export type ConsultationType = 'clinic_visit' | 'video_consultation';
+export type WebsiteBookingStatus = 'pending' | 'done';
+export type PatientVisitOutcome = 'pending_visit' | 'converted' | 'non_converted' | 'not_visited';
 
 export interface Booking {
   id: string;
@@ -155,6 +157,8 @@ export interface Booking {
   ad_id?: string | null;
   status: BookingStatus;
   notes?: string | null;
+  website_status?: WebsiteBookingStatus | string;
+  visit_outcome?: PatientVisitOutcome | string;
   created_at: string;
   updated_at: string;
   contact?: Contact | null;
