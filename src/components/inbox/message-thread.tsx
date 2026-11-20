@@ -28,12 +28,23 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Sparkles,
+  Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AiPitchDialog } from "./ai-pitch-dialog";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { isContactBlocked } from "@/lib/contacts/block-service";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -203,6 +214,70 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+
+  // Block contact states
+  const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [unblockModalOpen, setUnblockModalOpen] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [blockingLoading, setBlockingLoading] = useState(false);
+  const [contactBlockedLocal, setContactBlockedLocal] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setContactBlockedLocal(null);
+  }, [contact?.id]);
+
+  const isBlocked = useMemo(() => {
+    if (contactBlockedLocal !== null) return contactBlockedLocal;
+    return isContactBlocked(contact);
+  }, [contactBlockedLocal, contact]);
+
+  const handleBlockContact = async () => {
+    if (!contact?.id) return;
+    try {
+      setBlockingLoading(true);
+      const res = await fetch(`/api/contacts/${contact.id}/block`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'block', reason: blockReason }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to block contact');
+
+      setContactBlockedLocal(true);
+      setBlockModalOpen(false);
+      setBlockReason('');
+      if (conversation?.id) {
+        onStatusChange(conversation.id, 'closed');
+      }
+      toast.success('Patient ko block list mein add kar diya gaya hai. Inbound messages band ho gaye.');
+    } catch (err: any) {
+      toast.error(err.message || 'Block karne mein samasya aayi');
+    } finally {
+      setBlockingLoading(false);
+    }
+  };
+
+  const handleUnblockContact = async () => {
+    if (!contact?.id) return;
+    try {
+      setBlockingLoading(true);
+      const res = await fetch(`/api/contacts/${contact.id}/block`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'unblock' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to unblock contact');
+
+      setContactBlockedLocal(false);
+      setUnblockModalOpen(false);
+      toast.success('Patient ko block list se unblock kar diya gaya hai.');
+    } catch (err: any) {
+      toast.error(err.message || 'Unblock karne mein samasya aayi');
+    } finally {
+      setBlockingLoading(false);
+    }
+  };
   // Which attachment the media viewer is showing. Lives here rather than in
   // the bubble so the viewer can page through every image/video in the
   // thread (issue #373). Paired with the conversation it belongs to and read
@@ -969,6 +1044,31 @@ export function MessageThread({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Block / Unblock Button */}
+          {isBlocked ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setUnblockModalOpen(true)}
+              className="h-7 px-2 text-xs gap-1.5 font-medium bg-rose-600 hover:bg-rose-700 text-white shadow-2xs"
+              title="Patient is currently blocked. Click to unblock."
+            >
+              <Ban className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Blocked</span>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBlockModalOpen(true)}
+              className="h-7 px-2 text-xs gap-1.5 font-medium border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/40 shadow-2xs"
+              title="Block this contact from sending future messages"
+            >
+              <Ban className="h-3.5 w-3.5 text-rose-500" />
+              <span className="hidden sm:inline">Block Patient</span>
+            </Button>
+          )}
+
           {/* AI Pitch Advisor Button */}
           <Button
             variant="outline"
@@ -1215,17 +1315,39 @@ export function MessageThread({
         }}
       />
 
-      {/* Composer */}
-      <MessageComposer
-        conversationId={conversation.id}
-        sessionExpired={sessionInfo.expired}
-        onSend={handleSend}
-        onSendMedia={handleSendMedia}
-        onSendInteractive={handleSendInteractive}
-        onOpenTemplates={handleOpenTemplates}
-        replyTo={replyTo}
-        onClearReply={() => setReplyTo(null)}
-      />
+      {/* Composer or Blocked Banner */}
+      {isBlocked ? (
+        <div className="p-4 bg-rose-50/90 dark:bg-rose-950/40 border-t border-rose-200 dark:border-rose-900/60 flex flex-wrap items-center justify-between gap-3 text-xs text-rose-900 dark:text-rose-200">
+          <div className="flex items-center gap-2.5">
+            <Ban className="h-5 w-5 text-rose-600 shrink-0" />
+            <div>
+              <div className="font-semibold text-sm">Yeh Patient Block List Mein Hai (Blocked)</div>
+              <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                Inka koi bhi naya WhatsApp message yahan receive nahi hoga aur AI auto-replies band hain. Message bhejne ke liye pehle unblock karein.
+              </div>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setUnblockModalOpen(true)}
+            className="h-8 px-3 text-xs border-rose-300 bg-white dark:bg-rose-900 text-rose-700 dark:text-rose-200 hover:bg-rose-100 font-semibold"
+          >
+            Unblock Patient
+          </Button>
+        </div>
+      ) : (
+        <MessageComposer
+          conversationId={conversation.id}
+          sessionExpired={sessionInfo.expired}
+          onSend={handleSend}
+          onSendMedia={handleSendMedia}
+          onSendInteractive={handleSendInteractive}
+          onOpenTemplates={handleOpenTemplates}
+          replyTo={replyTo}
+          onClearReply={() => setReplyTo(null)}
+        />
+      )}
 
       <TemplatePicker
         open={templateModalOpen}
@@ -1251,6 +1373,91 @@ export function MessageThread({
         contactId={contact?.id}
         patientName={displayName}
       />
+
+      {/* Block Confirmation Dialog */}
+      <Dialog open={blockModalOpen} onOpenChange={setBlockModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600">
+              <Ban className="h-5 w-5" />
+              Patient ko Block karein? (Block Contact)
+            </DialogTitle>
+            <DialogDescription>
+              Kya aap sach mein <strong>{displayName}</strong> ko block list mein daalna chahte hain?
+              <br />
+              Block hone ke baad <strong>inka koi bhi naya WhatsApp message aapke CRM mein nahi aayega</strong> aur AI bot ka response bhi turant band ho jayega.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Block karne ki wajah (Optional):
+            </label>
+            <Textarea
+              rows={2}
+              placeholder="e.g. Faltu messages bhej rahe hain, abusive, ya spam..."
+              value={blockReason}
+              onChange={(e) => setBlockReason(e.target.value)}
+              className="text-xs"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBlockModalOpen(false)}
+              disabled={blockingLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBlockContact}
+              disabled={blockingLoading}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-semibold gap-1.5"
+            >
+              <Ban className="h-4 w-4" />
+              {blockingLoading ? 'Blocking...' : 'Confirm Block (ब्लॉक करें)'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unblock Confirmation Dialog */}
+      <Dialog open={unblockModalOpen} onOpenChange={setUnblockModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <Check className="h-5 w-5 text-emerald-600" />
+              Patient ko Unblock karein?
+            </DialogTitle>
+            <DialogDescription>
+              Kya aap <strong>{displayName}</strong> ko block list se hatana chahte hain? Unblock karne ke baad inke aage aane wale WhatsApp messages normal tareeqe se inbox mein receive hone shuru ho jayenge.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setUnblockModalOpen(false)}
+              disabled={blockingLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleUnblockContact}
+              disabled={blockingLoading}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5"
+            >
+              <Check className="h-4 w-4" />
+              {blockingLoading ? 'Unblocking...' : 'Confirm Unblock (अनब्लॉक करें)'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

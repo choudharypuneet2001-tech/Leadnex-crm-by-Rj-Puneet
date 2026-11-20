@@ -18,6 +18,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { checkIfContactIsBlocked } from '@/lib/contacts/block-service'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -701,6 +702,15 @@ async function processMessage(
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+
+  // Drop inbound message if contact is blocked
+  const isBlocked = await checkIfContactIsBlocked(supabaseAdmin(), contactRecord.id, accountId)
+  if (isBlocked) {
+    console.log(
+      `[webhook] 🚫 Inbound message from blocked contact (${contactRecord.phone || contactRecord.id}) DROPPED.`
+    )
+    return
+  }
 
   // Capture Meta Click-to-WhatsApp (CTWA) Ad referral details on contact
   if (message.referral) {

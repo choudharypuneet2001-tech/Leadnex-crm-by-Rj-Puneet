@@ -67,6 +67,7 @@ import {
   Tag as TagIcon,
   Clock,
   Video,
+  Ban,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -394,8 +395,8 @@ export default function ContactsPage() {
     >
   >({});
 
-  // Booking status filter: 'all' | 'pending' | 'done'
-  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
+  // Booking status filter: 'all' | 'pending' | 'done' | 'blocked'
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'pending' | 'done' | 'blocked'>('all');
 
   // Follow-up Notes Modal state
   const [noteModalOpen, setNoteModalOpen] = useState(false);
@@ -635,12 +636,17 @@ export default function ContactsPage() {
   const bookingCounts = useMemo(() => {
     let done = 0;
     let pending = 0;
+    let blocked = 0;
     contacts.forEach((c) => {
+      const isBlocked = (contactTagsMap[c.id] || []).some((tid) =>
+        tagsMap[tid]?.name.toLowerCase().includes('blocked')
+      );
+      if (isBlocked) blocked++;
       if (contactBookingsMap[c.id]) done++;
       else pending++;
     });
-    return { done, pending, total: contacts.length };
-  }, [contacts, contactBookingsMap]);
+    return { done, pending, blocked, total: contacts.length };
+  }, [contacts, contactBookingsMap, contactTagsMap, tagsMap]);
 
   const displayedContacts = useMemo(() => {
     if (bookingStatusFilter === 'all') return contacts;
@@ -650,8 +656,41 @@ export default function ContactsPage() {
     if (bookingStatusFilter === 'pending') {
       return contacts.filter((c) => !contactBookingsMap[c.id]);
     }
+    if (bookingStatusFilter === 'blocked') {
+      return contacts.filter((c) =>
+        (contactTagsMap[c.id] || []).some((tid) =>
+          tagsMap[tid]?.name.toLowerCase().includes('blocked')
+        )
+      );
+    }
     return contacts;
-  }, [contacts, bookingStatusFilter, contactBookingsMap]);
+  }, [contacts, bookingStatusFilter, contactBookingsMap, contactTagsMap, tagsMap]);
+
+  const handleToggleBlockContact = async (contact: Contact, currentlyBlocked: boolean) => {
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}/block`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: currentlyBlocked ? 'unblock' : 'block',
+          reason: currentlyBlocked ? undefined : 'Blocked from Contacts list',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to update block status');
+      }
+      toast.success(
+        currentlyBlocked
+          ? `Patient ${contact.name || contact.phone || ''} unblock ho gaya`
+          : `Patient ${contact.name || contact.phone || ''} block ho gaya (ab koi naya message nahi aayega)`
+      );
+      fetchTags();
+      fetchContacts();
+    } catch (err: any) {
+      toast.error(err.message || 'Block action failed');
+    }
+  };
 
   const handleOpenInbox = async (contact: Contact) => {
     try {
@@ -1284,6 +1323,22 @@ export default function ContactsPage() {
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                 Booking Done ({bookingCounts.done})
               </Button>
+              <Button
+                type="button"
+                variant={bookingStatusFilter === 'blocked' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setBookingStatusFilter('blocked')}
+                className={cn(
+                  "h-8 text-xs px-2.5 gap-1.5 font-semibold transition-all cursor-pointer",
+                  bookingStatusFilter === 'blocked'
+                    ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30"
+                    : "text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-500/10"
+                )}
+                title="Show blocked patients who cannot message or be messaged"
+              >
+                <Ban className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                Blocked ({bookingCounts.blocked})
+              </Button>
             </div>
 
             <Popover>
@@ -1468,7 +1523,13 @@ export default function ContactsPage() {
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
                       {bookingStatusFilter !== 'all'
-                        ? `No contacts found with booking status: ${bookingStatusFilter === 'pending' ? 'Pending' : 'Done'}`
+                        ? `No contacts found with filter: ${
+                            bookingStatusFilter === 'pending'
+                              ? 'Booking Pending'
+                              : bookingStatusFilter === 'done'
+                              ? 'Booking Done'
+                              : 'Blocked'
+                          }`
                         : hasActiveFilters
                         ? t('noContactsMatch')
                         : t('noContactsYet')}
@@ -1504,23 +1565,37 @@ export default function ContactsPage() {
                     />
                   </TableCell>
                   <TableCell className="text-foreground font-medium">
-                    <div>
-                      <div>{contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}</div>
-                      <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-muted-foreground font-normal">
-                        {(contact.city || contact.company) && (
-                          <div className="flex items-center gap-1">
-                            <MapPin className="size-3 text-emerald-500 shrink-0" />
-                            <span>{contact.city || contact.company}</span>
+                    {(() => {
+                      const isBlocked = (contactTagsMap[contact.id] || []).some((tid) =>
+                        tagsMap[tid]?.name.toLowerCase().includes('blocked')
+                      );
+                      return (
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span>{contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}</span>
+                            {isBlocked && (
+                              <Badge variant="destructive" className="bg-rose-600 hover:bg-rose-600 text-white text-[10px] px-1.5 py-0 gap-1 font-semibold shrink-0">
+                                <Ban className="size-2.5" /> Blocked
+                              </Badge>
+                            )}
                           </div>
-                        )}
-                        {(contact.ad_name || contact.ad_id) && (
-                          <div className="lg:hidden inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium border border-blue-500/20 truncate max-w-[150px]">
-                            <Megaphone className="size-2.5 shrink-0" />
-                            <span className="truncate">{contact.ad_name || `Ad ${contact.ad_id}`}</span>
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-muted-foreground font-normal">
+                            {(contact.city || contact.company) && (
+                              <div className="flex items-center gap-1">
+                                <MapPin className="size-3 text-emerald-500 shrink-0" />
+                                <span>{contact.city || contact.company}</span>
+                              </div>
+                            )}
+                            {(contact.ad_name || contact.ad_id) && (
+                              <div className="lg:hidden inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium border border-blue-500/20 truncate max-w-[150px]">
+                                <Megaphone className="size-2.5 shrink-0" />
+                                <span className="truncate">{contact.ad_name || `Ad ${contact.ad_id}`}</span>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </div>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -1830,6 +1905,26 @@ export default function ContactsPage() {
                           <Pencil className="size-4" />
                           {t('editAction')}
                         </DropdownMenuItem>
+                        {(() => {
+                          const isBlocked = (contactTagsMap[contact.id] || []).some((tid) =>
+                            tagsMap[tid]?.name.toLowerCase().includes('blocked')
+                          );
+                          return (
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleBlockContact(contact, isBlocked);
+                              }}
+                              className={cn(
+                                "focus:bg-muted flex items-center gap-2 cursor-pointer font-medium",
+                                isBlocked ? "text-emerald-600 focus:text-emerald-700" : "text-rose-600 focus:text-rose-700"
+                              )}
+                            >
+                              <Ban className="size-4" />
+                              {isBlocked ? 'Unblock Patient (अनब्लॉक करें)' : 'Block Patient (ब्लॉक करें)'}
+                            </DropdownMenuItem>
+                          );
+                        })()}
                         <DropdownMenuSeparator className="bg-border" />
                         <DropdownMenuItem
                           variant="destructive"

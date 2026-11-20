@@ -41,6 +41,7 @@ import {
   LayoutTemplate,
   Megaphone,
   ExternalLink,
+  Ban,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
@@ -100,6 +101,55 @@ export function ContactDetailView({
   // Deals tab
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
+  const [blockingLoading, setBlockingLoading] = useState(false);
+
+  const isBlocked = contactTagIds.some((id) =>
+    allTags.find((t) => t.id === id)?.name.toLowerCase().includes('blocked')
+  );
+
+  async function handleBlock() {
+    if (!contactId) return;
+    try {
+      setBlockingLoading(true);
+      const res = await fetch(`/api/contacts/${contactId}/block`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'block' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to block contact');
+
+      await Promise.all([fetchTags(), fetchNotes()]);
+      onUpdated();
+      toast.success('Patient ko block list mein daal diya gaya hai.');
+    } catch (err: any) {
+      toast.error(err.message || 'Block karne mein samasya aayi');
+    } finally {
+      setBlockingLoading(false);
+    }
+  }
+
+  async function handleUnblock() {
+    if (!contactId) return;
+    try {
+      setBlockingLoading(true);
+      const res = await fetch(`/api/contacts/${contactId}/block`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'unblock' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to unblock contact');
+
+      await Promise.all([fetchTags(), fetchNotes()]);
+      onUpdated();
+      toast.success('Patient ko block list se unblock kar diya gaya hai.');
+    } catch (err: any) {
+      toast.error(err.message || 'Unblock karne mein samasya aayi');
+    } finally {
+      setBlockingLoading(false);
+    }
+  }
 
   const fetchContact = useCallback(async () => {
     if (!contactId) return;
@@ -412,9 +462,16 @@ export function ContactDetailView({
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <SheetTitle className="text-popover-foreground truncate">
-                    {contact.name || t('unnamed')}
-                  </SheetTitle>
+                  <div className="flex items-center gap-2">
+                    <SheetTitle className="text-popover-foreground truncate">
+                      {contact.name || t('unnamed')}
+                    </SheetTitle>
+                    {isBlocked && (
+                      <Badge variant="destructive" className="bg-rose-600 text-[10px] px-1.5 py-0 gap-1">
+                        <Ban className="size-2.5" /> Blocked
+                      </Badge>
+                    )}
+                  </div>
                   <SheetDescription className="text-muted-foreground text-xs mt-0.5">
                     {t('contactDetailsDesc')}
                   </SheetDescription>
@@ -456,7 +513,7 @@ export function ContactDetailView({
                   </div>
                 </div>
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex items-center justify-between gap-2">
                 <Button
                   size="sm"
                   onClick={() => setTemplatePickerOpen(true)}
@@ -470,6 +527,30 @@ export function ContactDetailView({
                   )}
                   {t('sendTemplateBtn')}
                 </Button>
+
+                {isBlocked ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleUnblock}
+                    disabled={blockingLoading}
+                    className="bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                  >
+                    <Ban className="size-3.5" />
+                    Unblock Patient
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleBlock}
+                    disabled={blockingLoading}
+                    className="border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 gap-1.5"
+                  >
+                    <Ban className="size-3.5 text-rose-500" />
+                    Block Contact
+                  </Button>
+                )}
               </div>
             </SheetHeader>
 

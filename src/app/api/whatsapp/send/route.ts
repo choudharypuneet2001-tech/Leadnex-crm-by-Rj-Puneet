@@ -11,6 +11,7 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
+import { checkIfContactIsBlocked } from '@/lib/contacts/block-service'
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -85,11 +86,12 @@ export async function POST(request: Request) {
     // contact so a business-initiated template send (Contact detail view)
     // reuses the shared send core below.
     let conversationId: string | null = null
+    let targetContactId: string | null = contact_id || null
 
     if (conversationIdInput) {
       const { data, error: convError } = await supabase
         .from('conversations')
-        .select('id')
+        .select('id, contact_id')
         .eq('id', conversationIdInput)
         .eq('account_id', accountId)
         .single()
@@ -101,6 +103,7 @@ export async function POST(request: Request) {
         )
       }
       conversationId = data.id
+      targetContactId = data.contact_id
     } else {
       // contact_id path: verify the contact is in this account first so a
       // caller can't open a conversation against someone else's contact.
@@ -131,6 +134,13 @@ export async function POST(request: Request) {
         )
       }
       conversationId = resolved
+    }
+
+    if (targetContactId && (await checkIfContactIsBlocked(supabase, targetContactId, accountId))) {
+      return NextResponse.json(
+        { error: 'Yeh patient block list mein hai. Message bhejne ke liye pehle unblock karein.' },
+        { status: 400 }
+      )
     }
 
     if (!conversationId) {
