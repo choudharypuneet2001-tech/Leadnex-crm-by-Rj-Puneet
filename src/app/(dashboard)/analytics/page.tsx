@@ -35,6 +35,8 @@ import {
   PlayCircle,
   Phone,
   Video,
+  Clock,
+  Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -98,6 +100,41 @@ const QUICK_CALL_TAGS = [
   { name: '🚫 Not Reachable', color: '#64748b' },
   { name: '❌ Not Interested', color: '#ef4444' },
 ];
+
+function formatLeadDateTime(dateStr?: string | null): string {
+  if (!dateStr) return 'N/A';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return 'N/A';
+
+  const now = new Date();
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  const y = new Date(now);
+  y.setDate(y.getDate() - 1);
+  const isYesterday =
+    date.getDate() === y.getDate() &&
+    date.getMonth() === y.getMonth() &&
+    date.getFullYear() === y.getFullYear();
+
+  const timeStr = date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  if (isToday) return `Today, ${timeStr}`;
+  if (isYesterday) return `Yesterday, ${timeStr}`;
+
+  const dateStrFormatted = date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  return `${dateStrFormatted}, ${timeStr}`;
+}
 
 export default function AnalyticsPage() {
   const router = useRouter();
@@ -297,16 +334,49 @@ export default function AnalyticsPage() {
   const fetchAnalytics = useCallback(async () => {
     try {
       setRefreshing(true);
-      const params = new URLSearchParams();
-      params.set('range', rangePreset);
-      if (rangePreset === 'custom') {
-        if (customFrom) params.set('from', new Date(customFrom).toISOString());
+
+      // Calculate exact local / IST date bounds in browser
+      let calculatedFrom: string | undefined = undefined;
+      let calculatedTo: string | undefined = undefined;
+
+      const now = new Date();
+      if (rangePreset === 'today') {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        calculatedFrom = start.toISOString();
+        calculatedTo = end.toISOString();
+      } else if (rangePreset === 'yesterday') {
+        const y = new Date(now);
+        y.setDate(y.getDate() - 1);
+        const start = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0, 0);
+        const end = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
+        calculatedFrom = start.toISOString();
+        calculatedTo = end.toISOString();
+      } else if (rangePreset === '7d') {
+        const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        calculatedFrom = start.toISOString();
+        calculatedTo = now.toISOString();
+      } else if (rangePreset === '30d') {
+        const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        calculatedFrom = start.toISOString();
+        calculatedTo = now.toISOString();
+      } else if (rangePreset === 'this_month') {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        calculatedFrom = start.toISOString();
+        calculatedTo = now.toISOString();
+      } else if (rangePreset === 'custom') {
+        if (customFrom) calculatedFrom = new Date(customFrom).toISOString();
         if (customTo) {
           const toDate = new Date(customTo);
           toDate.setHours(23, 59, 59, 999);
-          params.set('to', toDate.toISOString());
+          calculatedTo = toDate.toISOString();
         }
       }
+
+      const params = new URLSearchParams();
+      params.set('range', rangePreset);
+      if (calculatedFrom) params.set('from', calculatedFrom);
+      if (calculatedTo) params.set('to', calculatedTo);
       if (selectedAdFilter && selectedAdFilter !== 'all') {
         params.set('ad_name', selectedAdFilter);
       }
@@ -326,7 +396,7 @@ export default function AnalyticsPage() {
         console.warn('[analytics] API fetch failed, falling back to direct client query:', apiErr);
       }
 
-      // 2. Client-side fallback if API route returned error or failed
+      // 2. Client-side fallback if API route returned error, 401, or failed
       if (!summaryData) {
         let contactsData: any[] = [];
         let bookingsData: any[] = [];
@@ -353,7 +423,7 @@ export default function AnalyticsPage() {
         try {
           let convQuery = supabase
             .from('conversations')
-            .select('id, contact_id, last_message_text, last_message_at')
+            .select('id, contact_id, created_at, last_message_text, last_message_at')
             .order('last_message_at', { ascending: false });
           if (account?.id) convQuery = convQuery.eq('account_id', account.id);
           const convRes = await convQuery;
@@ -364,8 +434,8 @@ export default function AnalyticsPage() {
 
         const filter: DateRangeFilter = {
           preset: rangePreset,
-          from: customFrom ? new Date(customFrom).toISOString() : undefined,
-          to: customTo ? new Date(customTo).toISOString() : undefined,
+          from: calculatedFrom,
+          to: calculatedTo,
         };
 
         summaryData = computeAnalytics(
@@ -437,8 +507,8 @@ export default function AnalyticsPage() {
       'Booking Status',
       'Consultation Type',
       'Clinic Branch',
-      'Date & Time',
-      'Created At',
+      'First Message Date & Time',
+      'Created At ISO',
     ];
 
     const rows = summary.leads.map((l: AnalyticsLeadItem) => {
@@ -463,7 +533,8 @@ export default function AnalyticsPage() {
         `"${l.has_booking ? 'Booked' : 'Pending'}"`,
         `"${(l.consultation_type || '').replace(/"/g, '""')}"`,
         `"${(l.clinic_location || '').replace(/"/g, '""')}"`,
-        `"${l.created_at || ''}"`,
+        `"${formatLeadDateTime(l.first_message_at || l.created_at)}"`,
+        `"${l.first_message_at || l.created_at || ''}"`,
       ];
     });
 
@@ -1083,6 +1154,13 @@ export default function AnalyticsPage() {
                             <MapPin className="h-3 w-3" /> {lead.city}
                           </div>
                         )}
+                        <div
+                          className="text-[11px] text-slate-500 flex items-center gap-1 mt-1 font-sans"
+                          title="First message date & time"
+                        >
+                          <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span>{formatLeadDateTime(lead.first_message_at || lead.created_at)}</span>
+                        </div>
                         {lead.health_concern && (
                           <Badge variant="outline" className="text-[10px] mt-1 bg-purple-50 text-purple-700">
                             {lead.health_concern}

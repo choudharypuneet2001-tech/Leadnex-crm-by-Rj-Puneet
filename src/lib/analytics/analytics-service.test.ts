@@ -195,5 +195,33 @@ describe('analytics-service', () => {
       expect(summary.total_leads).toBe(1);
       expect(summary.leads[0].name).toBe('Sunita Sharma');
     });
+
+    it('tracks lead by first message date from conversation and records first_message_at', () => {
+      const convs = [
+        {
+          id: 'conv1',
+          contact_id: 'c1',
+          created_at: '2026-11-20T08:30:00.000Z',
+          last_message_text: 'Hi, mujhe consultation chahiye',
+          last_message_at: '2026-11-20T08:30:00.000Z',
+        },
+      ];
+      const summary = computeAnalytics(mockContacts, mockBookings, { preset: 'all' }, undefined, convs);
+      const lead1 = summary.leads.find((l) => l.id === 'c1');
+      expect(lead1).toBeDefined();
+      expect(lead1?.first_message_at).toBe('2026-11-20T08:30:00.000Z');
+    });
+
+    it('resolves date ranges using IST boundaries for today and yesterday', () => {
+      const todayRange = resolveDateRange({ preset: 'today' });
+      expect(todayRange.from).not.toBeNull();
+      expect(todayRange.to).not.toBeNull();
+      expect(todayRange.label).toBe('Today');
+
+      const yesterdayRange = resolveDateRange({ preset: 'yesterday' });
+      expect(yesterdayRange.from).not.toBeNull();
+      expect(yesterdayRange.to).not.toBeNull();
+      expect(yesterdayRange.label).toBe('Yesterday');
+    });
   });
 });

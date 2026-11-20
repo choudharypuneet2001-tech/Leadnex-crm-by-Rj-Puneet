@@ -22,7 +22,14 @@ export async function GET(request: Request) {
     try {
       ctx = await getCurrentAccount();
     } catch (authErr) {
-      console.warn('[analytics API] getCurrentAccount warning (proceeding with fallback):', authErr);
+      console.warn('[analytics API] getCurrentAccount warning:', authErr);
+    }
+
+    if (!ctx?.supabase) {
+      return NextResponse.json(
+        { error: 'Unauthorized or session missing' },
+        { status: 401 }
+      );
     }
 
     let contactsData: any[] = [];
@@ -85,7 +92,7 @@ export async function GET(request: Request) {
       try {
         let convQuery = ctx.supabase
           .from('conversations')
-          .select('id, contact_id, last_message_text, last_message_at')
+          .select('id, contact_id, created_at, last_message_text, last_message_at')
           .order('last_message_at', { ascending: false });
 
         if (ctx.accountId) {
@@ -98,7 +105,7 @@ export async function GET(request: Request) {
         } else {
           const retryRes = await ctx.supabase
             .from('conversations')
-            .select('id, contact_id, last_message_text, last_message_at')
+            .select('id, contact_id, created_at, last_message_text, last_message_at')
             .order('last_message_at', { ascending: false });
           if (retryRes.data) convData = retryRes.data;
         }
@@ -112,6 +119,7 @@ export async function GET(request: Request) {
     const conversations = (convData || []) as {
       id: string;
       contact_id: string;
+      created_at?: string;
       last_message_text?: string | null;
       last_message_at?: string | null;
     }[];

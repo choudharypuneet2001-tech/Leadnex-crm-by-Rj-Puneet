@@ -95,6 +95,7 @@ export interface LeadAiAnalysis {
 export interface AnalyticsLeadItem {
   id: string;
   created_at: string;
+  first_message_at?: string;
   name: string;
   phone: string;
   city: string | null;

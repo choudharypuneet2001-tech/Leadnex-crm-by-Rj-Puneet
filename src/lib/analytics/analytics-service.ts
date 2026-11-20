@@ -275,50 +275,73 @@ export function detectLeadGender(name?: string | null): 'female' | 'male' | 'unk
 
 /**
  * Resolves Date Range Filter into ISO start & end bounds.
+ * Defaults to Indian Standard Time (IST, UTC+5:30) for daily calendar alignment.
  */
 export function resolveDateRange(filter: DateRangeFilter): {
   from: Date | null;
   to: Date | null;
   label: string;
 } {
-  const now = new Date();
+  // 1. If explicit ISO bounds provided (e.g. from client browser)
+  if (filter.from || filter.to) {
+    const from = filter.from ? new Date(filter.from) : null;
+    const to = filter.to ? new Date(filter.to) : new Date();
+    const labelMap: Record<string, string> = {
+      today: 'Today',
+      yesterday: 'Yesterday',
+      '7d': 'Last 7 Days',
+      '30d': 'Last 30 Days',
+      this_month: 'This Month',
+      all: 'All Time',
+    };
+    return {
+      from,
+      to,
+      label: labelMap[filter.preset] || 'Custom Range',
+    };
+  }
+
+  // 2. IST (UTC+5:30) Calendar Day bounds
+  const nowMs = Date.now();
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
 
   switch (filter.preset) {
     case 'today': {
-      const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      return { from, to, label: 'आज (Today)' };
+      const istDate = new Date(nowMs + istOffsetMs);
+      const y = istDate.getUTCFullYear();
+      const m = istDate.getUTCMonth();
+      const d = istDate.getUTCDate();
+      const from = new Date(Date.UTC(y, m, d, 0, 0, 0, 0) - istOffsetMs);
+      const to = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - istOffsetMs);
+      return { from, to, label: 'Today' };
     }
     case 'yesterday': {
-      const y = new Date(now);
-      y.setDate(y.getDate() - 1);
-      const from = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0, 0);
-      const to = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
-      return { from, to, label: 'कल (Yesterday)' };
+      const istDate = new Date(nowMs + istOffsetMs - 24 * 60 * 60 * 1000);
+      const y = istDate.getUTCFullYear();
+      const m = istDate.getUTCMonth();
+      const d = istDate.getUTCDate();
+      const from = new Date(Date.UTC(y, m, d, 0, 0, 0, 0) - istOffsetMs);
+      const to = new Date(Date.UTC(y, m, d, 23, 59, 59, 999) - istOffsetMs);
+      return { from, to, label: 'Yesterday' };
     }
     case '7d': {
-      const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      return { from, to: now, label: 'पिछले 7 दिन (Last 7 Days)' };
+      const from = new Date(nowMs - 7 * 24 * 60 * 60 * 1000);
+      return { from, to: new Date(nowMs), label: 'Last 7 Days' };
     }
     case '30d': {
-      const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      return { from, to: now, label: 'पिछले 30 दिन (Last 30 Days)' };
+      const from = new Date(nowMs - 30 * 24 * 60 * 60 * 1000);
+      return { from, to: new Date(nowMs), label: 'Last 30 Days' };
     }
     case 'this_month': {
-      const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      return { from, to: now, label: 'इस महीने (This Month)' };
-    }
-    case 'custom': {
-      const from = filter.from ? new Date(filter.from) : null;
-      const to = filter.to ? new Date(filter.to) : now;
-      const label = from
-        ? `${from.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - ${to.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
-        : 'कस्टम रेंज';
-      return { from, to, label };
+      const istDate = new Date(nowMs + istOffsetMs);
+      const y = istDate.getUTCFullYear();
+      const m = istDate.getUTCMonth();
+      const from = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0) - istOffsetMs);
+      return { from, to: new Date(nowMs), label: 'This Month' };
     }
     case 'all':
     default:
-      return { from: null, to: null, label: 'सब (All Time)' };
+      return { from: null, to: null, label: 'All Time' };
   }
 }
 
@@ -365,9 +388,43 @@ export function computeAnalytics(
   bookings: Booking[],
   filter: DateRangeFilter,
   selectedAdFilter?: string | null,
-  conversations?: { id: string; contact_id: string; last_message_text?: string | null; last_message_at?: string | null }[]
+  conversations?: {
+    id: string;
+    contact_id: string;
+    created_at?: string;
+    last_message_text?: string | null;
+    last_message_at?: string | null;
+  }[]
 ): AnalyticsSummary {
   const { from, to, label: date_range_label } = resolveDateRange(filter);
+
+  // Map conversations by contact_id first so we can track first message date & time
+  const convByContactId = new Map<
+    string,
+    {
+      id: string;
+      contact_id: string;
+      created_at?: string;
+      last_message_text?: string | null;
+      last_message_at?: string | null;
+    }
+  >();
+  if (conversations) {
+    for (const conv of conversations) {
+      if (conv.contact_id) {
+        convByContactId.set(conv.contact_id, conv);
+      }
+    }
+  }
+
+  // Determine exact timestamp when lead first initiated contact / messaged
+  const getLeadFirstMessageAt = (c: Contact): string => {
+    const conv = convByContactId.get(c.id);
+    if (conv?.created_at && c.created_at) {
+      return new Date(conv.created_at) < new Date(c.created_at) ? conv.created_at : c.created_at;
+    }
+    return conv?.created_at || c.created_at;
+  };
 
   // 1. Filter contacts & bookings by Date Range
   const isWithinRange = (dateStr: string) => {
@@ -377,18 +434,8 @@ export function computeAnalytics(
     return true;
   };
 
-  const filteredContacts = contacts.filter((c) => isWithinRange(c.created_at));
+  const filteredContacts = contacts.filter((c) => isWithinRange(getLeadFirstMessageAt(c)));
   const filteredBookings = bookings.filter((b) => isWithinRange(b.created_at));
-
-  // Map conversations by contact_id
-  const convByContactId = new Map<string, { id: string; contact_id: string; last_message_text?: string | null; last_message_at?: string | null }>();
-  if (conversations) {
-    for (const conv of conversations) {
-      if (conv.contact_id) {
-        convByContactId.set(conv.contact_id, conv);
-      }
-    }
-  }
 
   // Map bookings by contact_id and by normalized phone
   const bookingByContactId = new Map<string, Booking>();
@@ -439,9 +486,12 @@ export function computeAnalytics(
       lastMessageText: conv?.last_message_text || matchingBooking?.notes || null,
     });
 
+    const firstMessageAt = getLeadFirstMessageAt(c);
+
     leadsMap.set(c.id, {
       id: c.id,
-      created_at: c.created_at,
+      created_at: firstMessageAt,
+      first_message_at: firstMessageAt,
       name: effectiveName,
       phone: c.phone,
       city: effectiveCity,
@@ -511,6 +561,7 @@ export function computeAnalytics(
       leadsMap.set(b.id, {
         id: b.id,
         created_at: b.created_at,
+        first_message_at: b.created_at,
         name: b.patient_name,
         phone: b.phone,
         city: b.city || null,
@@ -532,9 +583,11 @@ export function computeAnalytics(
     }
   }
 
-  let allLeads = Array.from(leadsMap.values()).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  let allLeads = Array.from(leadsMap.values()).sort((a, b) => {
+    const timeA = new Date(a.first_message_at || a.created_at).getTime();
+    const timeB = new Date(b.first_message_at || b.created_at).getTime();
+    return timeB - timeA;
+  });
 
   // Optional Ad filter
   if (selectedAdFilter && selectedAdFilter !== 'all') {
