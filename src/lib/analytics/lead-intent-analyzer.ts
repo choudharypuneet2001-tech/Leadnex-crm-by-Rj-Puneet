@@ -269,7 +269,7 @@ export function analyzeLeadIntent(input: LeadAnalysisInput): LeadAiAnalysis {
     const feesPitch =
       `Call par politely samjhayein:\n` +
       `"Namaste ji! Main Gynocci doctor panel se baat kar rahi hoon. Sir/Ma'am, zaroori nahi hai ki aapko koi mehenga treatment ya medicine leni pade. Bahut baar sirf right diet plan aur lifestyle correction se hi issue solve ho jata hai.\n\n` +
-      `Isliye aap treatment ya cost ki chinta na karein—pehle hamare senior doctors se consult karke apni reports discuss karein. Hamare special offer mein sirf ₹499 mein lifetime consultation milta hai jisme aage bhi sabhi follow-ups free rahenge.\n\n` +
+      `Isliye aap treatment ya cost ki chinta na karein—pehle hamare senior doctors se consult karke apni reports discuss karein. Hamare yahan doctor consultation bilkul free hai! Sirf ₹499 mein one-time registration karwake aap lifetime free consultation offer ka fayda utha sakte hain, jisme aage bhi sabhi follow-ups bilkul free rahenge.\n\n` +
       `Aur agar aap clinic aakar doctor se milna chahein toh online koi fee nahi deni, sab clinic par hi hoga. Kya main aapka appointment schedule kar doon?"`;
 
     return {
@@ -339,7 +339,7 @@ export function analyzeLeadIntent(input: LeadAnalysisInput): LeadAiAnalysis {
       `Call par empathy ke saath batayein:\n` +
       `"Namaste ji! Aapne WhatsApp par ${effectiveConcernName} ke baare mein bataya tha. Hum samajh sakte hain ki aap pareshan hain. Actually, ${diseaseCause}\n\n` +
       `Ghabraiye nahi, ${diseaseTreatment} Kai baar sirf right diet plan se bhi problem solve ho jati hai.\n\n` +
-      `Hamari senior doctors ki team aapki reports study karke personalized guidance degi. Sirf ₹499 mein lifetime consultation available hai. Kya main kal ke liye aapki video call ya clinic appointment book kar doon?"`;
+      `Hamari senior doctors ki team aapki reports study karke personalized guidance degi. Hamare yahan doctor consultation bilkul free hai, sirf ₹499 mein lifetime consultation offer available hai. Kya main kal ke liye aapki video call ya clinic appointment book kar doon?"`;
 
     return {
       intent_stage: 'ready_to_convert',

@@ -596,8 +596,8 @@ export async function dispatchInboundToAiReply(
       /https?:\/\/(?:www\.)?gynocci\.com\/pay/i.test(replyText)
     ) {
       replyText = isEnglish
-        ? 'Our senior Gynocci team will connect with you shortly to share the official payment details (QR Code / Scanner / Payment Link) and guide you on how your doctor consultation will take place. 🙏'
-        : 'कंसल्टेशन फीस (₹499) के सुरक्षित भुगतान के लिए हमारी सीनियर Gynocci टीम जल्द ही (कुछ ही देर में) आपसे संपर्क करके आपको ऑफिशियल Payment QR Code / Link भेज देगी और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। कृपया थोड़ा सा इंतज़ार करें। 🙏'
+        ? 'Doctor consultation is completely FREE! For your one-time registration of ₹499 (which unlocks lifetime free consultations), our senior Gynocci team will connect with you shortly to share the official payment details (QR Code / Scanner / Payment Link) and guide you on how your doctor consultation will take place. 🙏'
+        : 'कंसल्टेशन फीस (₹499) के सुरक्षित भुगतान और रजिस्ट्रेशन के लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपको ऑफिशियल Payment QR Code / Link भेज देगी — हमारे यहाँ डॉक्टर के साथ कंसल्टेशन बिल्कुल फ्री है और मात्र ₹499 में लाइफटाइम कंसल्टेशन फ्री ऑफर मिलता है। कृपया थोड़ा सा इंतज़ार करें। 🙏'
     }
 
     // Never transliterate Latin names into Hindi Devanagari in replies
@@ -673,13 +673,13 @@ export async function dispatchInboundToAiReply(
         'हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके आपके क्लिनिक अपॉइंटमेंट की पूरी तैयारी सुनिश्चित करेगी। 🙏'
       : 'आपकी डिटेल्स हमारी 5 सीनियर डॉक्टर्स की विशेषज्ञ पैनल टीम के साथ शेयर कर दी गई हैं। 🙏\n' +
         '---\n' +
-        'हमारी डॉक्टर्स टीम आपकी बातचीत और रिपोर्ट्स का गहराई से अध्ययन कर रही है ताकि डॉक्टर से मिलते समय आपका कोई भी डाउट अधूरा न रहे और आप तसल्ली से पूरी समस्या समझ सकें।\n' +
+        'हमारी डॉक्टर्स टीम आपकी बातचीत और रिपोर्ट्स का गहराई से अध्ययन कर रही है ताकि डॉक्टर से मिलते समय आपका कोई भी डाउट अधूरा न रहे और आप तसल्ली से पूरी बात समझ सकें।\n' +
         '---\n' +
-        'हमारी सामान्य कंसल्टेशन फीस ₹1,000 और रजिस्ट्रेशन फीस ₹500 है। लेकिन अभी Gynocci के एक स्पेशल ऑफर में आपको सिर्फ ₹499 पे करने होंगे, और लाइफटाइम कंसल्टेशन फ्री रहेगा जब तक आपका इलाज हमारे साथ चलता रहेगा। ✨\n' +
+        'हमारी डॉक्टर के साथ कंसल्टेशन बिल्कुल फ्री (Free) है! ✨ हमारे यहाँ आप सिर्फ ₹499 में वन-टाइम रजिस्ट्रेशन करवाकर लाइफटाइम फ्री कंसल्टेशन ऑफर का पूरा फायदा उठा सकते हैं — यानी जब तक आपका इलाज हमारे साथ चलता रहेगा, डॉक्टर से आपके सभी परामर्श और फॉलो-अप्स बिल्कुल मुफ्त रहेंगे। 🌸\n' +
         '---\n' +
         'फीस से कहीं ज्यादा मायने आपकी सेहत रखती है — समस्या के आगे बढ़ने से पहले समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है।\n' +
         '---\n' +
-        'कंसल्टेशन फीस का भुगतान कंसल्टेशन शुरू होने से पहले करना होगा, जिसके लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके पेमेंट QR Code / Link और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। 🙏'
+        'रजिस्ट्रेशन के सुरक्षित भुगतान के लिए हमारी सीनियर Gynocci टीम जल्द ही आपसे संपर्क करके ऑफिशियल पेमेंट QR Code / Link और डॉक्टर से कंसल्टेशन की पूरी प्रक्रिया समझा देगी। 🙏'
 
     const emotionalFeesEnglish = isClinicVisit
       ? 'Your details have been shared with our Panel of 5 Senior Doctors. 🙏\n' +
@@ -688,9 +688,9 @@ export async function dispatchInboundToAiReply(
         '---\nOur senior Gynocci team will connect with you shortly to coordinate your clinic appointment.'
       : 'Your details have been shared with our Panel of 5 Senior Doctors. 🙏\n' +
         '---\nOur medical board is thoroughly reviewing your case history so that during your 45-minute consultation, every doubt is completely resolved without any rush!\n' +
-        '---\nOur regular consultation fee is ₹1,000 and registration fee is ₹500. Under Gynocci\'s special offer, you only need to pay ₹499, and your consultations remain free for a lifetime as long as your treatment continues with us. ✨\n' +
-        '---\nYour health matters far more than fees — addressing and resolving the root cause in time is our highest priority.\n' +
-        '---\nPlease note that consultation fees need to be paid before the consultation begins. Our senior Gynocci team will connect with you shortly to share the payment details (QR Code / Link) and explain the consultation process. 🙏'
+        '---\nDoctor consultation at Gynocci is completely FREE! ✨ With a simple one-time registration of just ₹499, you unlock our Lifetime Free Consultation offer — meaning all your doctor consultations and follow-ups remain 100% free for as long as your treatment continues with us. 🌸\n' +
+        '---\nYour health matters far more than anything else — addressing and resolving the root cause in time is our highest priority.\n' +
+        '---\nOur senior Gynocci team will connect with you shortly to share the registration payment details (QR Code / Link) and explain the consultation process. 🙏'
 
     // Replace old long paragraphs with crisp, separated WhatsApp bubbles
     replyText = replyText.replace(
@@ -701,10 +701,55 @@ export async function dispatchInboundToAiReply(
       /आपकी समस्या हमारे लिए अत्यंत महत्वपूर्ण है। आपकी समस्या को जड़ से ठीक करना हमारी पहली प्राथमिकता है। हमारी सीनियर एक्सपर्ट टीम आपसे आगे की जानकारी और परामर्श के लिए जल्द ही संपर्क करेगी। ✨/g,
       emotionalFeesHindi,
     )
+
+    // Replace any legacy ₹1000 / ₹500 fee mentions with the clean new message
+    replyText = replyText.replace(
+      /(?:हमारी\s*)?(?:सामान्य\s*)?कंसल्टेशन\s*फीस\s*₹?\s*1[,\s]?000[^\n]*?रजिस्ट्रेशन\s*फीस\s*₹?\s*500[^\n]*/gi,
+      'हमारी डॉक्टर के साथ कंसल्टेशन बिल्कुल फ्री (Free) है! हमारे यहाँ आप सिर्फ ₹499 में वन-टाइम रजिस्ट्रेशन करवाकर लाइफटाइम फ्री कंसल्टेशन ऑफर का फायदा उठा सकते हैं, जब तक आपका इलाज हमारे साथ चलता रहेगा। ✨',
+    )
+    replyText = replyText.replace(
+      /Our\s*regular\s*consultation\s*fee\s*is\s*₹?\s*1[,\s]?000[^\n]*?registration\s*fee\s*is\s*₹?\s*500[^\n]*/gi,
+      'Doctor consultation at Gynocci is completely FREE! With a one-time registration of just ₹499, you unlock our Lifetime Free Consultation offer as long as your treatment continues with us. ✨',
+    )
     replyText = replyText.replace(
       /(?:हमारी\s*)?कंपनी\s*ने\s*एक\s*स्पेशल\s*ऑफर\s*चलाया\s*है\s*जिसमें\s*आपको\s*सिर्फ\s*₹?499/gi,
       'Gynocci ने एक स्पेशल ऑफर चलाया है जहाँ पर आपको सिर्फ ₹499',
     )
+
+    // Intercept standalone fees questions so patient always gets the clear, reassuring answer
+    const isAskingFees =
+      /\b(?:fees|fee|charge|charges|kitna\s+charge|kitni\s+fees|kitne\s+rupaye|kitne\s+paise|kitna\s+kharcha|kitna\s+lagega|consultation\s+fees|fee\s+kitni|fees\s+batao|fees\s+kya\s+hai|doctor\s+fees|doctor\s+ki\s+fees)\b/i.test(userMsg) ||
+      /(?:फीस|चार्ज|कितने\s*रुपये|कितना\s*खर्च|कितने\s*पैसे|कंसल्टेशन\s*फीस)/.test(userMsg)
+
+    if (
+      isAskingFees &&
+      !replyText.includes('Booking ID') &&
+      !replyText.includes('📋 Booking ID') &&
+      !replyText.includes('सफलतापूर्वक दर्ज')
+    ) {
+      if (
+        replyText.includes('1,000') ||
+        replyText.includes('1000') ||
+        replyText.includes('500') ||
+        (!replyText.includes('फ्री') && !replyText.toLowerCase().includes('free'))
+      ) {
+        replyText = isEnglish
+          ? 'Our doctor consultation is completely FREE! ✨\n' +
+            '---\n' +
+            'Under our special offer, by simply completing a one-time registration of just ₹499, you unlock our Lifetime Free Consultation benefit — meaning all your doctor consultations and follow-ups remain 100% free for as long as your treatment continues with us. 🌸\n' +
+            '---\n' +
+            'Your health matters far more to us than anything else — addressing and resolving the root cause in time is our highest priority.\n' +
+            '---\n' +
+            'Could you please share your city and health concern so our medical panel can guide you with the best next step? 🙏'
+          : 'हमारी डॉक्टर के साथ कंसल्टेशन बिल्कुल फ्री (Free) है! ✨\n' +
+            '---\n' +
+            'हमारे यहाँ आप सिर्फ ₹499 में अपना वन-टाइम रजिस्ट्रेशन करवाकर लाइफटाइम फ्री कंसल्टेशन (Lifetime Free Consultation Offer) का पूरा फायदा उठा सकते हैं — यानी जब तक आपका इलाज हमारे साथ चलता रहेगा, डॉक्टर से आपकी सभी कंसल्टेशन और फॉलो-अप्स बिल्कुल मुफ्त रहेंगे। 🌸\n' +
+            '---\n' +
+            'फीस से कहीं ज्यादा मायने आपकी सेहत रखती है — समस्या के आगे बढ़ने और बड़े संकट में बदलने से पहले, समय रहते इसे जड़ (root cause) से ठीक करना हमारी पहली प्राथमिकता है।\n' +
+            '---\n' +
+            'कृपया हमें अपनी समस्या और शहर (City) के बारे में बताएं, ताकि हमारे सीनियर डॉक्टर्स की टीम आपकी पूरी मदद कर सके! 🙏'
+      }
+    }
 
     if (
       (replyText.includes('Booking ID:') || replyText.includes('📋 Booking ID') || replyText.includes('सफलतापूर्वक दर्ज')) &&
