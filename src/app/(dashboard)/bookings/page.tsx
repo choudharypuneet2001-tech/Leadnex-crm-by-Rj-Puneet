@@ -423,6 +423,12 @@ export default function BookingsPage() {
   const [patientNameDraft, setPatientNameDraft] = useState('');
   const [savingName, setSavingName] = useState(false);
 
+  // Edit City Modal state
+  const [cityModalOpen, setCityModalOpen] = useState(false);
+  const [editingCityBooking, setEditingCityBooking] = useState<Booking | null>(null);
+  const [cityDraft, setCityDraft] = useState('');
+  const [savingCity, setSavingCity] = useState(false);
+
   // Selected booking modal
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -1007,6 +1013,69 @@ export default function BookingsPage() {
       toast.error(err?.message || 'Patient name update karne mein error aayi');
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleOpenEditCity = (booking: Booking, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingCityBooking(booking);
+    setCityDraft(booking.city || '');
+    setCityModalOpen(true);
+  };
+
+  const handleSaveCity = async () => {
+    if (!editingCityBooking) return;
+    const cleanCity = cityDraft.trim();
+    if (!cleanCity) {
+      toast.error('City empty nahi ho sakti');
+      return;
+    }
+    setSavingCity(true);
+    try {
+      // 1. Update bookings table
+      const { error: bookingErr } = await supabase
+        .from('bookings')
+        .update({
+          city: cleanCity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingCityBooking.id);
+
+      if (bookingErr) throw bookingErr;
+
+      // 2. Also update contacts company/city field if contact_id exists
+      if (editingCityBooking.contact_id) {
+        try {
+          await supabase
+            .from('contacts')
+            .update({
+              company: cleanCity,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', editingCityBooking.contact_id);
+        } catch (cErr) {
+          console.warn('[bookings] update contact city notice:', cErr);
+        }
+      }
+
+      // 3. Update local state
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === editingCityBooking.id ? { ...b, city: cleanCity } : b
+        )
+      );
+
+      if (selectedBooking?.id === editingCityBooking.id) {
+        setSelectedBooking((prev) => (prev ? { ...prev, city: cleanCity } : null));
+      }
+
+      toast.success('City successfully update ho gayi!');
+      setCityModalOpen(false);
+      setEditingCityBooking(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'City update karne mein error aayi');
+    } finally {
+      setSavingCity(false);
     }
   };
 
@@ -2327,16 +2396,19 @@ export default function BookingsPage() {
                         </DropdownMenu>
                       </TableCell>
 
-                      {/* City */}
-                      <TableCell>
-                        {b.city ? (
-                          <div className="inline-flex items-center gap-1 text-xs text-foreground font-medium">
-                            <MapPin className="h-3 w-3 text-rose-500" />
-                            <span>{b.city}</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground italic">Not specified</span>
-                        )}
+                      {/* City (Editable On-Click) */}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="group/city inline-flex items-center gap-1.5 p-1 -m-1 rounded-md hover:bg-muted/70 cursor-pointer transition-colors"
+                          onClick={(e) => handleOpenEditCity(b, e)}
+                          title="Click to edit patient city / location"
+                        >
+                          <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                          <span className="text-xs text-foreground font-medium">
+                            {b.city || <span className="text-muted-foreground italic">Add City</span>}
+                          </span>
+                          <Pencil className="h-2.5 w-2.5 text-muted-foreground group-hover/city:text-foreground opacity-30 group-hover/city:opacity-100 transition-opacity ml-0.5" />
+                        </div>
                       </TableCell>
 
                       {/* Preferred Schedule (Editable On-Click) */}
@@ -2487,6 +2559,10 @@ export default function BookingsPage() {
                               <DropdownMenuItem onClick={() => handleOpenEditName(b)}>
                                 <Pencil className="h-4 w-4 mr-2 text-primary" />
                                 Edit Patient Name
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenEditCity(b)}>
+                                <MapPin className="h-4 w-4 mr-2 text-rose-500" />
+                                Edit City / Location
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleOpenInbox(b)}>
                                 <MessageSquare className="h-4 w-4 mr-2 text-primary" />
@@ -2884,7 +2960,20 @@ export default function BookingsPage() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground block">City / Location</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground block">City / Location</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => handleOpenEditCity(selectedBooking, e)}
+                        className="h-5 px-1.5 text-[11px] text-muted-foreground hover:text-primary gap-1 cursor-pointer"
+                        title="Edit City"
+                      >
+                        <Pencil className="h-2.5 w-2.5" />
+                        <span>Edit</span>
+                      </Button>
+                    </div>
                     <span className="font-medium text-foreground">
                       {selectedBooking.city || 'Not provided'}
                     </span>
@@ -3319,6 +3408,80 @@ export default function BookingsPage() {
               className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
             >
               {savingName ? 'Saving...' : 'Save Name'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit City Modal */}
+      <Dialog open={cityModalOpen} onOpenChange={setCityModalOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-rose-500" />
+              Edit Patient City / Location
+            </DialogTitle>
+            <DialogDescription>
+              Patient ki city update karein for booking query{' '}
+              <strong className="font-mono text-foreground">
+                {editingCityBooking?.booking_query_id}
+              </strong>{' '}
+              ({editingCityBooking?.patient_name})
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                City / Location
+              </label>
+              <Input
+                value={cityDraft}
+                onChange={(e) => setCityDraft(e.target.value)}
+                placeholder="e.g. Jaipur, Delhi, Lucknow, Chandigarh..."
+                className="text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveCity();
+                  }
+                }}
+              />
+            </div>
+            {/* Quick city suggestions */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[11px] text-muted-foreground font-medium">Quick suggestions:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {['Jaipur', 'Delhi', 'Lucknow', 'Amritsar', 'Ludhiana', 'Chandigarh', 'Indore', 'Patna', 'Rewari'].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCityDraft(c)}
+                    className="px-2 py-0.5 text-xs rounded-md border border-border bg-muted/60 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCityModalOpen(false)}
+              disabled={savingCity}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveCity}
+              disabled={savingCity || !cityDraft.trim()}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+            >
+              {savingCity ? 'Saving...' : 'Save City'}
             </Button>
           </DialogFooter>
         </DialogContent>

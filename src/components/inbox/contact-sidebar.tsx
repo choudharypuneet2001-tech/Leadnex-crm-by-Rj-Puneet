@@ -19,8 +19,10 @@ import {
   X,
   Loader2,
   Ban,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -44,9 +46,14 @@ import { formatTelUri } from "@/lib/whatsapp/phone-utils";
 interface ContactSidebarProps {
   contact: Contact | null;
   onClose?: () => void;
+  onUpdateContact?: (contact: Contact) => void;
 }
 
-export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
+export function ContactSidebar({
+  contact,
+  onClose,
+  onUpdateContact,
+}: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -59,6 +66,11 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
   const [tagLoading, setTagLoading] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+
+  // Edit patient name states
+  const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   // Block contact states
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
@@ -289,6 +301,51 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
     }
   }, [contact, newNote, accountId]);
 
+  const handleSavePatientName = async () => {
+    if (!contact?.id) return;
+    const clean = nameDraft.trim();
+    if (!clean) {
+      toast.error("Patient name empty nahi ho sakta");
+      return;
+    }
+    setSavingName(true);
+    try {
+      const supabase = createClient();
+      // 1. Update contacts table
+      const { error: cErr } = await supabase
+        .from("contacts")
+        .update({
+          name: clean,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", contact.id);
+
+      if (cErr) throw cErr;
+
+      // 2. Also update bookings table for this contact so names match everywhere
+      try {
+        await supabase
+          .from("bookings")
+          .update({
+            patient_name: clean,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("contact_id", contact.id);
+      } catch (bErr) {
+        console.warn("[contact-sidebar] sync booking name notice:", bErr);
+      }
+
+      const updatedContact = { ...contact, name: clean };
+      onUpdateContact?.(updatedContact);
+      setNameModalOpen(false);
+      toast.success("Patient name successfully update ho gaya!");
+    } catch (err: any) {
+      toast.error(err?.message || "Name update karne mein error aayi");
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   if (!contact) {
     return (
       <div className="flex h-full w-72 flex-col border-l border-border bg-card">
@@ -321,7 +378,7 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full w-72 flex-col border-l border-border bg-card">
+    <div className="flex h-full w-72 flex-col border-l border-border bg-card min-h-0 overflow-hidden">
       {/* Sidebar Top Header with Close Button */}
       <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border bg-muted/30 shrink-0">
         <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
@@ -343,7 +400,7 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
         )}
       </div>
 
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto min-h-0">
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
@@ -358,9 +415,25 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
                 initials
               )}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-foreground">
-              {displayName}
-            </h3>
+            <div className="mt-3 flex items-center justify-center gap-1.5 group">
+              <h3 className="text-sm font-semibold text-foreground truncate max-w-[190px]">
+                {displayName}
+              </h3>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setNameDraft(contact.name || "");
+                  setNameModalOpen(true);
+                }}
+                className="h-6 w-6 p-0 text-muted-foreground hover:text-primary rounded-full hover:bg-muted cursor-pointer transition-colors"
+                title="Edit patient name"
+                aria-label="Edit patient name"
+              >
+                <Pencil className="h-3 w-3" />
+              </Button>
+            </div>
             {contact.company && (
               <p className="text-xs text-muted-foreground">{contact.company}</p>
             )}
@@ -647,7 +720,61 @@ export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
             </div>
           </div>
         </div>
-      </ScrollArea>
+      </div>
+
+      {/* Edit Patient Name Dialog */}
+      <Dialog open={nameModalOpen} onOpenChange={setNameModalOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg flex items-center gap-2">
+              <User className="h-5 w-5 text-primary" />
+              Edit Patient Name
+            </DialogTitle>
+            <DialogDescription>
+              Patient ka sahi naam enter karein jo chat aur bookings mein update ho sake:
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                Full Name
+              </label>
+              <Input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                placeholder="e.g. सुनीता शर्मा"
+                className="text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSavePatientName();
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setNameModalOpen(false)}
+              disabled={savingName}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSavePatientName}
+              disabled={savingName || !nameDraft.trim()}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+            >
+              {savingName ? "Saving..." : "Save Name"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Block Confirmation Dialog */}
       <Dialog open={blockDialogOpen} onOpenChange={setBlockDialogOpen}>

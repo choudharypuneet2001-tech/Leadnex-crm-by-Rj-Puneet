@@ -625,10 +625,20 @@ function InboxPageInner() {
             On mobile it's always hidden (the `lg:block` below), so the
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && (
-          <div className="hidden lg:block">
+          <div className="hidden h-full lg:flex flex-col shrink-0">
             <ContactSidebar
               contact={activeContact}
               onClose={handleToggleContactPanel}
+              onUpdateContact={(updated) => {
+                setActiveContact(updated);
+                setConversations((prev) =>
+                  prev.map((c) =>
+                    c.contact_id === updated.id || c.contact?.id === updated.id
+                      ? { ...c, contact: updated }
+                      : c
+                  )
+                );
+              }}
             />
           </div>
         )}
