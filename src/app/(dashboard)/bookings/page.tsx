@@ -372,9 +372,21 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | BookingStatus>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'clinic_visit' | 'video_consultation'>('all');
   const [websiteFilter, setWebsiteFilter] = useState<'all' | 'done' | 'pending'>('all');
-  const [outcomeFilter, setOutcomeFilter] = useState<
-    'all' | 'converted' | 'non_converted' | 'not_visited' | 'pending_visit'
-  >('all');
+  const [outcomeFilters, setOutcomeFilters] = useState<PatientVisitOutcome[]>([]);
+
+  const toggleOutcomeFilter = useCallback((outcome: PatientVisitOutcome) => {
+    setOutcomeFilters((prev) =>
+      prev.includes(outcome) ? prev.filter((o) => o !== outcome) : [...prev, outcome]
+    );
+  }, []);
+
+  const clearOutcomeFilters = useCallback(() => {
+    setOutcomeFilters([]);
+  }, []);
+
+  const selectAllOutcomeFilters = useCallback(() => {
+    setOutcomeFilters(['converted', 'non_converted', 'not_visited', 'pending_visit']);
+  }, []);
   const [dateFilter, setDateFilter] = useState<
     'all' | 'today' | 'tomorrow' | 'yesterday' | 'this_week' | 'this_month'
   >('all');
@@ -1235,8 +1247,8 @@ export default function BookingsPage() {
   };
 
   const handleExportCsv = () => {
-    if (bookings.length === 0) {
-      toast.error('No bookings to export');
+    if (filteredBookings.length === 0) {
+      toast.error('No bookings found matching selected filters');
       return;
     }
 
@@ -1286,8 +1298,9 @@ export default function BookingsPage() {
     });
 
     const csvContent = toCsv([headers, ...rows]);
-    downloadCsv(`gynocci-bookings-${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
-    toast.success('Bookings exported to CSV');
+    const filterSuffix = outcomeFilters.length > 0 ? `-${outcomeFilters.join('-')}` : '';
+    downloadCsv(`gynocci-bookings${filterSuffix}-${new Date().toISOString().slice(0, 10)}.csv`, csvContent);
+    toast.success(`Exported ${filteredBookings.length} bookings to CSV`);
   };
 
   const handleOpenInbox = async (b: Booking) => {
@@ -1432,7 +1445,7 @@ export default function BookingsPage() {
       if (statusFilter !== 'all' && b.status !== statusFilter) return false;
       if (typeFilter !== 'all' && b.consultation_type !== typeFilter) return false;
       if (websiteFilter !== 'all' && getEffectiveWebsiteStatus(b) !== websiteFilter) return false;
-      if (outcomeFilter !== 'all' && getEffectiveVisitOutcome(b) !== outcomeFilter) return false;
+      if (outcomeFilters.length > 0 && !outcomeFilters.includes(getEffectiveVisitOutcome(b))) return false;
 
       // Clinic Filter
       if (clinicFilter !== 'all') {
@@ -1475,7 +1488,7 @@ export default function BookingsPage() {
     statusFilter,
     typeFilter,
     websiteFilter,
-    outcomeFilter,
+    outcomeFilters,
     clinicFilter,
     matchesDate,
     selectedTagFilter,
@@ -1570,11 +1583,12 @@ export default function BookingsPage() {
             variant="outline"
             size="sm"
             onClick={handleExportCsv}
-            disabled={bookings.length === 0}
+            disabled={filteredBookings.length === 0}
             className="h-9 gap-1.5"
+            title="Download CSV of current filtered bookings list"
           >
             <Download className="h-4 w-4" />
-            Export CSV
+            Export CSV ({filteredBookings.length})
           </Button>
         </div>
       </div>
@@ -1839,67 +1853,261 @@ export default function BookingsPage() {
             </Button>
           </div>
 
-          {/* Patient Outcome Filter */}
+          {/* Patient Outcome Multi-Select Filter */}
           <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
             <DropdownMenu>
               <DropdownMenuTrigger
                 className={cn(
                   'h-7 px-2.5 text-xs font-medium border rounded-md flex items-center gap-1.5 transition-colors cursor-pointer',
-                  outcomeFilter !== 'all'
-                    ? 'bg-primary/10 border-primary text-primary'
+                  outcomeFilters.length > 0
+                    ? 'bg-primary/10 border-primary text-primary font-semibold'
                     : 'bg-muted/30 text-muted-foreground hover:text-foreground'
                 )}
               >
                 <CheckCheck className="h-3.5 w-3.5" />
                 <span>
-                  {outcomeFilter === 'all'
+                  {outcomeFilters.length === 0
                     ? 'All Outcomes'
-                    : outcomeFilter === 'converted'
-                    ? '✅ Converted'
-                    : outcomeFilter === 'non_converted'
-                    ? '⚠️ Non Converted'
-                    : outcomeFilter === 'not_visited'
-                    ? '❌ Not Visited'
-                    : '🕒 Awaiting Visit'}
+                    : outcomeFilters.length === 1
+                    ? outcomeFilters[0] === 'converted'
+                      ? '✅ Converted'
+                      : outcomeFilters[0] === 'non_converted'
+                      ? '⚠️ Non Converted'
+                      : outcomeFilters[0] === 'not_visited'
+                      ? '❌ Not Visited'
+                      : '🕒 Awaiting Visit'
+                    : outcomeFilters.length === 4
+                    ? 'All Outcomes (4)'
+                    : `Outcomes (${outcomeFilters.length})`}
                 </span>
-                <ChevronDown className="h-3 w-3 opacity-60" />
+                {outcomeFilters.length > 0 && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearOutcomeFilters();
+                    }}
+                    className="ml-0.5 -mr-1 p-0.5 rounded-full hover:bg-primary/20 text-primary cursor-pointer inline-flex items-center"
+                    title="Reset to All Outcomes"
+                  >
+                    <X className="h-3 w-3" />
+                  </span>
+                )}
+                <ChevronDown className="h-3 w-3 opacity-60 ml-0.5" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 p-1">
+              <DropdownMenuContent align="end" className="w-64 p-1.5 shadow-lg">
+                <div className="flex items-center justify-between px-2 py-1.5 text-xs border-b mb-1">
+                  <span className="font-semibold text-foreground">
+                    Filter by Outcomes {outcomeFilters.length > 0 ? `(${outcomeFilters.length}/4)` : ''}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {outcomeFilters.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          clearOutcomeFilters();
+                        }}
+                        className="text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                      >
+                        Reset / Clear
+                      </button>
+                    )}
+                    {outcomeFilters.length < 4 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          selectAllOutcomeFilters();
+                        }}
+                        className="text-[11px] font-medium text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Show All Option */}
                 <DropdownMenuItem
-                  onClick={() => setOutcomeFilter('all')}
-                  className="text-xs cursor-pointer"
+                  closeOnClick={false}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    clearOutcomeFilters();
+                  }}
+                  className={cn(
+                    'text-xs cursor-pointer py-1.5 px-2 flex items-center justify-between rounded-md transition-colors',
+                    outcomeFilters.length === 0 ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted/60'
+                  )}
                 >
-                  All Outcomes
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={cn(
+                        'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors',
+                        outcomeFilters.length === 0
+                          ? 'bg-primary border-primary text-primary-foreground'
+                          : 'border-muted-foreground/40 bg-background'
+                      )}
+                    >
+                      {outcomeFilters.length === 0 && <Check className="h-3 w-3 stroke-[3]" />}
+                    </div>
+                    <span className="truncate">All Outcomes (Show All)</span>
+                  </div>
+                  <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium shrink-0 ml-2">
+                    {stats.total}
+                  </span>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
+
+                <DropdownMenuSeparator className="my-1" />
+
+                {/* Option 1: Converted */}
                 <DropdownMenuItem
-                  onClick={() => setOutcomeFilter('converted')}
-                  className="text-xs cursor-pointer text-emerald-700 font-medium flex items-center justify-between"
+                  closeOnClick={false}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleOutcomeFilter('converted');
+                  }}
+                  className={cn(
+                    'text-xs cursor-pointer py-1.5 px-2 flex items-center justify-between rounded-md transition-colors',
+                    outcomeFilters.includes('converted')
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-medium'
+                      : 'hover:bg-muted/60 text-foreground'
+                  )}
                 >
-                  <span>✅ Converted (Treatment Shuru)</span>
-                  <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded">{stats.converted}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={cn(
+                        'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors',
+                        outcomeFilters.includes('converted')
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'border-muted-foreground/40 bg-background'
+                      )}
+                    >
+                      {outcomeFilters.includes('converted') && <Check className="h-3 w-3 stroke-[3]" />}
+                    </div>
+                    <span className="truncate">
+                      ✅ Converted <span className="text-[11px] text-muted-foreground font-normal">(Treatment Shuru)</span>
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.5 rounded font-medium shrink-0 ml-2">
+                    {stats.converted}
+                  </span>
                 </DropdownMenuItem>
+
+                {/* Option 2: Non Converted */}
                 <DropdownMenuItem
-                  onClick={() => setOutcomeFilter('non_converted')}
-                  className="text-xs cursor-pointer text-amber-700 font-medium flex items-center justify-between"
+                  closeOnClick={false}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleOutcomeFilter('non_converted');
+                  }}
+                  className={cn(
+                    'text-xs cursor-pointer py-1.5 px-2 flex items-center justify-between rounded-md transition-colors',
+                    outcomeFilters.includes('non_converted')
+                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 font-medium'
+                      : 'hover:bg-muted/60 text-foreground'
+                  )}
                 >
-                  <span>⚠️ Non Converted (Dawa Nahi Li)</span>
-                  <span className="text-[10px] bg-amber-100 px-1.5 py-0.5 rounded">{stats.nonConverted}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={cn(
+                        'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors',
+                        outcomeFilters.includes('non_converted')
+                          ? 'bg-amber-600 border-amber-600 text-white'
+                          : 'border-muted-foreground/40 bg-background'
+                      )}
+                    >
+                      {outcomeFilters.includes('non_converted') && <Check className="h-3 w-3 stroke-[3]" />}
+                    </div>
+                    <span className="truncate">
+                      ⚠️ Non Converted <span className="text-[11px] text-muted-foreground font-normal">(Dawa Nahi Li)</span>
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium shrink-0 ml-2">
+                    {stats.nonConverted}
+                  </span>
                 </DropdownMenuItem>
+
+                {/* Option 3: Not Visited */}
                 <DropdownMenuItem
-                  onClick={() => setOutcomeFilter('not_visited')}
-                  className="text-xs cursor-pointer text-rose-700 font-medium flex items-center justify-between"
+                  closeOnClick={false}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleOutcomeFilter('not_visited');
+                  }}
+                  className={cn(
+                    'text-xs cursor-pointer py-1.5 px-2 flex items-center justify-between rounded-md transition-colors',
+                    outcomeFilters.includes('not_visited')
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 font-medium'
+                      : 'hover:bg-muted/60 text-foreground'
+                  )}
                 >
-                  <span>❌ Not Visited (No-Show)</span>
-                  <span className="text-[10px] bg-rose-100 px-1.5 py-0.5 rounded">{stats.notVisited}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={cn(
+                        'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors',
+                        outcomeFilters.includes('not_visited')
+                          ? 'bg-rose-600 border-rose-600 text-white'
+                          : 'border-muted-foreground/40 bg-background'
+                      )}
+                    >
+                      {outcomeFilters.includes('not_visited') && <Check className="h-3 w-3 stroke-[3]" />}
+                    </div>
+                    <span className="truncate">
+                      ❌ Not Visited <span className="text-[11px] text-muted-foreground font-normal">(No-Show)</span>
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 px-1.5 py-0.5 rounded font-medium shrink-0 ml-2">
+                    {stats.notVisited}
+                  </span>
                 </DropdownMenuItem>
+
+                {/* Option 4: Awaiting Visit */}
                 <DropdownMenuItem
-                  onClick={() => setOutcomeFilter('pending_visit')}
-                  className="text-xs cursor-pointer text-blue-700 font-medium flex items-center justify-between"
+                  closeOnClick={false}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleOutcomeFilter('pending_visit');
+                  }}
+                  className={cn(
+                    'text-xs cursor-pointer py-1.5 px-2 flex items-center justify-between rounded-md transition-colors',
+                    outcomeFilters.includes('pending_visit')
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 font-medium'
+                      : 'hover:bg-muted/60 text-foreground'
+                  )}
                 >
-                  <span>🕒 Awaiting Visit (Aana Baaki)</span>
-                  <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded">{stats.awaitingVisit}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={cn(
+                        'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors',
+                        outcomeFilters.includes('pending_visit')
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'border-muted-foreground/40 bg-background'
+                      )}
+                    >
+                      {outcomeFilters.includes('pending_visit') && <Check className="h-3 w-3 stroke-[3]" />}
+                    </div>
+                    <span className="truncate">
+                      🕒 Awaiting Visit <span className="text-[11px] text-muted-foreground font-normal">(Aana Baaki)</span>
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 px-1.5 py-0.5 rounded font-medium shrink-0 ml-2">
+                    {stats.awaitingVisit}
+                  </span>
                 </DropdownMenuItem>
+
+                <DropdownMenuSeparator className="my-1" />
+                <div className="px-2 py-1 flex items-center justify-between text-[11px] text-muted-foreground bg-muted/40 rounded">
+                  <span>
+                    {outcomeFilters.length === 0
+                      ? 'All 4 outcomes showing'
+                      : `${outcomeFilters.length} of 4 outcomes selected`}
+                  </span>
+                  <span className="font-semibold text-foreground">
+                    {filteredBookings.length} bookings
+                  </span>
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
