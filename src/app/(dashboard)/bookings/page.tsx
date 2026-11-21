@@ -399,6 +399,10 @@ export default function BookingsPage() {
   // Tags state
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [contactTagsMap, setContactTagsMap] = useState<Record<string, string[]>>({});
+  // Contact notes map for syncing notes between contact sidebar/analytics and bookings
+  const [contactNotesMap, setContactNotesMap] = useState<
+    Record<string, { id: string; note_text: string; created_at: string }[]>
+  >({});
 
   // Notes Modal state
   const [noteModalOpen, setNoteModalOpen] = useState(false);
@@ -470,24 +474,40 @@ export default function BookingsPage() {
         const bookingsList = data || [];
         setBookings(bookingsList);
 
-        // Fetch contact tags for all contacts associated with these bookings
+        // Fetch contact tags & contact notes for all contacts associated with these bookings
         const contactIds = Array.from(
           new Set(bookingsList.map((b) => b.contact_id).filter(Boolean))
         ) as string[];
 
         if (contactIds.length > 0) {
-          const { data: ctData, error: ctErr } = await supabase
-            .from('contact_tags')
-            .select('contact_id, tag_id')
-            .in('contact_id', contactIds);
+          const [ctRes, cnRes] = await Promise.all([
+            supabase
+              .from('contact_tags')
+              .select('contact_id, tag_id')
+              .in('contact_id', contactIds),
+            supabase
+              .from('contact_notes')
+              .select('id, contact_id, note_text, created_at')
+              .in('contact_id', contactIds)
+              .order('created_at', { ascending: false }),
+          ]);
 
-          if (!ctErr && ctData) {
+          if (!ctRes.error && ctRes.data) {
             const map: Record<string, string[]> = {};
-            ctData.forEach((ct) => {
+            ctRes.data.forEach((ct) => {
               if (!map[ct.contact_id]) map[ct.contact_id] = [];
               map[ct.contact_id].push(ct.tag_id);
             });
             setContactTagsMap(map);
+          }
+
+          if (!cnRes.error && cnRes.data) {
+            const cnMap: Record<string, { id: string; note_text: string; created_at: string }[]> = {};
+            cnRes.data.forEach((cn) => {
+              if (!cnMap[cn.contact_id]) cnMap[cn.contact_id] = [];
+              cnMap[cn.contact_id].push(cn);
+            });
+            setContactNotesMap(cnMap);
           }
         }
       }
@@ -498,6 +518,33 @@ export default function BookingsPage() {
       setRefreshing(false);
     }
   }, [account?.id, supabase]);
+
+  const getEffectiveBookingNotes = useCallback(
+    (b: Booking): string => {
+      const bNote = b.notes ? b.notes.trim() : '';
+      const cNotes = (b.contact_id ? contactNotesMap[b.contact_id] : []) || [];
+      if (cNotes.length === 0) return bNote;
+
+      const missing = cNotes.filter(
+        (cn) => !bNote.includes(cn.note_text.trim())
+      );
+      if (missing.length === 0) return bNote;
+
+      const cNotesFormatted = missing
+        .map((cn) => {
+          const d = new Date(cn.created_at);
+          const dateStr = !isNaN(d.getTime())
+            ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+            : '';
+          return dateStr ? `[${dateStr}]: ${cn.note_text.trim()}` : cn.note_text.trim();
+        })
+        .join('\n');
+
+      if (!bNote) return cNotesFormatted;
+      return `${bNote}\n${cNotesFormatted}`;
+    },
+    [contactNotesMap]
+  );
 
   useEffect(() => {
     fetchBookings();
@@ -1087,6 +1134,7 @@ export default function BookingsPage() {
 
       toast.success('Follow-up note saved successfully');
       setNoteModalOpen(false);
+      void fetchBookings();
     } catch (err: any) {
       console.error('Failed to save follow-up note:', err);
       toast.error(err?.message || 'Failed to save note');
@@ -1160,7 +1208,7 @@ export default function BookingsPage() {
         [b.preferred_date, b.preferred_time].filter(Boolean).join(' - ') || 'Not specified',
         b.health_concern || '',
         cTags || '',
-        b.notes || '',
+        getEffectiveBookingNotes(b),
         b.ad_name || '',
         b.ad_id || '',
         b.status,
@@ -1346,7 +1394,7 @@ export default function BookingsPage() {
         b.phone.includes(q) ||
         (b.city && b.city.toLowerCase().includes(q)) ||
         (b.health_concern && b.health_concern.toLowerCase().includes(q)) ||
-        (b.notes && b.notes.toLowerCase().includes(q)) ||
+        (getEffectiveBookingNotes(b) && getEffectiveBookingNotes(b).toLowerCase().includes(q)) ||
         contactTagNames.includes(q) ||
         (b.ad_name && b.ad_name.toLowerCase().includes(q)) ||
         (b.clinic_location && b.clinic_location.toLowerCase().includes(q))
@@ -1364,6 +1412,7 @@ export default function BookingsPage() {
     selectedTagFilter,
     contactTagsMap,
     tagsMap,
+    getEffectiveBookingNotes,
   ]);
 
   // Stats
@@ -2151,41 +2200,44 @@ export default function BookingsPage() {
 
                       {/* Follow-up Notes Column */}
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        {b.notes ? (
-                          <div
-                            className="group/note flex items-start justify-between gap-1.5 p-1.5 rounded-md bg-muted/40 hover:bg-muted/70 border border-border/60 text-xs cursor-pointer max-w-[210px] transition-colors"
-                            onClick={() => {
-                              setEditingNoteBooking(b);
-                              setNoteDraft(b.notes || '');
-                              setNoteModalOpen(true);
-                            }}
-                            title="Click to view or edit follow-up note"
-                          >
-                            <div className="flex items-start gap-1 min-w-0">
-                              <FileText className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                              <span className="line-clamp-2 text-foreground font-normal break-words">
-                                {b.notes}
-                              </span>
+                        {(() => {
+                          const displayNote = getEffectiveBookingNotes(b);
+                          return displayNote ? (
+                            <div
+                              className="group/note flex items-start justify-between gap-1.5 p-1.5 rounded-md bg-muted/40 hover:bg-muted/70 border border-border/60 text-xs cursor-pointer max-w-[210px] transition-colors"
+                              onClick={() => {
+                                setEditingNoteBooking(b);
+                                setNoteDraft(displayNote);
+                                setNoteModalOpen(true);
+                              }}
+                              title="Click to view or edit follow-up note"
+                            >
+                              <div className="flex items-start gap-1 min-w-0">
+                                <FileText className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                                <span className="line-clamp-2 text-foreground font-normal break-words">
+                                  {displayNote}
+                                </span>
+                              </div>
+                              <Pencil className="h-3 w-3 text-muted-foreground group-hover/note:text-foreground shrink-0 mt-0.5 opacity-50 group-hover/note:opacity-100 transition-opacity" />
                             </div>
-                            <Pencil className="h-3 w-3 text-muted-foreground group-hover/note:text-foreground shrink-0 mt-0.5 opacity-50 group-hover/note:opacity-100 transition-opacity" />
-                          </div>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground gap-1 border border-dashed border-border/80 hover:border-solid hover:bg-muted/50 font-normal"
-                            onClick={() => {
-                              setEditingNoteBooking(b);
-                              setNoteDraft('');
-                              setNoteModalOpen(true);
-                            }}
-                            title="Add follow-up note"
-                          >
-                            <Pencil className="h-3 w-3" />
-                            <span>+ Add Note</span>
-                          </Button>
-                        )}
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground gap-1 border border-dashed border-border/80 hover:border-solid hover:bg-muted/50 font-normal cursor-pointer"
+                              onClick={() => {
+                                setEditingNoteBooking(b);
+                                setNoteDraft('');
+                                setNoteModalOpen(true);
+                              }}
+                              title="Add follow-up note"
+                            >
+                              <Pencil className="h-3 w-3" />
+                              <span>+ Add Note</span>
+                            </Button>
+                          );
+                        })()}
                       </TableCell>
 
                       {/* Consultation Mode (Editable Dropdown) */}
@@ -2447,7 +2499,7 @@ export default function BookingsPage() {
                               <DropdownMenuItem
                                 onClick={() => {
                                   setEditingNoteBooking(b);
-                                  setNoteDraft(b.notes || '');
+                                  setNoteDraft(getEffectiveBookingNotes(b));
                                   setNoteModalOpen(true);
                                 }}
                               >
@@ -2871,7 +2923,7 @@ export default function BookingsPage() {
                     className="h-6 px-2 text-xs gap-1"
                     onClick={() => {
                       setEditingNoteBooking(selectedBooking);
-                      setNoteDraft(selectedBooking.notes || '');
+                      setNoteDraft(selectedBooking ? getEffectiveBookingNotes(selectedBooking) : '');
                       setNoteModalOpen(true);
                     }}
                   >
@@ -2879,8 +2931,8 @@ export default function BookingsPage() {
                     Edit Note
                   </Button>
                 </div>
-                <p className="text-sm text-foreground font-normal bg-background/80 p-2.5 rounded border">
-                  {selectedBooking.notes || (
+                <p className="text-sm text-foreground font-normal bg-background/80 p-2.5 rounded border whitespace-pre-wrap">
+                  {(selectedBooking && getEffectiveBookingNotes(selectedBooking)) || (
                     <span className="text-muted-foreground italic">No follow-up notes yet. Click &apos;Edit Note&apos; to add one.</span>
                   )}
                 </p>

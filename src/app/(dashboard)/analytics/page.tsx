@@ -323,6 +323,36 @@ export default function AnalyticsPage() {
           ...prev,
           [contactId]: [newNote, ...(prev[contactId] || [])],
         }));
+
+        // Also sync to matching booking if exists
+        try {
+          const { data: matchedBookings } = await supabase
+            .from('bookings')
+            .select('id, notes')
+            .eq('account_id', account.id)
+            .eq('contact_id', contactId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (matchedBookings && matchedBookings[0]) {
+            const target = matchedBookings[0];
+            const existing = target.notes ? target.notes.trim() : '';
+            const timestamp = new Date().toLocaleDateString('en-IN', {
+              day: 'numeric',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            const updated = existing ? `${existing}\n[${timestamp}]: ${text.trim()}` : `[${timestamp}]: ${text.trim()}`;
+            await supabase
+              .from('bookings')
+              .update({ notes: updated, updated_at: new Date().toISOString() })
+              .eq('id', target.id);
+          }
+        } catch (syncErr) {
+          console.warn('[analytics] sync note to booking error:', syncErr);
+        }
+
         toast.success('Call note successfully save ho gaya!');
       }
     } catch (err: any) {

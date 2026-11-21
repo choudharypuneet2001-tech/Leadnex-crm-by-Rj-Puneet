@@ -541,13 +541,71 @@ export function MessageThread({
     });
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
+  // User scroll position tracking: Prevents unwanted snapping to bottom when user is reading past messages
+  const isAtBottomRef = useRef(true);
+  const prevMessagesLengthRef = useRef(messages.length);
+  const prevConversationIdRef = useRef<string | null>(conversation?.id || null);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const atBottom = distanceFromBottom < 100;
+    isAtBottomRef.current = atBottom;
+    setShowScrollBottomBtn(!atBottom && scrollHeight > clientHeight + 150);
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = false) => {
+    if (!scrollRef.current) return;
+    const el = scrollRef.current;
+    if (smooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    } else {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+    isAtBottomRef.current = true;
+    setShowScrollBottomBtn(false);
+  }, []);
+
+  // Handle conversation change and incoming messages
+  useEffect(() => {
+    const isNewConversation = conversation?.id !== prevConversationIdRef.current;
+    prevConversationIdRef.current = conversation?.id || null;
+
+    if (isNewConversation) {
+      // Switched conversation: reset scroll tracking and scroll to bottom
+      isAtBottomRef.current = true;
+      setShowScrollBottomBtn(false);
+      prevMessagesLengthRef.current = messages.length;
+      const timer = setTimeout(() => {
+        scrollToBottom(false);
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+
+    const prevLength = prevMessagesLengthRef.current;
+    const currentLength = messages.length;
+    prevMessagesLengthRef.current = currentLength;
+
+    // If message count did NOT increase (e.g. status updates 'sent'->'delivered'->'read', reaction edits):
+    // DO NOT change user scroll position!
+    if (currentLength <= prevLength) {
+      return;
+    }
+
+    // A new message arrived or was sent
+    const lastMsg = messages[messages.length - 1];
+    const isSentByMe = lastMsg?.sender_type === 'agent';
+
+    if (isSentByMe || isAtBottomRef.current) {
+      // If agent sent it OR user was already at bottom: scroll down
+      scrollToBottom(true);
+    } else {
+      // User was scrolled up reading past history: DO NOT disrupt them!
+      setShowScrollBottomBtn(true);
+    }
+  }, [messages, conversation?.id, scrollToBottom]);
 
   const handleSend = useCallback(
     async (text: string, replyToId?: string) => {
@@ -1081,31 +1139,41 @@ export function MessageThread({
             <span className="hidden sm:inline">AI Pitch</span>
           </Button>
 
-          {/* Contact-panel toggle — desktop only. The contact sidebar
-              eats a chunk of horizontal width that crowds the thread on
-              smaller laptops; this lets agents reclaim it when they just
-              want to read and reply. Hidden on mobile, where the sidebar
-              never renders as a permanent panel anyway. Issue #258. */}
+          {/* Contact-panel toggle — desktop only. Clicking cross in sidebar or toggle here expands/restores full width chat */}
           {onToggleContactPanel && (
-            <button
+            <Button
               type="button"
+              variant={contactPanelOpen ? "ghost" : "outline"}
+              size="sm"
               onClick={onToggleContactPanel}
               aria-label={
-                contactPanelOpen ? t("hideContactPanel") : t("showContactPanel")
+                contactPanelOpen ? "Close patient details" : "Open patient details"
               }
-              title={contactPanelOpen ? t("hideContact") : t("showContact")}
+              title={
+                contactPanelOpen
+                  ? "Close patient details (Full size chat)"
+                  : "Open patient details"
+              }
               aria-pressed={contactPanelOpen}
               className={cn(
-                "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:inline-flex",
-                contactPanelOpen ? "text-primary" : "text-muted-foreground",
+                "hidden h-7 text-xs gap-1.5 font-medium transition-all lg:inline-flex cursor-pointer",
+                contactPanelOpen
+                  ? "text-muted-foreground hover:text-foreground hover:bg-muted px-2"
+                  : "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20 px-2.5 shadow-2xs font-semibold",
               )}
             >
               {contactPanelOpen ? (
-                <PanelRightClose className="h-4 w-4" />
+                <>
+                  <PanelRightClose className="h-3.5 w-3.5" />
+                  <span className="hidden xl:inline">Details</span>
+                </>
               ) : (
-                <PanelRightOpen className="h-4 w-4" />
+                <>
+                  <PanelRightOpen className="h-3.5 w-3.5" />
+                  <span>Patient Details</span>
+                </>
               )}
-            </button>
+            </Button>
           )}
 
           {/* Manual refresh — forces a refetch of the messages + the
@@ -1223,78 +1291,100 @@ export function MessageThread({
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
-            <p className="text-xs text-muted-foreground">
-              {t("sendTemplateHint")}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {messageGroups.map((group) => (
-              <div key={group.date}>
-                {/* Date separator */}
-                <div className="mb-4 flex items-center justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
-                    {formatDateSeparator(group.date, t)}
-                  </span>
-                </div>
-                {/* Messages */}
-                <div className="space-y-2">
-                  {group.messages.map((msg) => {
-                    const parent = msg.reply_to_message_id
-                      ? messagesById.get(msg.reply_to_message_id)
-                      : null;
-                    const reply = parent
-                      ? {
-                          authorLabel:
-                            parent.sender_type === "agent" || parent.sender_type === "bot"
-                              ? t("me") 
-                              : contact?.name || contact?.phone || t("unknown"),
-                          preview: buildReplyPreview(parent, tQuote),
-                        }
-                      : null;
-                    const msgReactions = reactionsByMessageId.get(msg.id);
-                    // Toggle is computed at the call site — `msgReactions`
-                    // and `user?.id` are already in scope, no extra hook.
-                    const handlePillToggle = (emoji: string) => {
-                      const own = msgReactions?.find(
-                        (r) =>
-                          r.actor_type === "agent" &&
-                          r.actor_id === user?.id,
-                      );
-                      const next = own?.emoji === emoji ? "" : emoji;
-                      void postReaction(msg.id, next);
-                    };
-                    return (
-                      <MessageActions
-                        key={msg.id}
-                        message={msg}
-                        onReply={() => handleStartReply(msg)}
-                        onReact={(emoji) => {
-                          if (emoji) void postReaction(msg.id, emoji);
-                        }}
-                      >
-                        <MessageBubble
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-4 py-4"
+        >
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("sendTemplateHint")}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messageGroups.map((group) => (
+                <div key={group.date}>
+                  {/* Date separator */}
+                  <div className="mb-4 flex items-center justify-center">
+                    <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
+                      {formatDateSeparator(group.date, t)}
+                    </span>
+                  </div>
+                  {/* Messages */}
+                  <div className="space-y-2">
+                    {group.messages.map((msg) => {
+                      const parent = msg.reply_to_message_id
+                        ? messagesById.get(msg.reply_to_message_id)
+                        : null;
+                      const reply = parent
+                        ? {
+                            authorLabel:
+                              parent.sender_type === "agent" || parent.sender_type === "bot"
+                                ? t("me") 
+                                : contact?.name || contact?.phone || t("unknown"),
+                            preview: buildReplyPreview(parent, tQuote),
+                          }
+                        : null;
+                      const msgReactions = reactionsByMessageId.get(msg.id);
+                      // Toggle is computed at the call site — `msgReactions`
+                      // and `user?.id` are already in scope, no extra hook.
+                      const handlePillToggle = (emoji: string) => {
+                        const own = msgReactions?.find(
+                          (r) =>
+                            r.actor_type === "agent" &&
+                            r.actor_id === user?.id,
+                        );
+                        const next = own?.emoji === emoji ? "" : emoji;
+                        void postReaction(msg.id, next);
+                      };
+                      return (
+                        <MessageActions
+                          key={msg.id}
                           message={msg}
-                          reply={reply}
-                          reactions={msgReactions}
-                          currentUserId={user?.id}
-                          onToggleReaction={handlePillToggle}
-                          onOpenMedia={handleMediaChange}
-                        />
-                      </MessageActions>
-                    );
-                  })}
+                          onReply={() => handleStartReply(msg)}
+                          onReact={(emoji) => {
+                            if (emoji) void postReaction(msg.id, emoji);
+                          }}
+                        >
+                          <MessageBubble
+                            message={msg}
+                            reply={reply}
+                            reactions={msgReactions}
+                            currentUserId={user?.id}
+                            onToggleReaction={handlePillToggle}
+                            onOpenMedia={handleMediaChange}
+                          />
+                        </MessageActions>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Floating Jump to Latest Button when user is scrolled up */}
+        {showScrollBottomBtn && (
+          <div className="absolute bottom-3 right-6 z-20">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => scrollToBottom(true)}
+              className="rounded-full shadow-lg h-7 px-3 text-xs gap-1.5 bg-background/95 hover:bg-background border border-border text-foreground cursor-pointer transition-all animate-in fade-in slide-in-from-bottom-2 hover:border-primary/50"
+            >
+              <ChevronDown className="h-3.5 w-3.5 text-primary" />
+              <span>Latest Messages</span>
+            </Button>
           </div>
         )}
       </div>

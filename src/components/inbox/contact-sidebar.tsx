@@ -43,9 +43,10 @@ import { formatTelUri } from "@/lib/whatsapp/phone-utils";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  onClose?: () => void;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, onClose }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -218,29 +219,100 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       data: { session },
     } = await supabase.auth.getSession();
     const user = session?.user;
+    const trimmedNote = newNote.trim();
 
-    const { data, error } = await supabase
-      .from("contact_notes")
-      .insert({
-        contact_id: contact.id,
-        account_id: accountId,
-        user_id: user?.id,
-        note_text: newNote.trim(),
-      })
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("contact_notes")
+        .insert({
+          contact_id: contact.id,
+          account_id: accountId,
+          user_id: user?.id,
+          note_text: trimmedNote,
+        })
+        .select()
+        .single();
 
-    if (!error && data) {
-      setNotes((prev) => [data, ...prev]);
-      setNewNote("");
+      if (!error && data) {
+        setNotes((prev) => [data, ...prev]);
+        setNewNote("");
+
+        // Two-way sync: Also update any matching booking for this patient in bookings table
+        try {
+          const cleanPhone = (contact.phone || '').replace(/\D/g, '');
+          const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+          let bQuery = supabase
+            .from('bookings')
+            .select('id, notes')
+            .eq('account_id', accountId);
+
+          if (contact.id && last10) {
+            bQuery = bQuery.or(`contact_id.eq.${contact.id},phone.ilike.%${last10}%`);
+          } else if (contact.id) {
+            bQuery = bQuery.eq('contact_id', contact.id);
+          } else if (last10) {
+            bQuery = bQuery.ilike('phone', `%${last10}%`);
+          }
+
+          const { data: matchedBookings } = await bQuery
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (matchedBookings && matchedBookings[0]) {
+            const target = matchedBookings[0];
+            const existingNotes = target.notes ? target.notes.trim() : '';
+            const timestamp = format(new Date(), 'dd MMM, HH:mm');
+            const noteEntry = `[${timestamp}]: ${trimmedNote}`;
+            const updatedNotes = existingNotes ? `${existingNotes}\n${noteEntry}` : noteEntry;
+
+            await supabase
+              .from('bookings')
+              .update({
+                notes: updatedNotes,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', target.id);
+          }
+        } catch (syncErr) {
+          console.warn('[contact-sidebar] sync note to booking notice:', syncErr);
+        }
+
+        toast.success("Note added & synced to Bookings!");
+      } else if (error) {
+        toast.error("Note save nahi ho saka");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to add note");
+    } finally {
+      setAddingNote(false);
     }
-    setAddingNote(false);
   }, [contact, newNote, accountId]);
 
   if (!contact) {
     return (
-      <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
-        <p className="text-sm text-muted-foreground">{tThread("selectConversation")}</p>
+      <div className="flex h-full w-72 flex-col border-l border-border bg-card">
+        {onClose && (
+          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border bg-muted/30 shrink-0">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Patient Details
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md cursor-pointer"
+              title="Close details (Full width chat)"
+              aria-label="Close sidebar"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+        <div className="flex flex-1 items-center justify-center p-4">
+          <p className="text-sm text-muted-foreground">{tThread("selectConversation")}</p>
+        </div>
       </div>
     );
   }
@@ -249,7 +321,28 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full w-70 flex-col border-l border-border bg-card">
+    <div className="flex h-full w-72 flex-col border-l border-border bg-card">
+      {/* Sidebar Top Header with Close Button */}
+      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-border bg-muted/30 shrink-0">
+        <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+          <User className="h-3.5 w-3.5 text-primary" />
+          Patient Details
+        </span>
+        {onClose && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md cursor-pointer transition-colors"
+            title="Close details (Full width chat)"
+            aria-label="Close sidebar"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
       <ScrollArea className="flex-1">
         <div className="p-4">
           {/* Contact Info */}
