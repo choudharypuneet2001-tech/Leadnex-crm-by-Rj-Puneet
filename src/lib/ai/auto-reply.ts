@@ -551,6 +551,44 @@ export async function dispatchInboundToAiReply(
       }
     }
 
+    // Dedicated Inbound Report / Document Shared Handler:
+    const isReportShared =
+      userMsg.includes('[Patient sent a report') ||
+      userMsg.includes('[Photo / Report') ||
+      userMsg.includes('[Document / Report') ||
+      /\b(?:reports?\s*(?:bhej\s*di|bheji|dekh|check|dekho|dekhna)|ye\s*dekho\s*report|ye\s*meri\s*report|shared?\s*reports?)\b/i.test(userMsg) ||
+      /(?:रिपोर्ट\s*(?:भेज\s*दी|भेजी|देखें|देखिये|चेक\s*करें|शेयर\s*की)|ये\s*रिपोर्ट\s*है)/.test(userMsg)
+
+    if (
+      isReportShared &&
+      !replyText.includes('Booking ID') &&
+      !replyText.includes('📋 Booking ID') &&
+      !replyText.includes('सफलतापूर्वक दर्ज')
+    ) {
+      const reportReplyHindi =
+        'आपने जो हमारे साथ अपनी रिपोर्ट / जानकारी साझा की है, उसके लिए आपका बहुत-बहुत धन्यवाद! 🙏\n' +
+        '---\n' +
+        'हमारी मेडिकल टीम और सीनियर डॉक्टर्स इसका गहराई से अध्ययन कर रहे हैं।\n' +
+        '---\n' +
+        'कृपया आप बताइए — इस रिपोर्ट को लेकर आप विशेष रूप से क्या जानना चाहते हैं या अभी आपको क्या मुख्य समस्या महसूस हो रही है? 🌸'
+
+      const reportReplyEnglish =
+        'Thank you so much for sharing your report and health details with us! 🙏\n' +
+        '---\n' +
+        'Our medical team and senior doctors are thoroughly reviewing your documents.\n' +
+        '---\n' +
+        'Could you please share — what specific guidance or questions do you have regarding this report, or what main symptoms are you experiencing? 🌸'
+
+      if (
+        userMsg.includes('[Patient sent a report') ||
+        userMsg.includes('[Photo / Report') ||
+        userMsg.includes('[Document / Report') ||
+        (!replyText.includes('रिपोर्ट') && !replyText.toLowerCase().includes('report'))
+      ) {
+        replyText = isEnglish ? reportReplyEnglish : reportReplyHindi
+      }
+    }
+
     // Ensure any broken or hallucinated Google Maps links are replaced with verified official URLs
     for (const clinic of Object.values(GYNOCCI_CLINICS)) {
       if (replyText.includes(clinic.city) || replyText.includes(clinic.hindiCity)) {

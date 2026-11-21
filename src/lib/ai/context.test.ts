@@ -9,6 +9,7 @@ function fakeDb(rows: unknown[]): SupabaseClient {
     from: () => chain,
     select: () => chain,
     eq: () => chain,
+    in: () => chain,
     order: () => chain,
     limit: () => Promise.resolve({ data: rows, error: null }),
   }
@@ -39,7 +40,21 @@ describe('buildConversationContext', () => {
     expect(out).toEqual([{ role: 'assistant', content: 'auto reply' }])
   })
 
-  it('drops empty / whitespace-only messages', async () => {
+  it('maps inbound report image and document attachments to contextual placeholders', async () => {
+    const out = await buildConversationContext(
+      fakeDb([
+        { sender_type: 'customer', content_type: 'image', content_text: null },
+        { sender_type: 'customer', content_type: 'document', content_text: null },
+      ]),
+      'conv-1',
+    )
+    expect(out).toEqual([
+      { role: 'user', content: '[Patient sent a report document / PDF]' },
+      { role: 'user', content: '[Patient sent a report photo / image]' },
+    ])
+  })
+
+  it('drops empty / whitespace-only messages without media type', async () => {
     const out = await buildConversationContext(
       fakeDb([
         { sender_type: 'customer', content_text: '   ' },

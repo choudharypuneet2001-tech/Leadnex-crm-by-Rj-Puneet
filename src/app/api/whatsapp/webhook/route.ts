@@ -895,11 +895,18 @@ async function processMessage(
   // both reads see the same value and write the same increment, losing one
   // (issue #369). The RPC increments in a single UPDATE and refreshes the
   // last-message summary in the same statement.
+  const isMediaInbound = contentType === 'image' || contentType === 'document'
   const { error: convError } = await supabaseAdmin().rpc(
     'bump_conversation_on_inbound',
     {
       p_conversation_id: conversation.id,
-      p_last_message_text: contentText || `[${message.type}]`,
+      p_last_message_text:
+        contentText ||
+        (isMediaInbound
+          ? contentType === 'image'
+            ? '📷 Photo / Report'
+            : '📄 Document / Report'
+          : `[${message.type}]`),
     }
   )
 
@@ -964,7 +971,13 @@ async function processMessage(
   // message all exist before any step — including send_message — runs.
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
-  const inboundText = contentText ?? message.text?.body ?? ''
+  let inboundText = contentText ?? message.text?.body ?? ''
+  if (!inboundText.trim() && isMediaInbound) {
+    inboundText =
+      contentType === 'image'
+        ? '[Patient sent a report photo / image]'
+        : '[Patient sent a report document / PDF]'
+  }
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'

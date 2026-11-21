@@ -665,4 +665,30 @@ describe('Conversation history extraction helpers', () => {
     expect(callText).toContain('सफलतापूर्वक दर्ज')
     expect(callText).not.toContain('[[BOOKING_CONFIRMED')
   })
+
+  it('acknowledges inbound report photo/document and invites patient questions warmly', async () => {
+    h.engineSendText.mockClear()
+    h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_reply_count: 0 }
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyEnabled: true, systemPrompt: null }))
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: '[Patient sent a report photo / image]' },
+    ])
+    h.retrieveKnowledge.mockResolvedValue([])
+    h.generateReply.mockResolvedValue({
+      text: 'Ok dekhte hain',
+      handoff: false,
+      usage: null,
+      contactUpdate: null,
+      bookingConfirmed: null,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalled()
+    const bubble1 = h.engineSendText.mock.calls[0][0].text
+    const bubble3 = h.engineSendText.mock.calls[2][0].text
+    expect(bubble1).toContain('साझा की है')
+    expect(bubble1).toContain('धन्यवाद')
+    expect(bubble3).toContain('क्या जानना चाहते हैं')
+  })
 })
