@@ -232,15 +232,39 @@ export async function saveManagedClinics(
       .eq('id', existing.id);
     if (updateErr) throw updateErr;
   } else {
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      const { data: prof } = await db
+        .from('profiles')
+        .select('user_id')
+        .eq('account_id', accountId)
+        .limit(1)
+        .maybeSingle();
+      effectiveUserId = prof?.user_id;
+    }
+
+    if (!effectiveUserId) {
+      try {
+        const { data: authUser } = await db.auth.getUser();
+        effectiveUserId = authUser?.user?.id;
+      } catch {
+        // fallback
+      }
+    }
+
+    const insertPayload: Record<string, any> = {
+      account_id: accountId,
+      field_name: CLINICS_CONFIG_KEY,
+      field_type: 'json',
+      field_options: { clinics },
+    };
+    if (effectiveUserId) {
+      insertPayload.user_id = effectiveUserId;
+    }
+
     const { error: insertErr } = await db
       .from('custom_fields')
-      .insert({
-        account_id: accountId,
-        user_id: userId || accountId,
-        field_name: CLINICS_CONFIG_KEY,
-        field_type: 'json',
-        field_options: { clinics },
-      });
+      .insert(insertPayload);
     if (insertErr) throw insertErr;
   }
 }

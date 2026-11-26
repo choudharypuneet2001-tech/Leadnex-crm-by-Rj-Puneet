@@ -308,7 +308,8 @@ export async function saveManagedDiseaseVideos(
   db: SupabaseClient,
   accountId: string,
   videos: DiseaseVideoEntry[],
-  googleSheetsUrl?: string
+  googleSheetsUrl?: string,
+  userId?: string
 ): Promise<void> {
   if (!accountId) return;
 
@@ -334,13 +335,38 @@ export async function saveManagedDiseaseVideos(
       .eq('id', existing.id);
     if (error) throw error;
   } else {
-    const { error } = await db.from('custom_fields').insert({
+    // Resolve a valid user_id from auth.users (via profiles or caller's userId)
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      const { data: prof } = await db
+        .from('profiles')
+        .select('user_id')
+        .eq('account_id', accountId)
+        .limit(1)
+        .maybeSingle();
+      effectiveUserId = prof?.user_id;
+    }
+
+    if (!effectiveUserId) {
+      try {
+        const { data: authUser } = await db.auth.getUser();
+        effectiveUserId = authUser?.user?.id;
+      } catch {
+        // fallback
+      }
+    }
+
+    const insertPayload: Record<string, any> = {
       account_id: accountId,
-      user_id: accountId,
       field_name: DISEASE_VIDEOS_CONFIG_KEY,
       field_type: 'json',
       field_options: payload,
-    });
+    };
+    if (effectiveUserId) {
+      insertPayload.user_id = effectiveUserId;
+    }
+
+    const { error } = await db.from('custom_fields').insert(insertPayload);
     if (error) throw error;
   }
 

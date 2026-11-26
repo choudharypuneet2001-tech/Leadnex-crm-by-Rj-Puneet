@@ -51,12 +51,12 @@ export async function GET() {
  */
 export async function POST(req: Request) {
   try {
-    const { supabase, accountId } = await getCurrentAccount();
+    const { supabase, accountId, userId } = await getCurrentAccount();
     const body = await req.json();
     const action = body.action || 'save';
 
     if (action === 'reset') {
-      await saveManagedDiseaseVideos(supabase, accountId, DEFAULT_DISEASE_VIDEOS, '');
+      await saveManagedDiseaseVideos(supabase, accountId, DEFAULT_DISEASE_VIDEOS, '', userId);
       return NextResponse.json({
         success: true,
         message: 'Reset to default educational videos successfully.',
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
       }
 
       const syncedVideos = await syncFromGoogleSheetsUrl(sheetsUrl);
-      await saveManagedDiseaseVideos(supabase, accountId, syncedVideos, sheetsUrl);
+      await saveManagedDiseaseVideos(supabase, accountId, syncedVideos, sheetsUrl, userId);
 
       return NextResponse.json({
         success: true,
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
       }
 
       const importedVideos = parseDiseaseVideoCsv(csvText);
-      await saveManagedDiseaseVideos(supabase, accountId, importedVideos, body.googleSheetsUrl);
+      await saveManagedDiseaseVideos(supabase, accountId, importedVideos, body.googleSheetsUrl, userId);
 
       return NextResponse.json({
         success: true,
@@ -101,7 +101,7 @@ export async function POST(req: Request) {
     const videos = Array.isArray(body.videos) ? body.videos : DEFAULT_DISEASE_VIDEOS;
     const googleSheetsUrl = typeof body.googleSheetsUrl === 'string' ? body.googleSheetsUrl : '';
 
-    await saveManagedDiseaseVideos(supabase, accountId, videos, googleSheetsUrl);
+    await saveManagedDiseaseVideos(supabase, accountId, videos, googleSheetsUrl, userId);
 
     return NextResponse.json({
       success: true,
