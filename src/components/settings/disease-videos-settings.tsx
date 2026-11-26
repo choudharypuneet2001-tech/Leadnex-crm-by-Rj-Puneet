@@ -195,8 +195,8 @@ export function DiseaseVideosSettings() {
     }
   };
 
-  // Add Custom Disease
-  const handleAddCustom = () => {
+  // Add Custom Disease & Auto-Save
+  const handleAddCustom = async () => {
     if (!customName.trim() || !customUrl.trim()) {
       toast.error('बीमारी का नाम और वीडियो लिंक आवश्यक हैं');
       return;
@@ -217,14 +217,36 @@ export function DiseaseVideosSettings() {
       treatmentApproachHindi: 'आयुर्वेद में बिना साइड इफेक्ट के प्राकृतिक उपचार उपलब्ध है।',
     };
 
-    setVideos((prev) => [...prev, newEntry]);
-    setCustomModalOpen(false);
-    setCustomName('');
-    setCustomCategory('');
-    setCustomUrl('');
-    setCustomKeywords('');
-    setCustomHook('');
-    toast.success('नई बीमारी का वीडियो लिंक जोड़ दिया गया!');
+    const updatedVideos = [...videos, newEntry];
+    setVideos(updatedVideos);
+
+    try {
+      setSaving(true);
+      const res = await fetch('/api/settings/disease-videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save',
+          videos: updatedVideos,
+          googleSheetsUrl,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+
+      setCustomModalOpen(false);
+      setCustomName('');
+      setCustomCategory('');
+      setCustomUrl('');
+      setCustomKeywords('');
+      setCustomHook('');
+      toast.success('नई बीमारी का वीडियो लिंक सफलतापूर्वक जोड़कर सेव कर दिया गया!');
+    } catch (err: any) {
+      toast.error(err.message || 'सेव करने में त्रुटि आई');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filteredVideos = videos.filter((v) => {
@@ -418,18 +440,18 @@ export function DiseaseVideosSettings() {
 
       {/* CSV / Excel Paste Modal */}
       <Dialog open={csvModalOpen} onOpenChange={setCsvModalOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl border">
+          <DialogHeader className="p-4 sm:p-5 pb-3 border-b shrink-0 bg-muted/10">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
               <FileSpreadsheet className="size-5 text-emerald-600" />
               Excel / CSV से वीडियो लिंक्स पेस्ट करें
             </DialogTitle>
-            <DialogDescription className="text-xs">
+            <DialogDescription className="text-xs text-muted-foreground mt-0.5">
               अपनी Excel शीट से पंक्तियाँ कॉपी करके यहाँ सीधे पेस्ट करें। सिस्टम अपने-आप बीमारी और लिंक को पहचान कर अपडेट कर देगा।
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
             <div className="text-[11px] bg-slate-50 dark:bg-slate-900 p-2.5 rounded border text-muted-foreground font-mono">
               उदाहरण फॉर्मेट:<br />
               PCOD/PCOS,https://www.youtube.com/watch?v=SIwdLPiapGk<br />
@@ -446,7 +468,7 @@ export function DiseaseVideosSettings() {
             />
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="p-3.5 sm:p-4 border-t bg-muted/30 shrink-0 flex items-center justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setCsvModalOpen(false)}>
               रद्द करें
             </Button>
@@ -454,7 +476,7 @@ export function DiseaseVideosSettings() {
               size="sm"
               onClick={handleImportCsv}
               disabled={saving || !csvPasteText.trim()}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs h-8.5 gap-1.5"
             >
               {saving ? <RefreshCw className="size-3.5 animate-spin" /> : 'इम्पोर्ट व सेव करें'}
             </Button>
@@ -464,64 +486,107 @@ export function DiseaseVideosSettings() {
 
       {/* Add Custom Disease Modal */}
       <Dialog open={customModalOpen} onOpenChange={setCustomModalOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl border">
+          <DialogHeader className="p-4 sm:p-5 pb-3 border-b shrink-0 bg-muted/10">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
               <Plus className="size-5 text-rose-500" />
               नई बीमारी का वीडियो लिंक जोड़ें
             </DialogTitle>
-            <DialogDescription className="text-xs">
-              अपनी नई बीमारी का नाम, YouTube लिंक और कीवर्ड्स दर्ज करें।
+            <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+              अपनी नई बीमारी का नाम, YouTube / Instagram वीडियो लिंक, कीवर्ड्स और भावनात्मक मैसेज दर्ज करें।
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2 text-xs">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs">
             <div>
-              <label className="font-semibold block mb-1">बीमारी का नाम (Hindi/English):</label>
+              <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+                बीमारी का नाम (Hindi/English): <span className="text-rose-500">*</span>
+              </label>
               <Input
-                placeholder="उदा. Adenomyosis / एडेनोमायोसिस"
+                placeholder="उदा. Tubal Blockage / फेलोपियन ट्यूब ब्लॉकेज"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
-                className="h-8 text-xs"
+                className="h-8.5 text-xs"
               />
             </div>
+
             <div>
-              <label className="font-semibold block mb-1">YouTube Video Link:</label>
+              <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+                Video Link (YouTube / Instagram): <span className="text-rose-500">*</span>
+              </label>
               <Input
-                placeholder="https://www.youtube.com/watch?v=..."
+                placeholder="https://www.youtube.com/watch?v=... या Instagram Reel Link"
                 value={customUrl}
                 onChange={(e) => setCustomUrl(e.target.value)}
-                className="h-8 text-xs font-mono"
+                className="h-8.5 text-xs font-mono"
               />
             </div>
+
             <div>
-              <label className="font-semibold block mb-1">पहचान के कीवर्ड्स (कॉमा से अलग करें):</label>
+              <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+                पहचान के कीवर्ड्स (कॉमा से अलग करें):
+              </label>
               <Input
-                placeholder="adenomyosis, एडेनोमायोसिस, यूट्रस सूजन"
+                placeholder="उदा. tubal blockage, ट्यूब ब्लॉक, बंद ट्यूब, दोनों ट्यूब बंद"
                 value={customKeywords}
                 onChange={(e) => setCustomKeywords(e.target.value)}
-                className="h-8 text-xs"
+                className="h-8.5 text-xs"
               />
+              <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                मरीज जब व्हाट्सएप पर इनमें से कोई भी शब्द लिखेगा, तो यह वीडियो अपने आप मैच हो जाएगा।
+              </span>
             </div>
+
             <div>
-              <label className="font-semibold block mb-1">भावनात्मक मैसेज (Emotional Message):</label>
+              <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+                भावनात्मक मैसेज (Emotional Message):
+              </label>
               <Textarea
-                rows={3}
+                rows={6}
                 placeholder="मरीज को वीडियो देखने के लिए प्रेरित करने वाला प्यारा संदेश..."
                 value={customHook}
                 onChange={(e) => setCustomHook(e.target.value)}
-                className="text-xs"
+                className="text-xs font-sans resize-y min-h-[100px] leading-relaxed"
               />
+              <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                यह मैसेज वीडियो लिंक के साथ मरीज को भेजा जाएगा।
+              </span>
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setCustomModalOpen(false)}>
-              रद्द करें
-            </Button>
-            <Button size="sm" onClick={handleAddCustom} className="bg-rose-600 hover:bg-rose-700 text-white">
-              जोड़ें
-            </Button>
+          <DialogFooter className="p-3.5 sm:p-4 border-t bg-muted/30 shrink-0 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-muted-foreground hidden sm:inline">
+              * जोड़ते ही यह सिस्टम में सुरक्षित हो जाएगा
+            </span>
+            <div className="flex items-center gap-2 ml-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCustomModalOpen(false)}
+                disabled={saving}
+                className="text-xs h-8.5 cursor-pointer"
+              >
+                रद्द करें
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleAddCustom}
+                disabled={saving || !customName.trim() || !customUrl.trim()}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs h-8.5 gap-1.5 shadow-sm cursor-pointer"
+              >
+                {saving ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" />
+                    सेव हो रहा है...
+                  </>
+                ) : (
+                  <>
+                    <Save className="size-3.5" />
+                    जोड़ें व सेव करें (Add & Save)
+                  </>
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
