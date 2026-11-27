@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
@@ -62,7 +62,15 @@ export function ContactDetailView({
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
   const supabase = createClient();
-  const { accountId, defaultCurrency } = useAuth();
+  const { accountId, defaultCurrency, user, profile } = useAuth();
+
+  const currentAgentName = useMemo(() => {
+    return (
+      profile?.full_name?.trim() ||
+      user?.user_metadata?.full_name?.trim() ||
+      (user?.email ? user.email.split('@')[0] : 'Agent')
+    );
+  }, [profile?.full_name, user?.user_metadata?.full_name, user?.email]);
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -324,11 +332,19 @@ export function ContactDetailView({
       return;
     }
 
+    let noteText = newNote.trim();
+    if (!noteText.startsWith('👤')) {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      noteText = `👤 ${currentAgentName} (${dateStr}, ${timeStr}): ${noteText}`;
+    }
+
     const { error } = await supabase.from('contact_notes').insert({
       contact_id: contactId,
       account_id: accountId,
       user_id: user.id,
-      note_text: newNote.trim(),
+      note_text: noteText,
     });
 
     if (error) {

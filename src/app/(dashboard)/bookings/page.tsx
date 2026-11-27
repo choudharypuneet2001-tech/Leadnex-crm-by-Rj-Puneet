@@ -433,10 +433,13 @@ export default function BookingsPage() {
   const getRecommendedFollowupTime = useCallback(() => {
     const now = new Date();
     const currentHour = now.getHours();
-    if (currentHour < 14) {
-      return 'Today, 04:30 PM';
+    if (currentHour < 13) {
+      return 'Today, 04:00 PM (आज शाम 4:00 बजे)';
     }
-    return 'Tomorrow, 11:30 AM';
+    if (currentHour < 17) {
+      return 'Today, 06:30 PM (आज शाम 6:30 बजे)';
+    }
+    return 'Tomorrow, 11:00 AM (कल सुबह 11:00 बजे)';
   }, []);
 
   // Website Booking Reminder state
@@ -1369,6 +1372,59 @@ export default function BookingsPage() {
           });
         } catch (cnErr) {
           console.warn('contact_notes mirror notice:', cnErr);
+        }
+
+        // Auto-assign corresponding status tag to the contact
+        let tagName = '';
+        let tagColor = '#f43f5e';
+        if (disposition === 'not_connected') {
+          tagName = 'Not Connected';
+          tagColor = '#f43f5e';
+        } else if (disposition === 'confirmed') {
+          tagName = 'Call Confirmed';
+          tagColor = '#10b981';
+        } else if (disposition === 'callback') {
+          tagName = 'Callback Requested';
+          tagColor = '#f59e0b';
+        } else if (disposition === 'not_interested') {
+          tagName = 'Not Interested';
+          tagColor = '#64748b';
+        }
+
+        if (tagName && account?.id) {
+          try {
+            const matchedTag = allTags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+            let targetTagId = matchedTag?.id;
+            if (!targetTagId) {
+              const { data: newTag } = await supabase
+                .from('tags')
+                .insert({
+                  account_id: account.id,
+                  user_id: user?.id,
+                  name: tagName,
+                  color: tagColor,
+                })
+                .select()
+                .single();
+              if (newTag) {
+                targetTagId = newTag.id;
+                setAllTags((prev) => [...prev, newTag]);
+              }
+            }
+            if (targetTagId) {
+              await supabase
+                .from('contact_tags')
+                .upsert({ contact_id: booking.contact_id, tag_id: targetTagId });
+              setContactTagsMap((prev) => {
+                const current = prev[booking.contact_id!] || [];
+                return current.includes(targetTagId!)
+                  ? prev
+                  : { ...prev, [booking.contact_id!]: [...current, targetTagId!] };
+              });
+            }
+          } catch (tErr) {
+            console.warn('Auto-tagging on call disposition notice:', tErr);
+          }
         }
       }
 

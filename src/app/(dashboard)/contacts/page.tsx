@@ -68,6 +68,8 @@ import {
   Clock,
   Video,
   Ban,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -359,6 +361,14 @@ export default function ContactsPage() {
   const accountId = account?.id || profile?.account_id;
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
+
+  const currentAgentName = useMemo(() => {
+    return (
+      profile?.full_name?.trim() ||
+      user?.user_metadata?.full_name?.trim() ||
+      (user?.email ? user.email.split('@')[0] : 'Agent')
+    );
+  }, [profile?.full_name, user?.user_metadata?.full_name, user?.email]);
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -818,6 +828,118 @@ export default function ContactsPage() {
     }
   };
 
+  const getRecommendedFollowupTime = useCallback(() => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    if (currentHour < 13) {
+      return 'Today, 04:00 PM (आज शाम 4:00 बजे)';
+    }
+    if (currentHour < 17) {
+      return 'Today, 06:30 PM (आज शाम 6:30 बजे)';
+    }
+    return 'Tomorrow, 11:00 AM (कल सुबह 11:00 बजे)';
+  }, []);
+
+  const handleLogContactCallAction = async (
+    contact: Contact,
+    disposition: 'not_connected' | 'callback' | 'confirmed' | 'not_interested',
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!accountId) return;
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const agent = currentAgentName;
+    const followupRec = getRecommendedFollowupTime();
+
+    let actionLabel = '';
+    let tagName = '';
+    let tagColor = '#f43f5e';
+    if (disposition === 'not_connected') {
+      actionLabel = `❌ Not Connected / Call Not Answered. Next Follow-up: ${followupRec}`;
+      tagName = 'Not Connected';
+      tagColor = '#f43f5e';
+    } else if (disposition === 'callback') {
+      actionLabel = `⏳ Callback Requested by Patient. Suggested call: ${followupRec}`;
+      tagName = 'Callback Requested';
+      tagColor = '#f59e0b';
+    } else if (disposition === 'confirmed') {
+      actionLabel = `✅ Booking Confirmed on Call by Patient! (Website booking required)`;
+      tagName = 'Call Confirmed';
+      tagColor = '#10b981';
+    } else if (disposition === 'not_interested') {
+      actionLabel = `🚫 Patient Not Interested / Dawa Nahi Leni`;
+      tagName = 'Not Interested';
+      tagColor = '#64748b';
+    }
+
+    const stampedEntry = `👤 ${agent} (${dateStr}, ${timeStr}): ${actionLabel}`;
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const { data: inserted, error } = await supabase
+        .from('contact_notes')
+        .insert({
+          contact_id: contact.id,
+          account_id: accountId,
+          user_id: session?.user?.id || user?.id,
+          note_text: stampedEntry,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+
+      if (inserted) {
+        setContactNotesMap((prev) => {
+          const list = prev[contact.id] || [];
+          return { ...prev, [contact.id]: [inserted, ...list] };
+        });
+      }
+
+      // Auto-assign corresponding tag to contact
+      if (tagName) {
+        const matchedTag = allTags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+        let targetTagId = matchedTag?.id;
+        if (!targetTagId) {
+          const { data: newTag } = await supabase
+            .from('tags')
+            .insert({
+              account_id: accountId,
+              user_id: user?.id,
+              name: tagName,
+              color: tagColor,
+            })
+            .select()
+            .single();
+          if (newTag) {
+            targetTagId = newTag.id;
+            setTagsMap((prev) => ({ ...prev, [newTag.id]: newTag }));
+          }
+        }
+        if (targetTagId) {
+          await supabase.from('contact_tags').upsert({ contact_id: contact.id, tag_id: targetTagId });
+          setContactTagsMap((prev) => {
+            const current = prev[contact.id] || [];
+            return current.includes(targetTagId!) ? prev : { ...prev, [contact.id]: [...current, targetTagId!] };
+          });
+        }
+      }
+
+      if (disposition === 'not_connected') {
+        toast.info(`Logged "Not Connected" by ${agent}. Follow-up: ${followupRec}`);
+      } else if (disposition === 'confirmed') {
+        toast.success(`Booking Confirmed by ${agent}! Please ensure to register booking on website.`);
+      } else {
+        toast.success(`Call status logged by ${agent}`);
+      }
+    } catch (err: any) {
+      toast.error('Failed to log call action');
+    }
+  };
+
   const handleSaveContactNote = async () => {
     if (!editingNoteContact || !noteDraft.trim()) return;
     if (!accountId) {
@@ -825,7 +947,13 @@ export default function ContactsPage() {
       return;
     }
     setSavingNote(true);
-    const cleanNote = noteDraft.trim();
+    let cleanNote = noteDraft.trim();
+    if (!cleanNote.startsWith('👤')) {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      cleanNote = `👤 ${currentAgentName} (${dateStr}, ${timeStr}): ${cleanNote}`;
+    }
     try {
       const {
         data: { session },
@@ -1626,6 +1754,68 @@ export default function ContactsPage() {
                             <Phone className="size-2.5 fill-current" />
                             <span>Call</span>
                           </a>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-6 px-1.5 text-[11px] gap-1 font-semibold text-rose-700 dark:text-rose-300 border-rose-300 bg-rose-50/60 hover:bg-rose-100 transition-all shadow-2xs cursor-pointer"
+                                  title={`Log call disposition by ${currentAgentName}`}
+                                >
+                                  <Phone className="size-2.5 text-rose-600 fill-current" />
+                                  <span>Log Call</span>
+                                </Button>
+                              }
+                            />
+                            <DropdownMenuContent align="start" className="w-56 p-1.5 shadow-xl border bg-popover" onClick={(e) => e.stopPropagation()}>
+                              <div className="px-2 py-1 text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between border-b pb-1 mb-1">
+                                <span>Call Action</span>
+                                <span className="text-[10px] text-primary font-normal">By {currentAgentName}</span>
+                              </div>
+                              <DropdownMenuItem
+                                onClick={(e) => handleLogContactCallAction(contact, 'not_connected', e)}
+                                className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded"
+                              >
+                                <XCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="font-semibold">Not Connected (नहीं उठाया)</span>
+                                  <span className="text-[10px] text-muted-foreground">Sets followup & stamps agent</span>
+                                </div>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => handleLogContactCallAction(contact, 'callback', e)}
+                                className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded"
+                              >
+                                <Clock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="font-semibold">Callback Requested</span>
+                                  <span className="text-[10px] text-muted-foreground">Baad me call karne ko kaha</span>
+                                </div>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => handleLogContactCallAction(contact, 'confirmed', e)}
+                                className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="font-semibold">Booking Confirmed on Call</span>
+                                  <span className="text-[10px] text-muted-foreground">Stamps confirmation & website prompt</span>
+                                </div>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => handleLogContactCallAction(contact, 'not_interested', e)}
+                                className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
+                              >
+                                <AlertTriangle className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="font-semibold">Not Interested / Cancelled</span>
+                                </div>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                           <Button
                             type="button"
                             variant="outline"
