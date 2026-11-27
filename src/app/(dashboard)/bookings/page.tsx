@@ -119,6 +119,62 @@ function getQuickDate(daysFromNow: number): string {
   return `${day} ${monthNames[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/**
+ * Normalizes user-entered date strings into YYYY-MM-DD for accurate comparison and grouping.
+ * Handles ISO (2026-11-27), DMY (27/11/2026), and text dates (27 November 2026, 27 Nov 2026).
+ */
+export function normalizeDateStringToYMD(dateStr?: string | null): string | null {
+  if (!dateStr || !dateStr.trim()) return null;
+  const s = dateStr.trim();
+
+  // 1. Try ISO YYYY-MM-DD
+  const isoMatch = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const y = isoMatch[1];
+    const m = isoMatch[2].padStart(2, '0');
+    const d = isoMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // 2. Try DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // 3. Try "27 November 2026" or "27 Nov 2026"
+  const textMatch = s.match(/(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?/i);
+  if (textMatch) {
+    const d = textMatch[1].padStart(2, '0');
+    const monthStr = textMatch[2].toLowerCase().slice(0, 3);
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const monthIdx = months.indexOf(monthStr);
+    if (monthIdx !== -1) {
+      const m = String(monthIdx + 1).padStart(2, '0');
+      const y = textMatch[3] || String(new Date().getFullYear());
+      return `${y}-${m}-${d}`;
+    }
+  }
+
+  // 4. Try parsing with standard Date
+  try {
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
 export function getEffectiveWebsiteStatus(b: Booking): 'done' | 'pending' {
   if (b.website_status === 'done' || b.website_status === 'pending') {
     return b.website_status;
@@ -388,8 +444,9 @@ export default function BookingsPage() {
     setOutcomeFilters(['converted', 'non_converted', 'not_visited', 'pending_visit']);
   }, []);
   const [dateFilter, setDateFilter] = useState<
-    'all' | 'today' | 'tomorrow' | 'yesterday' | 'this_week' | 'this_month'
+    'all' | 'today' | 'tomorrow' | 'yesterday' | 'next_7_days' | 'this_week' | 'this_month' | 'no_date' | 'specific'
   >('all');
+  const [specificScheduleDate, setSpecificScheduleDate] = useState<string>('');
   const [clinicFilter, setClinicFilter] = useState<string>('all');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
 
@@ -1380,62 +1437,139 @@ export default function BookingsPage() {
     return Array.from(set).sort();
   }, [activeClinics, bookings]);
 
+  // Schedule date breakdown stats (distinct scheduled dates and counts)
+  const scheduleDateStats = useMemo(() => {
+    const map = new Map<string, { ymd: string; display: string; count: number }>();
+    let noDateCount = 0;
+    let todayCount = 0;
+    let tomorrowCount = 0;
+    let upcomingCount = 0;
+    let pastCount = 0;
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayYmd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const tomorrow = new Date(now.getTime() + 86400000);
+    const tomorrowYmd = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+
+    bookings.forEach((b) => {
+      const ymd = normalizeDateStringToYMD(b.preferred_date);
+      if (!ymd) {
+        noDateCount++;
+        return;
+      }
+
+      if (ymd === todayYmd) todayCount++;
+      if (ymd === tomorrowYmd) tomorrowCount++;
+      if (ymd >= todayYmd) upcomingCount++;
+      else pastCount++;
+
+      const existing = map.get(ymd);
+      if (existing) {
+        existing.count++;
+      } else {
+        const [year, month, day] = ymd.split('-').map(Number);
+        const dObj = new Date(year, month - 1, day);
+        const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1];
+        const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dObj.getDay()];
+        const isToday = ymd === todayYmd;
+        const isTomorrow = ymd === tomorrowYmd;
+        const tag = isToday ? ' (Today)' : isTomorrow ? ' (Tomorrow)' : ` (${dayName})`;
+        const display = `${day} ${monthShort} ${year}${tag}`;
+
+        map.set(ymd, { ymd, display, count: 1 });
+      }
+    });
+
+    const sortedDates = Array.from(map.values()).sort((a, b) => a.ymd.localeCompare(b.ymd));
+
+    return {
+      sortedDates,
+      todayCount,
+      tomorrowCount,
+      upcomingCount,
+      pastCount,
+      noDateCount,
+      todayYmd,
+      tomorrowYmd,
+    };
+  }, [bookings]);
+
   // Date filter matcher helper
   const matchesDate = useCallback(
     (b: Booking): boolean => {
-      if (dateFilter === 'all') return true;
+      if (dateFilter === 'all' && !specificScheduleDate) return true;
 
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
-      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const todayYmd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
-      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      const tomorrowStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+      const tomorrow = new Date(now.getTime() + 86400000);
+      const tomorrowYmd = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
 
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const yesterdayStr = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
+      const yesterday = new Date(now.getTime() - 86400000);
+      const yesterdayYmd = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
 
-      const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-      const todayFormatted = `${now.getDate()} ${monthNames[now.getMonth()]} ${now.getFullYear()}`;
-      const tomorrowFormatted = `${tomorrow.getDate()} ${monthNames[tomorrow.getMonth()]} ${tomorrow.getFullYear()}`;
-      const yesterdayFormatted = `${yesterday.getDate()} ${monthNames[yesterday.getMonth()]} ${yesterday.getFullYear()}`;
+      const bYmd = normalizeDateStringToYMD(b.preferred_date);
+      const prefDateLower = (b.preferred_date || '').toLowerCase();
+      const createdAtYmd = (b.created_at || '').slice(0, 10);
 
-      const prefDate = (b.preferred_date || '').toLowerCase();
-      const createdAtStr = (b.created_at || '').slice(0, 10);
+      // 1. If user picked a specific date from calendar picker or distinct dates list
+      if (specificScheduleDate) {
+        return bYmd === specificScheduleDate || prefDateLower.includes(specificScheduleDate);
+      }
 
       if (dateFilter === 'today') {
         return (
-          prefDate.includes(todayStr) ||
-          prefDate.includes(todayFormatted) ||
-          prefDate.includes('today') ||
-          createdAtStr === todayStr
+          bYmd === todayYmd ||
+          prefDateLower.includes('today') ||
+          prefDateLower.includes(todayYmd) ||
+          createdAtYmd === todayYmd
         );
       }
+
       if (dateFilter === 'tomorrow') {
         return (
-          prefDate.includes(tomorrowStr) ||
-          prefDate.includes(tomorrowFormatted) ||
-          prefDate.includes('tomorrow')
+          bYmd === tomorrowYmd ||
+          prefDateLower.includes('tomorrow') ||
+          prefDateLower.includes(tomorrowYmd)
         );
       }
+
       if (dateFilter === 'yesterday') {
         return (
-          prefDate.includes(yesterdayStr) ||
-          prefDate.includes(yesterdayFormatted) ||
-          createdAtStr === yesterdayStr
+          bYmd === yesterdayYmd ||
+          prefDateLower.includes('yesterday') ||
+          prefDateLower.includes(yesterdayYmd) ||
+          createdAtYmd === yesterdayYmd
         );
       }
+
+      if (dateFilter === 'next_7_days') {
+        if (!bYmd) return false;
+        const nextWeek = new Date(now.getTime() + 7 * 86400000);
+        const nextWeekYmd = `${nextWeek.getFullYear()}-${pad(nextWeek.getMonth() + 1)}-${pad(nextWeek.getDate())}`;
+        return bYmd >= todayYmd && bYmd <= nextWeekYmd;
+      }
+
       if (dateFilter === 'this_week') {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return new Date(b.created_at) >= weekAgo;
+        const weekAgo = new Date(now.getTime() - 7 * 86400000);
+        const weekAgoYmd = `${weekAgo.getFullYear()}-${pad(weekAgo.getMonth() + 1)}-${pad(weekAgo.getDate())}`;
+        return (bYmd && bYmd >= weekAgoYmd && bYmd <= todayYmd) || (createdAtYmd >= weekAgoYmd && createdAtYmd <= todayYmd);
       }
+
       if (dateFilter === 'this_month') {
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        return new Date(b.created_at) >= monthStart;
+        const monthPrefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+        return (bYmd && bYmd.startsWith(monthPrefix)) || createdAtYmd.startsWith(monthPrefix);
       }
+
+      if (dateFilter === 'no_date') {
+        return !b.preferred_date || b.preferred_date.trim() === '' || prefDateLower.includes('flexible');
+      }
+
       return true;
     },
-    [dateFilter]
+    [dateFilter, specificScheduleDate]
   );
 
   // Filtered list
@@ -1676,68 +1810,238 @@ export default function BookingsPage() {
               <DropdownMenuTrigger
                 className={cn(
                   'h-7 px-2.5 text-xs font-medium border rounded-md flex items-center gap-1.5 transition-colors cursor-pointer',
-                  dateFilter !== 'all'
+                  dateFilter !== 'all' || specificScheduleDate
                     ? 'bg-primary/10 border-primary text-primary font-semibold'
                     : 'bg-muted/30 text-muted-foreground hover:text-foreground'
                 )}
               >
                 <Calendar className="h-3.5 w-3.5 text-primary" />
-                <span>
-                  {dateFilter === 'all'
-                    ? 'Date: All'
+                <span className="max-w-[180px] truncate">
+                  {specificScheduleDate
+                    ? `📅 ${scheduleDateStats.sortedDates.find((d) => d.ymd === specificScheduleDate)?.display || specificScheduleDate}`
+                    : dateFilter === 'all'
+                    ? 'Schedule: All Dates'
                     : dateFilter === 'today'
-                    ? '📅 Today'
+                    ? `📅 Today (${scheduleDateStats.todayCount})`
                     : dateFilter === 'tomorrow'
-                    ? '📅 Tomorrow'
+                    ? `📅 Tomorrow (${scheduleDateStats.tomorrowCount})`
+                    : dateFilter === 'next_7_days'
+                    ? `📅 Next 7 Days (${scheduleDateStats.upcomingCount})`
                     : dateFilter === 'yesterday'
                     ? '📅 Yesterday'
                     : dateFilter === 'this_week'
                     ? '📅 This Week'
-                    : '📅 This Month'}
+                    : dateFilter === 'this_month'
+                    ? '📅 This Month'
+                    : dateFilter === 'no_date'
+                    ? `📅 Flexible (${scheduleDateStats.noDateCount})`
+                    : 'Schedule Filter'}
                 </span>
                 <ChevronDown className="h-3 w-3 opacity-60" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48 p-1">
-                <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  Filter by Appointment Date
+              <DropdownMenuContent align="start" className="w-72 p-1 max-h-96 overflow-y-auto">
+                <div className="flex items-center justify-between px-2 py-1.5 border-b">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Preferred Schedule Filter
+                  </span>
+                  {(dateFilter !== 'all' || specificScheduleDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDateFilter('all');
+                        setSpecificScheduleDate('');
+                      }}
+                      className="text-[11px] text-primary hover:underline font-medium cursor-pointer"
+                    >
+                      Clear Filter
+                    </button>
+                  )}
                 </div>
-                <DropdownMenuItem
-                  onClick={() => setDateFilter('all')}
-                  className={cn("text-xs cursor-pointer", dateFilter === 'all' && "font-semibold text-primary")}
-                >
-                  All Dates (Sabhi Dates)
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setDateFilter('today')}
-                  className={cn("text-xs cursor-pointer", dateFilter === 'today' && "font-semibold text-primary bg-primary/10")}
-                >
-                  📅 Today (Aaj Ke Appointments)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setDateFilter('tomorrow')}
-                  className={cn("text-xs cursor-pointer", dateFilter === 'tomorrow' && "font-semibold text-primary bg-primary/10")}
-                >
-                  📅 Tomorrow (Kal Ke Appointments)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setDateFilter('yesterday')}
-                  className={cn("text-xs cursor-pointer", dateFilter === 'yesterday' && "font-semibold text-primary bg-primary/10")}
-                >
-                  📅 Yesterday (Beeta Hua Kal)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setDateFilter('this_week')}
-                  className={cn("text-xs cursor-pointer", dateFilter === 'this_week' && "font-semibold text-primary bg-primary/10")}
-                >
-                  📅 This Week (Last 7 Days)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setDateFilter('this_month')}
-                  className={cn("text-xs cursor-pointer", dateFilter === 'this_month' && "font-semibold text-primary bg-primary/10")}
-                >
-                  📅 This Month (Is Mahine Ke)
-                </DropdownMenuItem>
+
+                {/* Calendar Date Picker */}
+                <div className="p-2 border-b bg-muted/20">
+                  <div className="text-[11px] font-medium text-muted-foreground mb-1 flex items-center justify-between">
+                    <span>Pick Exact Schedule Date:</span>
+                    {specificScheduleDate && (
+                      <span className="text-[10px] text-primary font-semibold">Active</span>
+                    )}
+                  </div>
+                  <input
+                    type="date"
+                    value={specificScheduleDate}
+                    onChange={(e) => {
+                      setSpecificScheduleDate(e.target.value);
+                      setDateFilter(e.target.value ? 'specific' : 'all');
+                    }}
+                    className="w-full h-8 px-2 text-xs border rounded-md bg-background focus:ring-1 focus:ring-primary cursor-pointer"
+                  />
+                </div>
+
+                {/* Quick Presets with counts */}
+                <div className="py-1">
+                  <div className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Quick Options
+                  </div>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('all');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'all' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>All Bookings</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      {bookings.length}
+                    </Badge>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('today');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'today' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>📅 Today (Aaj Ke)</span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-300">
+                      {scheduleDateStats.todayCount}
+                    </Badge>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('tomorrow');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'tomorrow' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>📅 Tomorrow (Kal Ke)</span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-300">
+                      {scheduleDateStats.tomorrowCount}
+                    </Badge>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('next_7_days');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'next_7_days' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>📅 Next 7 Days (Upcoming)</span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-50 text-violet-700 border-violet-300">
+                      {scheduleDateStats.upcomingCount}
+                    </Badge>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('no_date');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'no_date' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>📅 Flexible / No Date</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      {scheduleDateStats.noDateCount}
+                    </Badge>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('yesterday');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'yesterday' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>📅 Yesterday (Beeta Hua Kal)</span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('this_week');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'this_week' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>📅 This Week</span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setSpecificScheduleDate('');
+                      setDateFilter('this_month');
+                    }}
+                    className={cn(
+                      'text-xs cursor-pointer flex items-center justify-between',
+                      dateFilter === 'this_month' && !specificScheduleDate && 'font-semibold text-primary bg-primary/10'
+                    )}
+                  >
+                    <span>📅 This Month</span>
+                  </DropdownMenuItem>
+                </div>
+
+                {/* Scheduled Dates List Section (Date-wise breakdown with counts) */}
+                {scheduleDateStats.sortedDates.length > 0 && (
+                  <div className="border-t pt-1 mt-1">
+                    <div className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                      <span>Scheduled Dates ({scheduleDateStats.sortedDates.length})</span>
+                      <span className="text-[9px] font-normal text-muted-foreground">lead counts</span>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-0.5 px-0.5">
+                      {scheduleDateStats.sortedDates.map((d) => {
+                        const isSelected = specificScheduleDate === d.ymd;
+                        return (
+                          <DropdownMenuItem
+                            key={d.ymd}
+                            onClick={() => {
+                              setSpecificScheduleDate(d.ymd);
+                              setDateFilter('specific');
+                            }}
+                            className={cn(
+                              'text-xs cursor-pointer flex items-center justify-between py-1.5 px-2 rounded',
+                              isSelected
+                                ? 'bg-primary text-primary-foreground font-semibold'
+                                : 'hover:bg-muted'
+                            )}
+                          >
+                            <span className="truncate mr-2">{d.display}</span>
+                            <Badge
+                              variant={isSelected ? 'default' : 'secondary'}
+                              className={cn(
+                                'text-[10px] px-1.5 py-0 font-bold shrink-0',
+                                isSelected ? 'bg-primary-foreground text-primary' : 'bg-primary/10 text-primary'
+                              )}
+                            >
+                              {d.count} {d.count === 1 ? 'lead' : 'leads'}
+                            </Badge>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -2177,6 +2481,153 @@ export default function BookingsPage() {
         </div>
       </div>
 
+      {/* Quick Preferred Schedule Date Pill Bar */}
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-xl bg-card border shadow-2xs">
+        <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1 mr-1">
+          <Calendar className="h-3.5 w-3.5 text-primary" />
+          Preferred Schedule:
+        </span>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSpecificScheduleDate('');
+            setDateFilter('all');
+          }}
+          className={cn(
+            'px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border',
+            dateFilter === 'all' && !specificScheduleDate
+              ? 'bg-primary text-primary-foreground border-primary shadow-xs font-semibold'
+              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border-transparent'
+          )}
+        >
+          All ({bookings.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSpecificScheduleDate('');
+            setDateFilter('today');
+          }}
+          className={cn(
+            'px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border flex items-center gap-1.5',
+            dateFilter === 'today' && !specificScheduleDate
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-semibold'
+              : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+          )}
+        >
+          <span>Today</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500/20 text-emerald-900 dark:text-emerald-100 font-bold">
+            {scheduleDateStats.todayCount}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSpecificScheduleDate('');
+            setDateFilter('tomorrow');
+          }}
+          className={cn(
+            'px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border flex items-center gap-1.5',
+            dateFilter === 'tomorrow' && !specificScheduleDate
+              ? 'bg-blue-600 text-white border-blue-600 shadow-xs font-semibold'
+              : 'bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-100'
+          )}
+        >
+          <span>Tomorrow</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-500/20 text-blue-900 dark:text-blue-100 font-bold">
+            {scheduleDateStats.tomorrowCount}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSpecificScheduleDate('');
+            setDateFilter('next_7_days');
+          }}
+          className={cn(
+            'px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border flex items-center gap-1.5',
+            dateFilter === 'next_7_days' && !specificScheduleDate
+              ? 'bg-violet-600 text-white border-violet-600 shadow-xs font-semibold'
+              : 'bg-violet-50 text-violet-800 dark:bg-violet-950/40 dark:text-violet-300 border-violet-200 dark:border-violet-800 hover:bg-violet-100'
+          )}
+        >
+          <span>Next 7 Days</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-violet-500/20 text-violet-900 dark:text-violet-100 font-bold">
+            {scheduleDateStats.upcomingCount}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSpecificScheduleDate('');
+            setDateFilter('no_date');
+          }}
+          className={cn(
+            'px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border flex items-center gap-1.5',
+            dateFilter === 'no_date' && !specificScheduleDate
+              ? 'bg-slate-700 text-white border-slate-700 shadow-xs font-semibold'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border-border'
+          )}
+        >
+          <span>Flexible / No Date</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/10 dark:bg-white/10 font-bold">
+            {scheduleDateStats.noDateCount}
+          </span>
+        </button>
+
+        {/* Specific chosen date badge */}
+        {specificScheduleDate && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500 text-white border border-amber-600 shadow-xs">
+            <span>
+              Date: {scheduleDateStats.sortedDates.find((d) => d.ymd === specificScheduleDate)?.display || specificScheduleDate}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setSpecificScheduleDate('');
+                setDateFilter('all');
+              }}
+              className="hover:bg-black/20 rounded-full p-0.5 cursor-pointer transition-colors"
+              title="Remove specific date filter"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Inline Exact Date input picker */}
+        <div className="flex items-center gap-1.5 ml-auto">
+          <span className="text-[11px] text-muted-foreground hidden md:inline">Calendar Picker:</span>
+          <input
+            type="date"
+            value={specificScheduleDate}
+            onChange={(e) => {
+              setSpecificScheduleDate(e.target.value);
+              setDateFilter(e.target.value ? 'specific' : 'all');
+            }}
+            className="h-7 px-2 text-xs border rounded-md bg-background focus:ring-1 focus:ring-primary cursor-pointer text-foreground"
+            title="Choose specific date to filter Preferred Schedule"
+          />
+          {specificScheduleDate && (
+            <button
+              type="button"
+              onClick={() => {
+                setSpecificScheduleDate('');
+                setDateFilter('all');
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground cursor-pointer px-1 underline"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Bookings Table */}
       <div className="rounded-xl border bg-card shadow-xs overflow-hidden">
         {loading ? (
@@ -2193,7 +2644,7 @@ export default function BookingsPage() {
             </div>
             <h3 className="text-lg font-semibold text-foreground">No appointments found</h3>
             <p className="text-sm text-muted-foreground max-w-sm mt-1">
-              {search || statusFilter !== 'all' || typeFilter !== 'all' || selectedTagFilter
+              {search || statusFilter !== 'all' || typeFilter !== 'all' || selectedTagFilter || dateFilter !== 'all' || specificScheduleDate
                 ? 'No bookings match your current filter criteria. Try clearing filters.'
                 : 'When patients confirm their appointment via WhatsApp or Ads, their booking details and query ID will automatically appear here.'}
             </p>
@@ -2211,7 +2662,16 @@ export default function BookingsPage() {
                   <TableHead className="min-w-[180px]">Follow-up Notes</TableHead>
                   <TableHead className="min-w-[165px]">Consultation Mode</TableHead>
                   <TableHead>City</TableHead>
-                  <TableHead className="min-w-[170px]">Preferred Schedule</TableHead>
+                  <TableHead className="min-w-[170px]">
+                    <div className="flex items-center gap-1.5">
+                      <span>Preferred Schedule</span>
+                      {(dateFilter !== 'all' || specificScheduleDate) && (
+                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-primary/15 text-primary border border-primary/30">
+                          Filtered
+                        </span>
+                      )}
+                    </div>
+                  </TableHead>
                   <TableHead>Health Concern / Disease</TableHead>
                   <TableHead>Meta Ad Referral</TableHead>
                   <TableHead>Status</TableHead>

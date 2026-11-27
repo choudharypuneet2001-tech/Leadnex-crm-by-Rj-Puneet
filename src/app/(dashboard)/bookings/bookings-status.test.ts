@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getEffectiveWebsiteStatus,
   getEffectiveVisitOutcome,
+  normalizeDateStringToYMD,
 } from './page';
 import type { Booking } from '@/types';
 
@@ -76,6 +77,31 @@ describe('Bookings Status & Conversion Helpers', () => {
     it('defaults to pending_visit when outcome is unspecified', () => {
       const b = createMockBooking({ notes: undefined });
       expect(getEffectiveVisitOutcome(b)).toBe('pending_visit');
+    });
+  });
+
+  describe('normalizeDateStringToYMD', () => {
+    it('normalizes ISO date YYYY-MM-DD correctly', () => {
+      expect(normalizeDateStringToYMD('2026-11-27')).toBe('2026-11-27');
+      expect(normalizeDateStringToYMD('2026-05-04')).toBe('2026-05-04');
+    });
+
+    it('normalizes DMY formats DD/MM/YYYY and DD-MM-YYYY', () => {
+      expect(normalizeDateStringToYMD('27/11/2026')).toBe('2026-11-27');
+      expect(normalizeDateStringToYMD('04-05-2026')).toBe('2026-05-04');
+    });
+
+    it('normalizes text month dates e.g. "27 November 2026" and "28 Nov 2026"', () => {
+      expect(normalizeDateStringToYMD('27 November 2026')).toBe('2026-11-27');
+      expect(normalizeDateStringToYMD('28 Nov 2026')).toBe('2026-11-28');
+      expect(normalizeDateStringToYMD('1 January 2027')).toBe('2027-01-01');
+    });
+
+    it('returns null for empty or non-date strings', () => {
+      expect(normalizeDateStringToYMD('')).toBeNull();
+      expect(normalizeDateStringToYMD(null)).toBeNull();
+      expect(normalizeDateStringToYMD(undefined)).toBeNull();
+      expect(normalizeDateStringToYMD('Flexible')).toBeNull();
     });
   });
 });
