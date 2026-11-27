@@ -407,30 +407,78 @@ export async function dispatchInboundToAiReply(
         const notes = effectiveBooking.age || tracedAge ? `Age: ${effectiveBooking.age || tracedAge}` : null
 
         if (city && city.toLowerCase() !== 'naam' && city.toLowerCase() !== 'patient') {
-          const { error: bookingErr } = await db.from('bookings').insert({
-            account_id: accountId,
-            contact_id: contactId,
-            conversation_id: conversationId,
-            booking_query_id: queryId,
-            patient_name: patientName,
-            phone: phone,
-            city: city,
-            preferred_date: preferredDate,
-            preferred_time: preferredTime,
-            health_concern: healthConcern,
-            consultation_type: consultationType,
-            clinic_location: clinicLocation,
-            ad_name: contact?.ad_name || null,
-            ad_id: contact?.ad_id || null,
-            notes: notes,
-            status: 'confirmed',
-          })
+          // Check if an existing booking already exists for this contact to prevent duplicate re-entries
+          let existingBookingId: string | null = null
+          let existingQueryId: string | null = null
 
-          if (bookingErr) {
-            console.error('[ai auto-reply] failed to record booking:', bookingErr)
+          const { data: existingRows } = await db
+            .from('bookings')
+            .select('id, booking_query_id')
+            .eq('account_id', accountId)
+            .eq('contact_id', contactId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          if (existingRows && existingRows.length > 0) {
+            existingBookingId = existingRows[0].id
+            existingQueryId = existingRows[0].booking_query_id
+          }
+
+          if (existingBookingId) {
+            // Update existing booking in-place instead of creating duplicate re-entry
+            const updatePayload: Record<string, any> = {
+              updated_at: new Date().toISOString(),
+            }
+            if (patientName && patientName !== 'Patient') updatePayload.patient_name = patientName
+            if (phone) updatePayload.phone = phone
+            if (city) updatePayload.city = city
+            if (preferredDate) updatePayload.preferred_date = preferredDate
+            if (preferredTime) updatePayload.preferred_time = preferredTime
+            if (healthConcern) updatePayload.health_concern = healthConcern
+            if (consultationType) updatePayload.consultation_type = consultationType
+            if (clinicLocation) updatePayload.clinic_location = clinicLocation
+            if (notes) updatePayload.notes = notes
+
+            const { error: updateErr } = await db
+              .from('bookings')
+              .update(updatePayload)
+              .eq('id', existingBookingId)
+
+            if (updateErr) {
+              console.error('[ai auto-reply] failed to update existing booking:', updateErr)
+            } else {
+              console.log(
+                `[ai auto-reply] updated existing booking ${existingQueryId} for contact ${contactId} without duplicate re-entry`
+              )
+              void syncBookingTag(db, accountId, contactId, true)
+            }
           } else {
-            console.log(`[ai auto-reply] recorded booking ${queryId} for contact ${contactId}`)
-            void syncBookingTag(db, accountId, contactId, true)
+            // Fresh booking entry
+            const { error: bookingErr } = await db.from('bookings').insert({
+              account_id: accountId,
+              contact_id: contactId,
+              conversation_id: conversationId,
+              booking_query_id: queryId,
+              patient_name: patientName,
+              phone: phone,
+              city: city,
+              preferred_date: preferredDate,
+              preferred_time: preferredTime,
+              health_concern: healthConcern,
+              consultation_type: consultationType,
+              clinic_location: clinicLocation,
+              ad_name: contact?.ad_name || null,
+              ad_id: contact?.ad_id || null,
+              notes: notes,
+              status: 'confirmed',
+            })
+
+            if (bookingErr) {
+              console.error('[ai auto-reply] failed to record booking:', bookingErr)
+            } else {
+              console.log(`[ai auto-reply] recorded booking ${queryId} for contact ${contactId}`)
+              void syncBookingTag(db, accountId, contactId, true)
+            }
           }
         } else {
           console.log(`[ai auto-reply] booking confirmation delayed — city is missing or invalid for contact ${contactId}`)

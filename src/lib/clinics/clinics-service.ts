@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/ai/admin-client';
 
 export interface ManagedClinic {
   id: string;
@@ -216,7 +217,15 @@ export async function saveManagedClinics(
   }
 
   // Always sync into custom_fields storage for universal durability
-  const { data: existing } = await db
+  let client = db;
+  try {
+    const admin = supabaseAdmin();
+    if (admin) client = admin;
+  } catch {
+    // fallback
+  }
+
+  const { data: existing } = await client
     .from('custom_fields')
     .select('id')
     .eq('account_id', accountId)
@@ -224,7 +233,7 @@ export async function saveManagedClinics(
     .maybeSingle();
 
   if (existing?.id) {
-    const { error: updateErr } = await db
+    const { error: updateErr } = await client
       .from('custom_fields')
       .update({
         field_options: { clinics },
@@ -232,24 +241,34 @@ export async function saveManagedClinics(
       .eq('id', existing.id);
     if (updateErr) throw updateErr;
   } else {
-    let effectiveUserId = userId;
-    if (!effectiveUserId) {
-      const { data: prof } = await db
+    let validUserId: string | null = null;
+    if (userId) {
+      const { data: check } = await client
+        .from('profiles')
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (check?.user_id) validUserId = check.user_id;
+    }
+
+    if (!validUserId) {
+      const { data: ownerProf } = await client
         .from('profiles')
         .select('user_id')
         .eq('account_id', accountId)
+        .order('created_at', { ascending: true })
         .limit(1)
         .maybeSingle();
-      effectiveUserId = prof?.user_id;
+      validUserId = ownerProf?.user_id || null;
     }
 
-    if (!effectiveUserId) {
-      try {
-        const { data: authUser } = await db.auth.getUser();
-        effectiveUserId = authUser?.user?.id;
-      } catch {
-        // fallback
-      }
+    if (!validUserId) {
+      const { data: anyProf } = await client
+        .from('profiles')
+        .select('user_id')
+        .limit(1)
+        .maybeSingle();
+      validUserId = anyProf?.user_id || null;
     }
 
     const insertPayload: Record<string, any> = {
@@ -258,11 +277,11 @@ export async function saveManagedClinics(
       field_type: 'json',
       field_options: { clinics },
     };
-    if (effectiveUserId) {
-      insertPayload.user_id = effectiveUserId;
+    if (validUserId) {
+      insertPayload.user_id = validUserId;
     }
 
-    const { error: insertErr } = await db
+    const { error: insertErr } = await client
       .from('custom_fields')
       .insert(insertPayload);
     if (insertErr) throw insertErr;

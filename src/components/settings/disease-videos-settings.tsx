@@ -217,7 +217,17 @@ export function DiseaseVideosSettings() {
       treatmentApproachHindi: 'आयुर्वेद में बिना साइड इफेक्ट के प्राकृतिक उपचार उपलब्ध है।',
     };
 
-    const updatedVideos = [...videos, newEntry];
+    // If disease category already exists, update in-place; otherwise append
+    const existingIndex = videos.findIndex(
+      (v) => v.category === cat || v.diseaseNameHindi.toLowerCase() === customName.trim().toLowerCase()
+    );
+    let updatedVideos: DiseaseVideoEntry[];
+    if (existingIndex >= 0) {
+      updatedVideos = [...videos];
+      updatedVideos[existingIndex] = newEntry;
+    } else {
+      updatedVideos = [...videos, newEntry];
+    }
     setVideos(updatedVideos);
 
     try {
@@ -244,6 +254,32 @@ export function DiseaseVideosSettings() {
       toast.success('नई बीमारी का वीडियो लिंक सफलतापूर्वक जोड़कर सेव कर दिया गया!');
     } catch (err: any) {
       toast.error(err.message || 'सेव करने में त्रुटि आई');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Delete a video entry
+  const handleDeleteVideo = async (category: string) => {
+    if (!confirm('क्या आप सच में इस बीमारी के वीडियो लिंक को हटाना चाहते हैं?')) return;
+    const updated = videos.filter((v) => v.category !== category);
+    setVideos(updated);
+    try {
+      setSaving(true);
+      const res = await fetch('/api/settings/disease-videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save',
+          videos: updated,
+          googleSheetsUrl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete');
+      toast.success('वीडियो लिंक सफलतापूर्वक हटा दिया गया!');
+    } catch (err: any) {
+      toast.error(err.message || 'हटाने में त्रुटि आई');
     } finally {
       setSaving(false);
     }
@@ -392,9 +428,20 @@ export function DiseaseVideosSettings() {
                       {entry.title || entry.category}
                     </div>
                   </div>
-                  <Badge variant="secondary" className="text-[10px] font-mono shrink-0">
-                    {entry.category}
-                  </Badge>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge variant="secondary" className="text-[10px] font-mono">
+                      {entry.category}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteVideo(entry.category)}
+                      className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                      title="हटाएं (Delete)"
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-4 pt-1 space-y-3">
@@ -440,7 +487,7 @@ export function DiseaseVideosSettings() {
 
       {/* CSV / Excel Paste Modal */}
       <Dialog open={csvModalOpen} onOpenChange={setCsvModalOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl border">
+        <DialogContent className="sm:max-w-xl w-[95vw] max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl border">
           <DialogHeader className="p-4 sm:p-5 pb-3 border-b shrink-0 bg-muted/10">
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
               <FileSpreadsheet className="size-5 text-emerald-600" />
@@ -451,7 +498,7 @@ export function DiseaseVideosSettings() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
             <div className="text-[11px] bg-slate-50 dark:bg-slate-900 p-2.5 rounded border text-muted-foreground font-mono">
               उदाहरण फॉर्मेट:<br />
               PCOD/PCOS,https://www.youtube.com/watch?v=SIwdLPiapGk<br />
@@ -468,7 +515,7 @@ export function DiseaseVideosSettings() {
             />
           </div>
 
-          <DialogFooter className="p-3.5 sm:p-4 border-t bg-muted/30 shrink-0 flex items-center justify-end gap-2">
+          <DialogFooter className="p-3.5 sm:p-4 border-t bg-muted/40 shrink-0 sticky bottom-0 z-10 flex items-center justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setCsvModalOpen(false)}>
               रद्द करें
             </Button>
@@ -486,7 +533,7 @@ export function DiseaseVideosSettings() {
 
       {/* Add Custom Disease Modal */}
       <Dialog open={customModalOpen} onOpenChange={setCustomModalOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl border">
+        <DialogContent className="sm:max-w-xl w-[95vw] max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl border">
           <DialogHeader className="p-4 sm:p-5 pb-3 border-b shrink-0 bg-muted/10">
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
               <Plus className="size-5 text-rose-500" />
@@ -497,7 +544,7 @@ export function DiseaseVideosSettings() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-xs pr-2">
             <div>
               <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
                 बीमारी का नाम (Hindi/English): <span className="text-rose-500">*</span>
@@ -542,11 +589,11 @@ export function DiseaseVideosSettings() {
                 भावनात्मक मैसेज (Emotional Message):
               </label>
               <Textarea
-                rows={6}
+                rows={5}
                 placeholder="मरीज को वीडियो देखने के लिए प्रेरित करने वाला प्यारा संदेश..."
                 value={customHook}
                 onChange={(e) => setCustomHook(e.target.value)}
-                className="text-xs font-sans resize-y min-h-[100px] leading-relaxed"
+                className="text-xs font-sans resize-y min-h-[90px] max-h-[220px] leading-relaxed"
               />
               <span className="text-[10px] text-muted-foreground mt-0.5 block">
                 यह मैसेज वीडियो लिंक के साथ मरीज को भेजा जाएगा।
@@ -554,7 +601,7 @@ export function DiseaseVideosSettings() {
             </div>
           </div>
 
-          <DialogFooter className="p-3.5 sm:p-4 border-t bg-muted/30 shrink-0 flex items-center justify-between gap-2">
+          <DialogFooter className="p-3.5 sm:p-4 border-t bg-muted/40 shrink-0 sticky bottom-0 z-10 flex items-center justify-between gap-2">
             <span className="text-[11px] text-muted-foreground hidden sm:inline">
               * जोड़ते ही यह सिस्टम में सुरक्षित हो जाएगा
             </span>

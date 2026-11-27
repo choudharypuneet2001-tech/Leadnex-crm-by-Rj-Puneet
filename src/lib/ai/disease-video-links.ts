@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from './admin-client';
 
 /**
  * Disease-wise Educational Video Links & Emotional Connect Messages for Gynocci
@@ -269,7 +270,7 @@ export async function getManagedDiseaseVideos(
   db: SupabaseClient | null | undefined,
   accountId?: string | null
 ): Promise<DiseaseVideoEntry[]> {
-  if (!accountId || !db) return DEFAULT_DISEASE_VIDEOS;
+  if (!accountId) return DEFAULT_DISEASE_VIDEOS;
 
   const cached = managedVideosCache.get(accountId);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
@@ -277,7 +278,16 @@ export async function getManagedDiseaseVideos(
   }
 
   try {
-    const builder = db.from('custom_fields').select('field_options');
+    let client = db;
+    try {
+      const admin = supabaseAdmin();
+      if (admin) client = admin;
+    } catch {
+      // fallback
+    }
+    if (!client) return DEFAULT_DISEASE_VIDEOS;
+
+    const builder = client.from('custom_fields').select('field_options');
     if (typeof (builder as any)?.eq !== 'function') return DEFAULT_DISEASE_VIDEOS;
     let query = (builder as any).eq('account_id', accountId);
     if (typeof query?.eq === 'function') {
@@ -319,7 +329,16 @@ export async function saveManagedDiseaseVideos(
     updated_at: new Date().toISOString(),
   };
 
-  const { data: existing } = await db
+  // Prefer service-role client to guarantee permission and FK integrity
+  let client = db;
+  try {
+    const admin = supabaseAdmin();
+    if (admin) client = admin;
+  } catch {
+    // fallback
+  }
+
+  const { data: existing } = await client
     .from('custom_fields')
     .select('id')
     .eq('account_id', accountId)
@@ -327,7 +346,7 @@ export async function saveManagedDiseaseVideos(
     .maybeSingle();
 
   if (existing?.id) {
-    const { error } = await db
+    const { error } = await client
       .from('custom_fields')
       .update({
         field_options: payload,
@@ -335,25 +354,37 @@ export async function saveManagedDiseaseVideos(
       .eq('id', existing.id);
     if (error) throw error;
   } else {
-    // Resolve a valid user_id from auth.users (via profiles or caller's userId)
-    let effectiveUserId = userId;
-    if (!effectiveUserId) {
-      const { data: prof } = await db
+    // Resolve a guaranteed valid auth.users user_id to satisfy custom_fields_user_id_fkey
+    let validUserId: string | null = null;
+    if (userId) {
+      const { data: check } = await client
+        .from('profiles')
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (check?.user_id) validUserId = check.user_id;
+    }
+
+    if (!validUserId) {
+      // Find an owner or admin for this account whose user_id is in auth.users
+      const { data: ownerProf } = await client
         .from('profiles')
         .select('user_id')
         .eq('account_id', accountId)
+        .order('created_at', { ascending: true })
         .limit(1)
         .maybeSingle();
-      effectiveUserId = prof?.user_id;
+      validUserId = ownerProf?.user_id || null;
     }
 
-    if (!effectiveUserId) {
-      try {
-        const { data: authUser } = await db.auth.getUser();
-        effectiveUserId = authUser?.user?.id;
-      } catch {
-        // fallback
-      }
+    if (!validUserId) {
+      // Fallback: any profile with a valid user_id
+      const { data: anyProf } = await client
+        .from('profiles')
+        .select('user_id')
+        .limit(1)
+        .maybeSingle();
+      validUserId = anyProf?.user_id || null;
     }
 
     const insertPayload: Record<string, any> = {
@@ -362,11 +393,11 @@ export async function saveManagedDiseaseVideos(
       field_type: 'json',
       field_options: payload,
     };
-    if (effectiveUserId) {
-      insertPayload.user_id = effectiveUserId;
+    if (validUserId) {
+      insertPayload.user_id = validUserId;
     }
 
-    const { error } = await db.from('custom_fields').insert(insertPayload);
+    const { error } = await client.from('custom_fields').insert(insertPayload);
     if (error) throw error;
   }
 

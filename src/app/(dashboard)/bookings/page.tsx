@@ -51,6 +51,7 @@ import {
   Search,
   Download,
   Phone,
+  PhoneCall,
   MapPin,
   Calendar,
   Clock,
@@ -418,8 +419,30 @@ function BookingTagsCell({
 export default function BookingsPage() {
   const router = useRouter();
   const supabase = createClient();
-  const { account, accountRole, user } = useAuth();
+  const { account, accountRole, user, profile } = useAuth();
   const { activeClinics } = useClinics();
+
+  const currentAgentName = useMemo(() => {
+    return (
+      profile?.full_name?.trim() ||
+      user?.user_metadata?.full_name?.trim() ||
+      (user?.email ? user.email.split('@')[0] : 'Agent')
+    );
+  }, [profile?.full_name, user?.user_metadata?.full_name, user?.email]);
+
+  const getRecommendedFollowupTime = useCallback(() => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    if (currentHour < 14) {
+      return 'Today, 04:30 PM';
+    }
+    return 'Tomorrow, 11:30 AM';
+  }, []);
+
+  // Website Booking Reminder state
+  const [websiteReminderOpen, setWebsiteReminderOpen] = useState(false);
+  const [reminderBooking, setReminderBooking] = useState<Booking | null>(null);
+  const [reminderAgentName, setReminderAgentName] = useState('');
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1233,7 +1256,16 @@ export default function BookingsPage() {
   const handleSaveNote = async () => {
     if (!editingNoteBooking) return;
     setSavingNote(true);
-    const cleanNote = noteDraft.trim() || null;
+    let cleanNote = noteDraft.trim() || null;
+
+    // Automatically stamp author agent name and date/time if not already present
+    if (cleanNote && !cleanNote.startsWith('👤')) {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      cleanNote = `👤 ${currentAgentName} (${dateStr}, ${timeStr}): ${cleanNote}`;
+    }
+
     try {
       const { error } = await supabase
         .from('bookings')
@@ -1270,7 +1302,7 @@ export default function BookingsPage() {
         setSelectedBooking((prev) => (prev ? { ...prev, notes: cleanNote } : null));
       }
 
-      toast.success('Follow-up note saved successfully');
+      toast.success(`Follow-up note logged by ${currentAgentName}`);
       setNoteModalOpen(false);
       void fetchBookings();
     } catch (err: any) {
@@ -1278,6 +1310,88 @@ export default function BookingsPage() {
       toast.error(err?.message || 'Failed to save note');
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  const handleLogCallDisposition = async (
+    booking: Booking,
+    disposition: 'not_connected' | 'callback' | 'confirmed' | 'not_interested',
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const agent = currentAgentName;
+    const followupRec = getRecommendedFollowupTime();
+
+    let actionLabel = '';
+    let newOutcome: PatientVisitOutcome | undefined;
+
+    if (disposition === 'not_connected') {
+      actionLabel = `❌ Not Connected / Call Not Answered. Next Follow-up: ${followupRec}`;
+      newOutcome = 'not_visited';
+    } else if (disposition === 'callback') {
+      actionLabel = `⏳ Callback Requested by Patient. Suggested call: ${followupRec}`;
+    } else if (disposition === 'confirmed') {
+      actionLabel = `✅ Booking Confirmed on Call by Patient!`;
+      newOutcome = 'converted';
+    } else if (disposition === 'not_interested') {
+      actionLabel = `🚫 Patient Not Interested / Dawa Nahi Leni`;
+      newOutcome = 'non_converted';
+    }
+
+    const stampedEntry = `👤 ${agent} (${dateStr}, ${timeStr}): ${actionLabel}`;
+    const prevNotes = (booking.notes || '').trim();
+    const combinedNotes = prevNotes ? `${prevNotes}\n${stampedEntry}` : stampedEntry;
+
+    try {
+      const updatePayload: Record<string, any> = {
+        notes: combinedNotes,
+        updated_at: new Date().toISOString(),
+      };
+      if (newOutcome) {
+        updatePayload.visit_outcome = newOutcome;
+      }
+
+      const { error } = await supabase.from('bookings').update(updatePayload).eq('id', booking.id);
+      if (error) throw error;
+
+      // Mirror to contact_notes
+      if (booking.contact_id) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          await supabase.from('contact_notes').insert({
+            contact_id: booking.contact_id,
+            account_id: account?.id,
+            user_id: sessionData?.session?.user?.id || user?.id,
+            note_text: `[Booking ${booking.booking_query_id}] ${stampedEntry}`,
+          });
+        } catch (cnErr) {
+          console.warn('contact_notes mirror notice:', cnErr);
+        }
+      }
+
+      setBookings((prev) =>
+        prev.map((b) => (b.id === booking.id ? { ...b, ...updatePayload } : b))
+      );
+
+      if (selectedBooking?.id === booking.id) {
+        setSelectedBooking((prev) => (prev ? { ...prev, ...updatePayload } : null));
+      }
+
+      if (disposition === 'confirmed') {
+        setReminderBooking(booking);
+        setReminderAgentName(agent);
+        setWebsiteReminderOpen(true);
+        toast.success(`Booking Confirmed by ${agent}! Website registration zaroori hai.`);
+      } else if (disposition === 'not_connected') {
+        toast.info(`Call logged as "Not Connected" by ${agent}. Recommended followup: ${followupRec}`);
+      } else {
+        toast.success(`Call status logged by ${agent}`);
+      }
+    } catch (err: any) {
+      toast.error('Call status save karne me error aayi');
     }
   };
 
@@ -2762,6 +2876,65 @@ export default function BookingsPage() {
                               <Phone className="h-3 w-3" />
                               Call
                             </a>
+
+                            {/* 1-Click Quick Call Disposition Action */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                className="h-6 px-1.5 text-[11px] font-medium rounded-md border border-border/80 bg-background hover:bg-muted text-foreground flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                                onClick={(e) => e.stopPropagation()}
+                                title={`Log Call status for ${b.patient_name}`}
+                              >
+                                <PhoneCall className="h-3 w-3 text-primary" />
+                                <span>Log Call</span>
+                                <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="w-60 p-1.5 z-50">
+                                <div className="px-2 py-1 text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between border-b pb-1 mb-1">
+                                  <span>Agent Call Action</span>
+                                  <span className="text-[10px] text-primary font-normal">By {currentAgentName}</span>
+                                </div>
+                                <DropdownMenuItem
+                                  onClick={(e) => handleLogCallDisposition(b, 'not_connected', e)}
+                                  className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded"
+                                >
+                                  <XCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold">Not Connected (नहीं उठाया)</span>
+                                    <span className="text-[10px] text-muted-foreground">Auto-sets followup recommendation</span>
+                                  </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => handleLogCallDisposition(b, 'callback', e)}
+                                  className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded"
+                                >
+                                  <Clock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold">Callback Requested</span>
+                                    <span className="text-[10px] text-muted-foreground">Baad me call karne ko kaha</span>
+                                  </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => handleLogCallDisposition(b, 'confirmed', e)}
+                                  className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold">Booking Confirmed on Call</span>
+                                    <span className="text-[10px] text-muted-foreground">Prompts to punch on website</span>
+                                  </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => handleLogCallDisposition(b, 'not_interested', e)}
+                                  className="flex items-center gap-2 text-xs py-1.5 cursor-pointer text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
+                                >
+                                  <AlertTriangle className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                                  <div className="flex flex-col">
+                                    <span className="font-semibold">Not Interested / Cancelled</span>
+                                    <span className="text-[10px] text-muted-foreground">Dawa ya ilaaj nahi lena</span>
+                                  </div>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       </TableCell>
@@ -3382,6 +3555,69 @@ export default function BookingsPage() {
                 Save Note
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Website Booking Reminder Dialog (Triggered when Agent confirms booking on call) */}
+      <Dialog open={websiteReminderOpen} onOpenChange={setWebsiteReminderOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-2">
+              <Globe className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-base text-emerald-800 dark:text-emerald-300">
+              🎉 Call Booking Confirmed! (By {reminderAgentName})
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Lead ne call par consultation confirm kar di hai. Ab kripya is patient ki booking official website par punch karein, aur yahan &quot;Mark as Done&quot; par click karein.
+            </DialogDescription>
+          </DialogHeader>
+
+          {reminderBooking && (
+            <div className="p-3 bg-muted/40 rounded-lg space-y-1.5 text-xs border border-border">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Patient:</span>
+                <span className="font-semibold text-foreground">{reminderBooking.patient_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Phone:</span>
+                <span className="font-mono">{formatPhoneDisplay(reminderBooking.phone)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">City / Clinic:</span>
+                <span>{reminderBooking.clinic_location || reminderBooking.city || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Preferred Schedule:</span>
+                <span className="font-medium text-primary">
+                  {[reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' - ') || 'N/A'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex sm:justify-between items-center gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setWebsiteReminderOpen(false)}
+            >
+              Baad Me Karein (Pending)
+            </Button>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs"
+              onClick={() => {
+                if (reminderBooking) {
+                  handleUpdateWebsiteStatus(reminderBooking.id, 'done');
+                  setWebsiteReminderOpen(false);
+                }
+              }}
+            >
+              <Check className="h-4 w-4" />
+              Website Status: Mark as Done
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
