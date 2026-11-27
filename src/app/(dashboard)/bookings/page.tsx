@@ -197,6 +197,36 @@ export function getEffectiveVisitOutcome(b: Booking): PatientVisitOutcome {
   return 'pending_visit';
 }
 
+export function cleanPatientQueryNotes(notesText: string | null | undefined): string {
+  if (!notesText) return '';
+  return notesText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((trimmed) => {
+      if (!trimmed) return false;
+      // Filter out automated call status logs
+      if (
+        /^👤\s*.*:\s*(❌|⏳|✅|🚫|📞|📵)?\s*(Not Connected|Call Not Answered|Callback Requested|Booking Confirmed|Patient Not Interested|Dawa Nahi Leni)/i.test(
+          trimmed
+        )
+      ) {
+        return false;
+      }
+      if (/^\[Booking\s+[^\]]+\]\s*👤/i.test(trimmed)) {
+        return false;
+      }
+      if (/^\[Outcome:\s*(CONVERTED|NON_CONVERTED|NOT_VISITED|PENDING_VISIT)\]/i.test(trimmed)) {
+        return false;
+      }
+      if (/^\[Website:\s*(DONE|PENDING)\]/i.test(trimmed)) {
+        return false;
+      }
+      return true;
+    })
+    .join('\n')
+    .trim();
+}
+
 function toCsv(rows: string[][]): string {
   const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
   return rows.map((r) => r.map(escape).join(',')).join('\n');
@@ -434,12 +464,12 @@ export default function BookingsPage() {
     const now = new Date();
     const currentHour = now.getHours();
     if (currentHour < 13) {
-      return 'Today, 04:00 PM (आज शाम 4:00 बजे)';
+      return 'Today 04:00 PM';
     }
     if (currentHour < 17) {
-      return 'Today, 06:30 PM (आज शाम 6:30 बजे)';
+      return 'Today 06:30 PM';
     }
-    return 'Tomorrow, 11:00 AM (कल सुबह 11:00 बजे)';
+    return 'Tomorrow 11:00 AM';
   }, []);
 
   // Website Booking Reminder state
@@ -622,25 +652,17 @@ export default function BookingsPage() {
 
   const getEffectiveBookingNotes = useCallback(
     (b: Booking): string => {
-      const bNote = b.notes ? b.notes.trim() : '';
+      const bNote = cleanPatientQueryNotes(b.notes);
       const cNotes = (b.contact_id ? contactNotesMap[b.contact_id] : []) || [];
       if (cNotes.length === 0) return bNote;
 
-      const missing = cNotes.filter(
-        (cn) => !bNote.includes(cn.note_text.trim())
-      );
+      const missing = cNotes
+        .map((cn) => cleanPatientQueryNotes(cn.note_text))
+        .filter((text) => text && !bNote.includes(text));
+
       if (missing.length === 0) return bNote;
 
-      const cNotesFormatted = missing
-        .map((cn) => {
-          const d = new Date(cn.created_at);
-          const dateStr = !isNaN(d.getTime())
-            ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-            : '';
-          return dateStr ? `[${dateStr}]: ${cn.note_text.trim()}` : cn.note_text.trim();
-        })
-        .join('\n');
-
+      const cNotesFormatted = Array.from(new Set(missing)).join('\n');
       if (!bNote) return cNotesFormatted;
       return `${bNote}\n${cNotesFormatted}`;
     },
@@ -1322,132 +1344,65 @@ export default function BookingsPage() {
     e?: React.MouseEvent
   ) => {
     e?.stopPropagation();
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-    const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
     const agent = currentAgentName;
     const followupRec = getRecommendedFollowupTime();
 
-    let actionLabel = '';
-    let newOutcome: PatientVisitOutcome | undefined;
-
-    if (disposition === 'not_connected') {
-      actionLabel = `❌ Not Connected / Call Not Answered. Next Follow-up: ${followupRec}`;
-      newOutcome = 'not_visited';
-    } else if (disposition === 'callback') {
-      actionLabel = `⏳ Callback Requested by Patient. Suggested call: ${followupRec}`;
-    } else if (disposition === 'confirmed') {
-      actionLabel = `✅ Booking Confirmed on Call by Patient!`;
-      newOutcome = 'converted';
-    } else if (disposition === 'not_interested') {
-      actionLabel = `🚫 Patient Not Interested / Dawa Nahi Leni`;
-      newOutcome = 'non_converted';
-    }
-
-    const stampedEntry = `👤 ${agent} (${dateStr}, ${timeStr}): ${actionLabel}`;
-    const prevNotes = (booking.notes || '').trim();
-    const combinedNotes = prevNotes ? `${prevNotes}\n${stampedEntry}` : stampedEntry;
-
     try {
-      const updatePayload: Record<string, any> = {
-        notes: combinedNotes,
-        updated_at: new Date().toISOString(),
-      };
-      if (newOutcome) {
-        updatePayload.visit_outcome = newOutcome;
+      const res = await fetch('/api/bookings/call-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: booking.id,
+          disposition,
+          agentName: agent,
+          followupRec,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Call status save karne me error aayi');
       }
 
-      const { error } = await supabase.from('bookings').update(updatePayload).eq('id', booking.id);
-      if (error) throw error;
+      // 1. Update tags in UI state immediately (Who called, disposition, next follow-up call)
+      if (data.allTags && Array.isArray(data.allTags)) {
+        setAllTags(data.allTags);
+      }
+      if (data.contactId && Array.isArray(data.contactTagIds)) {
+        setContactTagsMap((prev) => ({
+          ...prev,
+          [data.contactId]: data.contactTagIds,
+        }));
+      }
 
-      // Mirror to contact_notes
-      if (booking.contact_id) {
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          await supabase.from('contact_notes').insert({
-            contact_id: booking.contact_id,
-            account_id: account?.id,
-            user_id: sessionData?.session?.user?.id || user?.id,
-            note_text: `[Booking ${booking.booking_query_id}] ${stampedEntry}`,
-          });
-        } catch (cnErr) {
-          console.warn('contact_notes mirror notice:', cnErr);
-        }
-
-        // Auto-assign corresponding status tag to the contact
-        let tagName = '';
-        let tagColor = '#f43f5e';
-        if (disposition === 'not_connected') {
-          tagName = 'Not Connected';
-          tagColor = '#f43f5e';
-        } else if (disposition === 'confirmed') {
-          tagName = 'Call Confirmed';
-          tagColor = '#10b981';
-        } else if (disposition === 'callback') {
-          tagName = 'Callback Requested';
-          tagColor = '#f59e0b';
-        } else if (disposition === 'not_interested') {
-          tagName = 'Not Interested';
-          tagColor = '#64748b';
-        }
-
-        if (tagName && account?.id) {
-          try {
-            const matchedTag = allTags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
-            let targetTagId = matchedTag?.id;
-            if (!targetTagId) {
-              const { data: newTag } = await supabase
-                .from('tags')
-                .insert({
-                  account_id: account.id,
-                  user_id: user?.id,
-                  name: tagName,
-                  color: tagColor,
-                })
-                .select()
-                .single();
-              if (newTag) {
-                targetTagId = newTag.id;
-                setAllTags((prev) => [...prev, newTag]);
-              }
-            }
-            if (targetTagId) {
-              await supabase
-                .from('contact_tags')
-                .upsert({ contact_id: booking.contact_id, tag_id: targetTagId });
-              setContactTagsMap((prev) => {
-                const current = prev[booking.contact_id!] || [];
-                return current.includes(targetTagId!)
-                  ? prev
-                  : { ...prev, [booking.contact_id!]: [...current, targetTagId!] };
-              });
-            }
-          } catch (tErr) {
-            console.warn('Auto-tagging on call disposition notice:', tErr);
-          }
+      // 2. Update booking visit_outcome in local state if returned
+      if (data.visitOutcome) {
+        setBookings((prev) =>
+          prev.map((b) => (b.id === booking.id ? { ...b, visit_outcome: data.visitOutcome } : b))
+        );
+        if (selectedBooking?.id === booking.id) {
+          setSelectedBooking((prev) =>
+            prev ? { ...prev, visit_outcome: data.visitOutcome } : null
+          );
         }
       }
 
-      setBookings((prev) =>
-        prev.map((b) => (b.id === booking.id ? { ...b, ...updatePayload } : b))
-      );
-
-      if (selectedBooking?.id === booking.id) {
-        setSelectedBooking((prev) => (prev ? { ...prev, ...updatePayload } : null));
-      }
-
+      // 3. User feedback & Action Reminders
       if (disposition === 'confirmed') {
         setReminderBooking(booking);
         setReminderAgentName(agent);
         setWebsiteReminderOpen(true);
         toast.success(`Booking Confirmed by ${agent}! Website registration zaroori hai.`);
       } else if (disposition === 'not_connected') {
-        toast.info(`Call logged as "Not Connected" by ${agent}. Recommended followup: ${followupRec}`);
+        toast.info(`Call logged as "Not Connected" by ${agent}. Follow-up tag assigned (${followupRec}).`);
+      } else if (disposition === 'callback') {
+        toast.success(`Callback requested logged by ${agent}. Follow-up tag assigned (${followupRec}).`);
       } else {
-        toast.success(`Call status logged by ${agent}`);
+        toast.success(`Call status logged as "Not Interested" by ${agent}`);
       }
     } catch (err: any) {
-      toast.error('Call status save karne me error aayi');
+      console.error('Call status disposition error:', err);
+      toast.error(err?.message || 'Call status save karne me error aayi');
     }
   };
 
@@ -3519,30 +3474,30 @@ export default function BookingsPage() {
           <DialogHeader>
             <DialogTitle className="text-lg flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              Follow-up Note
+              Patient Query & Symptoms (मरीज की समस्या / सवाल)
             </DialogTitle>
             <DialogDescription>
-              Record call outcome, patient responses, and decide next follow-up action for{' '}
+              Patient ne call par jo query ya health issues bataye hain, sirf wahi yaha darj karein:{' '}
               <strong className="text-foreground">{editingNoteBooking?.patient_name}</strong>{' '}
               <span className="font-mono text-xs">({editingNoteBooking?.booking_query_id})</span>
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
-            {/* Quick Status / Outcome Templates */}
+            {/* Quick Medical Query Templates */}
             <div>
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
-                Quick Templates (Click to insert)
+                Quick Medical & Query Templates (Click to insert)
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  '📞 Call Connected - Interested',
-                  '📵 Call Not Answered / Busy',
-                  '⏳ Follow-up Tomorrow',
-                  '🏥 Agreed for Clinic Visit',
-                  '📹 Video Consultation Confirmed',
-                  '💳 50% Offer / Fee Details Sent',
-                  '❌ Not Interested / Cancelled',
+                  '🌸 PCOD / PCOS Problem',
+                  '🩺 Tubal Blockage Reports Discussion',
+                  '🩸 Periods Irregular / Heavy Pain',
+                  '👨‍⚕️ Direct Doctor Consultation Wanted',
+                  '💳 Consultation Fee & Discount Details Sent',
+                  '📱 Medical Reports to be Sent on WhatsApp',
+                  '🏥 Wants Clinic Visit in Jaipur/Delhi',
                 ].map((chip) => (
                   <button
                     key={chip}
@@ -3564,11 +3519,11 @@ export default function BookingsPage() {
             {/* Note Textarea */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-foreground">
-                Patient Notes & Follow-up Details:
+                Patient Query / Discussion Notes (कॉल पर मरीज ने क्या बताया):
               </label>
               <Textarea
                 rows={4}
-                placeholder="e.g., Call kiya tha, patient ne bola kal 11 baje video consultation karenge, fees ke baare me confirm kiya..."
+                placeholder="e.g., Patient ne bataya unhe 3 saal se PCOD hai aur conceiving me dikkat aa rahi hai, doctor se direct video call pe baat karna chahte hain..."
                 value={noteDraft}
                 onChange={(e) => setNoteDraft(e.target.value)}
                 className="text-xs"

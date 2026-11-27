@@ -3,6 +3,7 @@ import {
   getEffectiveWebsiteStatus,
   getEffectiveVisitOutcome,
   normalizeDateStringToYMD,
+  cleanPatientQueryNotes,
 } from './page';
 import type { Booking } from '@/types';
 
@@ -102,6 +103,35 @@ describe('Bookings Status & Conversion Helpers', () => {
       expect(normalizeDateStringToYMD(null)).toBeNull();
       expect(normalizeDateStringToYMD(undefined)).toBeNull();
       expect(normalizeDateStringToYMD('Flexible')).toBeNull();
+    });
+  });
+
+  describe('cleanPatientQueryNotes', () => {
+    it('returns empty string for null or undefined or empty', () => {
+      expect(cleanPatientQueryNotes(null)).toBe('');
+      expect(cleanPatientQueryNotes(undefined)).toBe('');
+      expect(cleanPatientQueryNotes('')).toBe('');
+    });
+
+    it('preserves genuine patient query and symptoms notes', () => {
+      const raw = 'Patient ko 2 saal se PCOD problem hai\nDoctor se baat karni hai';
+      expect(cleanPatientQueryNotes(raw)).toBe(
+        'Patient ko 2 saal se PCOD problem hai\nDoctor se baat karni hai'
+      );
+    });
+
+    it('filters out automated call status and agent stamped disposition logs', () => {
+      const polluted = `Patient bol rahi hai reports WhatsApp par bheji hain
+👤 Meenal (27 Nov, 04:30 PM): ❌ Not Connected / Call Not Answered. Next Follow-up: Today 06:00 PM
+👤 Meenal (27 Nov, 04:31 PM): ❌ Not Connected / Call Not Answered. Next Follow-up: Today 06:00 PM
+👤 Deepesh (27 Nov, 05:00 PM): ⏳ Callback Requested by Patient. Suggested call: Today 06:30 PM
+[Booking GYN-101] 👤 Meenal (27 Nov, 04:30 PM): ❌ Not Connected
+[Outcome: NOT_VISITED]
+[Website: PENDING]`;
+
+      expect(cleanPatientQueryNotes(polluted)).toBe(
+        'Patient bol rahi hai reports WhatsApp par bheji hain'
+      );
     });
   });
 });
