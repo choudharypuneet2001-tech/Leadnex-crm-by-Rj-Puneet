@@ -18,7 +18,7 @@ const CALL_STATUS_TAGS = [
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requireRole('agent');
+    const ctx = await requireRole('viewer');
     const body = (await request.json().catch(() => null)) as CallLogRequestBody | null;
 
     if (!body || !body.bookingId || !body.disposition) {
@@ -64,16 +64,29 @@ export async function POST(request: Request) {
     }
 
     // 2b. Automatically trace official agent name from authenticated user profile
-    const { data: userProfile } = await admin
-      .from('profiles')
-      .select('full_name')
-      .eq('id', ctx.userId)
-      .maybeSingle();
+    let officialAgentName = agentName?.trim() || 'Staff';
+    try {
+      const { data: userProfile } = await admin
+        .from('profiles')
+        .select('full_name')
+        .eq('id', ctx.userId)
+        .maybeSingle();
 
-    const officialAgentName =
-      userProfile?.full_name?.trim() ||
-      agentName?.trim() ||
-      'Staff';
+      if (userProfile?.full_name?.trim()) {
+        officialAgentName = userProfile.full_name.trim();
+      } else {
+        const { data: fallbackProfile } = await admin
+          .from('profiles')
+          .select('full_name')
+          .eq('user_id', ctx.userId)
+          .maybeSingle();
+        if (fallbackProfile?.full_name?.trim()) {
+          officialAgentName = fallbackProfile.full_name.trim();
+        }
+      }
+    } catch (profileErr) {
+      console.warn('[call-log] profile name trace notice:', profileErr);
+    }
 
     // 3. Update bookings table updated_at (Leave visit_outcome strictly to manual staff updating!)
     await admin

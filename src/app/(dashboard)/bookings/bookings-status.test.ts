@@ -5,6 +5,7 @@ import {
   normalizeDateStringToYMD,
   cleanPatientQueryNotes,
   getCombinedBookingNotesForWebsite,
+  formatPreferredScheduleInEnglish,
 } from './page';
 import type { Booking } from '@/types';
 
@@ -99,11 +100,50 @@ describe('Bookings Status & Conversion Helpers', () => {
       expect(normalizeDateStringToYMD('1 January 2027')).toBe('2027-01-01');
     });
 
+    it('normalizes Hindi month dates e.g. "15 नवंबर 2026", "16 नवम्बर", "1 दिसंबर 2026"', () => {
+      expect(normalizeDateStringToYMD('15 नवंबर 2026')).toBe('2026-11-15');
+      expect(normalizeDateStringToYMD('16 नवम्बर 2026')).toBe('2026-11-16');
+      expect(normalizeDateStringToYMD('1 दिसंबर 2026')).toBe('2026-12-01');
+    });
+
+    it('normalizes Hindi digits e.g. "१५ नवंबर २०२६"', () => {
+      expect(normalizeDateStringToYMD('१५ नवंबर २०२६')).toBe('2026-11-15');
+    });
+
+    it('normalizes relative terms e.g. "aaj", "kal", "parso", "आज", "कल"', () => {
+      expect(normalizeDateStringToYMD('aaj')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(normalizeDateStringToYMD('kal')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(normalizeDateStringToYMD('आज')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(normalizeDateStringToYMD('कल')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
     it('returns null for empty or non-date strings', () => {
       expect(normalizeDateStringToYMD('')).toBeNull();
       expect(normalizeDateStringToYMD(null)).toBeNull();
       expect(normalizeDateStringToYMD(undefined)).toBeNull();
       expect(normalizeDateStringToYMD('Flexible')).toBeNull();
+    });
+  });
+
+  describe('formatPreferredScheduleInEnglish', () => {
+    it('formats Hindi date and Hindi time into clean English', () => {
+      const formatted = formatPreferredScheduleInEnglish('15 नवंबर 2026', 'शाम 6:30 बजे');
+      expect(formatted).toBe('15 November 2026 - 06:30 PM');
+    });
+
+    it('formats Hindi date with morning time', () => {
+      const formatted = formatPreferredScheduleInEnglish('16 नवंबर 2026', 'सुबह 10 बजे');
+      expect(formatted).toBe('16 November 2026 - 10:00 AM');
+    });
+
+    it('cleans trailing relative labels like "- Aaj" and "- Kal"', () => {
+      const formatted = formatPreferredScheduleInEnglish('15 November 2026 - Aaj', '4:00 PM');
+      expect(formatted).toBe('15 November 2026 - 04:00 PM');
+    });
+
+    it('formats December dates accurately', () => {
+      const formatted = formatPreferredScheduleInEnglish('1 दिसंबर 2026', '');
+      expect(formatted).toBe('1 December 2026');
     });
   });
 
@@ -137,16 +177,16 @@ describe('Bookings Status & Conversion Helpers', () => {
   });
 
   describe('getCombinedBookingNotesForWebsite', () => {
-    it('combines health_concern and agent follow-up query notes cleanly', () => {
+    it('prioritizes agent discussion notes over initial automated AI health_concern', () => {
       const b = createMockBooking({
         health_concern: 'अनियमित पीरियड्स',
         notes: '👤 Puneet Choudhary (27 Nov, 05:37 pm): Age: 20 Shadi ko 12 saal ho gaye',
       });
       const combined = getCombinedBookingNotesForWebsite(b);
-      expect(combined).toBe('अनियमित पीरियड्स\nAge: 20 Shadi ko 12 saal ho gaye');
+      expect(combined).toBe('Age: 20 Shadi ko 12 saal ho gaye');
     });
 
-    it('returns only health_concern when no additional query notes exist', () => {
+    it('returns health_concern when no additional query notes exist', () => {
       const b = createMockBooking({
         health_concern: 'अनियमित पीरियड्स',
         notes: null,
@@ -162,22 +202,22 @@ describe('Bookings Status & Conversion Helpers', () => {
       expect(getCombinedBookingNotesForWebsite(b)).toBe('Age: 20 Shadi ko 12 saal ho gaye');
     });
 
-    it('filters out automated disposition logs and combines genuine query notes', () => {
+    it('filters out automated disposition logs and keeps genuine query notes', () => {
       const b = createMockBooking({
         health_concern: 'PCOD',
         notes: `👤 Meenal (27 Nov, 04:30 PM): ❌ Not Connected / Call Not Answered. Next Follow-up: Today 06:00 PM
 👤 Puneet Choudhary (27 Nov, 05:37 pm): Reports WhatsApp par bhej di hain`,
       });
       const combined = getCombinedBookingNotesForWebsite(b);
-      expect(combined).toBe('PCOD\nReports WhatsApp par bhej di hain');
+      expect(combined).toBe('Reports WhatsApp par bhej di hain');
     });
 
-    it('does not duplicate text if health_concern already contains the query note', () => {
+    it('returns health_concern when notes only have automated call disposition tags', () => {
       const b = createMockBooking({
-        health_concern: 'Age: 20 Shadi ko 12 saal ho gaye',
-        notes: '👤 Puneet Choudhary: Age: 20 Shadi ko 12 saal ho gaye',
+        health_concern: 'Tubal Blockage',
+        notes: '👤 Meenal (27 Nov, 04:30 PM): ❌ Not Connected / Call Not Answered. Next Follow-up: Today 06:00 PM',
       });
-      expect(getCombinedBookingNotesForWebsite(b)).toBe('Age: 20 Shadi ko 12 saal ho gaye');
+      expect(getCombinedBookingNotesForWebsite(b)).toBe('Tubal Blockage');
     });
   });
 });

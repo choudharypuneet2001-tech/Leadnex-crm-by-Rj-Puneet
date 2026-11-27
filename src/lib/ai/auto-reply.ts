@@ -1180,7 +1180,39 @@ export async function getNextBookingQueryId(
  */
 export function normalizePreferredDate(inputDate?: string | null): string {
   if (!inputDate || !inputDate.trim()) return ''
-  const trimmed = inputDate.trim()
+  let trimmed = inputDate.trim()
+
+  // 1. Convert Hindi digits to English
+  const hindiDigits = ['०', '१', '२', '३', '४', '५', '६', '७', '८', '९']
+  trimmed = trimmed.replace(/[०-९]/g, (char) => String(hindiDigits.indexOf(char)))
+
+  // 2. Convert Hindi months to English
+  const hindiMonthMap: Record<string, string> = {
+    'जनवरी': 'January',
+    'फ़रवरी': 'February',
+    'फरवरी': 'February',
+    'मार्च': 'March',
+    'अप्रैल': 'April',
+    'मई': 'May',
+    'जून': 'June',
+    'जुलाई': 'July',
+    'अगस्त': 'August',
+    'सितंबर': 'September',
+    'सितम्बर': 'September',
+    'अक्टूबर': 'October',
+    'अक्तूबर': 'October',
+    'नवंबर': 'November',
+    'नवम्बर': 'November',
+    'दिसंबर': 'December',
+    'दिसम्बर': 'December',
+  }
+  for (const [hMonth, engMonth] of Object.entries(hindiMonthMap)) {
+    if (trimmed.includes(hMonth)) {
+      trimmed = trimmed.replace(new RegExp(hMonth, 'g'), engMonth)
+      break
+    }
+  }
+
   const lower = trimmed.toLowerCase()
 
   // Asia/Kolkata date
@@ -1212,35 +1244,42 @@ export function normalizePreferredDate(inputDate?: string | null): string {
     return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} (${DAYS[d.getDay()]})`
   }
 
-  if (lower === 'aaj' || lower === 'today') {
+  if (lower === 'aaj' || lower === 'today' || trimmed === 'आज') {
     return `${formatDate(todayIST)} - Aaj`
   }
-  if (lower === 'kal' || lower === 'tomorrow') {
+  if (lower === 'kal' || lower === 'tomorrow' || trimmed === 'कल') {
     const tom = new Date(todayIST)
     tom.setDate(tom.getDate() + 1)
     return `${formatDate(tom)} - Kal`
   }
-  if (lower === 'parso' || lower === 'parson' || lower === 'day after tomorrow') {
+  if (lower === 'parso' || lower === 'parson' || lower === 'day after tomorrow' || trimmed === 'परसों') {
     const parso = new Date(todayIST)
     parso.setDate(parso.getDate() + 2)
     return `${formatDate(parso)} - Parso`
   }
 
-  if (/\bparso\b/i.test(lower)) {
+  if (/\bparso\b/i.test(lower) || /परसों/.test(trimmed)) {
     const parso = new Date(todayIST)
     parso.setDate(parso.getDate() + 2)
-    return `${formatDate(parso)} (${trimmed})`
+    return formatDate(parso)
   }
-  if (/\bkal\b/i.test(lower) && !/\baaj\b/i.test(lower)) {
+  if ((/\bkal\b/i.test(lower) || /कल/.test(trimmed)) && !/\baaj\b/i.test(lower)) {
     const tom = new Date(todayIST)
     tom.setDate(tom.getDate() + 1)
-    return `${formatDate(tom)} (${trimmed})`
+    return formatDate(tom)
   }
-  if (/\baaj\b/i.test(lower)) {
-    return `${formatDate(todayIST)} (${trimmed})`
+  if (/\baaj\b/i.test(lower) || /आज/.test(trimmed)) {
+    return formatDate(todayIST)
   }
 
-  return trimmed
+  // Remove any legacy trailing Hindi or conversational tags like " - Aaj", " - Kal"
+  const cleaned = trimmed
+    .replace(/\s*-\s*Aaj\b/i, '')
+    .replace(/\s*-\s*Kal\b/i, '')
+    .replace(/\s*-\s*Parso\b/i, '')
+    .trim()
+
+  return cleaned
 }
 
 export const CLINIC_CITIES = [

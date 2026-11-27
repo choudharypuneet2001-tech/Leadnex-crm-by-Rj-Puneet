@@ -120,13 +120,56 @@ function getQuickDate(daysFromNow: number): string {
   return `${day} ${monthNames[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+export const HINDI_MONTH_MAP: Record<string, string> = {
+  जनवरी: '01',
+  फ़रवरी: '02',
+  फरवरी: '02',
+  मार्च: '03',
+  अप्रैल: '04',
+  मई: '05',
+  जून: '06',
+  जुलाई: '07',
+  अगस्त: '08',
+  सितंबर: '09',
+  सितम्बर: '09',
+  अक्टूबर: '10',
+  अक्तूबर: '10',
+  नवंबर: '11',
+  नवम्बर: '11',
+  दिसंबर: '12',
+  दिसम्बर: '12',
+};
+
+export const ENGLISH_MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export function convertHindiDigitsToEnglish(str: string): string {
+  if (!str) return '';
+  const hindiDigits = ['०', '१', '२', '३', '४', '५', '६', '७', '८', '९'];
+  return str.replace(/[०-९]/g, (char) => String(hindiDigits.indexOf(char)));
+}
+
 /**
  * Normalizes user-entered date strings into YYYY-MM-DD for accurate comparison and grouping.
- * Handles ISO (2026-11-27), DMY (27/11/2026), and text dates (27 November 2026, 27 Nov 2026).
+ * Handles ISO (2026-11-27), DMY (27/11/2026), English text dates (27 November 2026, 27 Nov 2026),
+ * Hindi dates (15 नवंबर 2026, 16 नवम्बर), and relative terms (aaj, kal, parso).
  */
 export function normalizeDateStringToYMD(dateStr?: string | null): string | null {
   if (!dateStr || !dateStr.trim()) return null;
-  const s = dateStr.trim();
+  let s = convertHindiDigitsToEnglish(dateStr.trim());
+  if (!s) return null;
 
   // 1. Try ISO YYYY-MM-DD
   const isoMatch = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -137,7 +180,18 @@ export function normalizeDateStringToYMD(dateStr?: string | null): string | null
     return `${y}-${m}-${d}`;
   }
 
-  // 2. Try DD/MM/YYYY or DD-MM-YYYY
+  // 2. Try Hindi Month names e.g. "15 नवंबर 2026", "16 नवम्बर", "17 नवंबर"
+  for (const [hindiMonth, mNum] of Object.entries(HINDI_MONTH_MAP)) {
+    if (s.includes(hindiMonth)) {
+      const dayMatch = s.match(/(\d{1,2})/);
+      const yearMatch = s.match(/(\d{4})/);
+      const d = dayMatch ? dayMatch[1].padStart(2, '0') : '01';
+      const y = yearMatch ? yearMatch[1] : String(new Date().getFullYear());
+      return `${y}-${mNum}-${d}`;
+    }
+  }
+
+  // 3. Try DD/MM/YYYY or DD-MM-YYYY
   const dmyMatch = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (dmyMatch) {
     const d = dmyMatch[1].padStart(2, '0');
@@ -146,7 +200,7 @@ export function normalizeDateStringToYMD(dateStr?: string | null): string | null
     return `${y}-${m}-${d}`;
   }
 
-  // 3. Try "27 November 2026" or "27 Nov 2026"
+  // 4. Try English month text "27 November 2026" or "27 Nov 2026"
   const textMatch = s.match(/(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?/i);
   if (textMatch) {
     const d = textMatch[1].padStart(2, '0');
@@ -160,9 +214,28 @@ export function normalizeDateStringToYMD(dateStr?: string | null): string | null
     }
   }
 
-  // 4. Try parsing with standard Date
+  // 5. Relative conversational terms (aaj, kal, parso)
+  const lower = s.toLowerCase();
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatYmd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (lower === 'aaj' || lower === 'today' || s === 'आज') {
+    return formatYmd(now);
+  }
+  if (lower === 'kal' || lower === 'tomorrow' || s === 'कल') {
+    const tom = new Date(now.getTime() + 86400000);
+    return formatYmd(tom);
+  }
+  if (lower === 'parso' || lower === 'parson' || s === 'परसों') {
+    const parso = new Date(now.getTime() + 86400000 * 2);
+    return formatYmd(parso);
+  }
+
+  // 6. Try parsing with standard Date
   try {
-    const parsed = new Date(s);
+    const cleanDateOnly = s.replace(/\s*-\s*(Aaj|Kal|Parso).*$/i, '').trim();
+    const parsed = new Date(cleanDateOnly);
     if (!isNaN(parsed.getTime())) {
       const y = parsed.getFullYear();
       const m = String(parsed.getMonth() + 1).padStart(2, '0');
@@ -174,6 +247,83 @@ export function normalizeDateStringToYMD(dateStr?: string | null): string | null
   }
 
   return null;
+}
+
+/**
+ * Formats Preferred Schedule (date + time) into clean, professional English.
+ * Converts any Hindi months, Hindi digits, or Hindi time words ("शाम 6:30 बजे", "15 नवंबर")
+ * to English ("15 November 2026 - 06:30 PM").
+ */
+export function formatPreferredScheduleInEnglish(
+  preferredDate?: string | null,
+  preferredTime?: string | null
+): string {
+  if (!preferredDate && !preferredTime) return 'Flexible / Not Specified';
+
+  let datePart = (preferredDate || '').trim();
+  let timePart = (preferredTime || '').trim();
+
+  // Convert Hindi digits to English
+  datePart = convertHindiDigitsToEnglish(datePart);
+  timePart = convertHindiDigitsToEnglish(timePart);
+
+  // Convert Hindi month names to English
+  for (const [hindiMonth, mNum] of Object.entries(HINDI_MONTH_MAP)) {
+    if (datePart.includes(hindiMonth)) {
+      const monthIdx = parseInt(mNum, 10) - 1;
+      const engMonth = ENGLISH_MONTH_NAMES[monthIdx];
+      datePart = datePart.replace(new RegExp(hindiMonth, 'g'), engMonth);
+      break;
+    }
+  }
+
+  // Clean trailing " - Aaj", " - Kal", Hindi suffixes
+  datePart = datePart
+    .replace(/\s*-\s*Aaj\b/i, '')
+    .replace(/\s*-\s*Kal\b/i, '')
+    .replace(/\s*-\s*Parso\b/i, '')
+    .replace(/\s*\([^)]*कल[^)]*\)/g, '')
+    .replace(/\s*\([^)]*आज[^)]*\)/g, '')
+    .trim();
+
+  // If date was just "kal" or "aaj"
+  if (/^kal$/i.test(datePart) || datePart === 'कल') {
+    const ymd = normalizeDateStringToYMD('kal');
+    if (ymd) {
+      const [y, m, d] = ymd.split('-');
+      datePart = `${parseInt(d, 10)} ${ENGLISH_MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+    }
+  } else if (/^aaj$/i.test(datePart) || datePart === 'आज') {
+    const ymd = normalizeDateStringToYMD('aaj');
+    if (ymd) {
+      const [y, m, d] = ymd.split('-');
+      datePart = `${parseInt(d, 10)} ${ENGLISH_MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+    }
+  }
+
+  // Convert Hindi time words to English (e.g. "शाम 6:30 बजे" -> "06:30 PM", "सुबह 10 बजे" -> "10:00 AM")
+  if (timePart) {
+    const isPM = /शाम|दोपहर|रात|pm/i.test(timePart);
+    const isAM = /सुबह|am/i.test(timePart);
+
+    // Clean Hindi text
+    const cleanTime = timePart.replace(/[शामदोपहररातसुबहबजे\s]/g, '').trim();
+    if (cleanTime) {
+      const timeMatch = cleanTime.match(/(\d{1,2})(?::(\d{2}))?/);
+      if (timeMatch) {
+        let hour = parseInt(timeMatch[1], 10);
+        const min = timeMatch[2] || '00';
+        if (isPM && hour < 12) hour += 12;
+        if (isAM && hour === 12) hour = 0;
+
+        const period = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour % 12 || 12;
+        timePart = `${String(displayHour).padStart(2, '0')}:${min} ${period}`;
+      }
+    }
+  }
+
+  return [datePart, timePart].filter(Boolean).join(' - ') || 'Flexible';
 }
 
 export function getEffectiveWebsiteStatus(b: Booking): 'done' | 'pending' {
@@ -244,19 +394,12 @@ export function getCombinedBookingNotesForWebsite(b: Booking): string {
 
   const actualNoteText = cleanedLines.join('\n');
 
-  const parts: string[] = [];
-  if (concern) {
-    parts.push(concern);
-  }
-  if (actualNoteText && !parts.some((p) => p.toLowerCase().includes(actualNoteText.toLowerCase()))) {
-    parts.push(actualNoteText);
+  // If agent discussed with the patient and recorded query/discussion notes, prioritize them!
+  if (actualNoteText) {
+    return actualNoteText;
   }
 
-  if (parts.length === 0) {
-    return rawNotes || concern || '';
-  }
-
-  return parts.join('\n');
+  return concern || rawNotes || '';
 }
 
 function toCsv(rows: string[][]): string {
@@ -629,7 +772,7 @@ function WebsiteReminderDialogContent({
       : 'Online Video Call';
 
   const scheduleDisplay =
-    [booking.preferred_date, booking.preferred_time].filter(Boolean).join(' - ') || 'N/A';
+    formatPreferredScheduleInEnglish(booking.preferred_date, booking.preferred_time);
 
   const handleCopyAll = () => {
     const fullText = `Name: ${booking.patient_name}\nPhone: ${booking.phone}\nCity/Clinic: ${booking.clinic_location || booking.city || 'N/A'}\nMode: ${consultationCopyText}\nSchedule: ${scheduleDisplay}\nHealth Concern / Notes: ${notes || booking.health_concern || 'None'}`;
@@ -759,6 +902,21 @@ function WebsiteReminderDialogContent({
             placeholder="e.g. 3 saal se PCOD hai, periods irregular, conceiving me issue..."
             className="text-xs font-normal"
           />
+          {booking.health_concern && !notes.toLowerCase().includes(booking.health_concern.toLowerCase()) && (
+            <div className="pt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setNotes((prev) => (prev ? `${prev}\n${booking.health_concern}` : booking.health_concern || ''));
+                  toast.info('Initial health concern added to notes');
+                }}
+                className="text-[11px] text-muted-foreground hover:text-primary transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Add Original AI Concern: &ldquo;{booking.health_concern}&rdquo;</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 1-Click Copy All Booking Details for Website Punching */}
@@ -1689,6 +1847,19 @@ export default function BookingsPage() {
     }
   };
 
+  const handleOpenWebsiteReminder = useCallback(
+    (booking: Booking, e?: React.MouseEvent) => {
+      e?.stopPropagation();
+      const latestBooking = bookings.find((b) => b.id === booking.id) || booking;
+      const initialNotes = getCombinedBookingNotesForWebsite(latestBooking);
+      setReminderBooking(latestBooking);
+      setReminderNotes(initialNotes);
+      setReminderAgentName(currentAgentName);
+      setWebsiteReminderOpen(true);
+    },
+    [bookings, currentAgentName]
+  );
+
   const handleLogCallDisposition = async (
     booking: Booking,
     disposition: 'not_connected' | 'callback' | 'confirmed' | 'not_interested',
@@ -1742,11 +1913,7 @@ export default function BookingsPage() {
 
     // 2. Open confirmation popup immediately or show feedback in 0ms!
     if (disposition === 'confirmed') {
-      const combinedNotes = getCombinedBookingNotesForWebsite(latestBooking);
-      setReminderBooking(latestBooking);
-      setReminderNotes(combinedNotes);
-      setReminderAgentName(agent);
-      setWebsiteReminderOpen(true);
+      handleOpenWebsiteReminder(latestBooking);
       toast.success(`Booking Confirmed by ${agent}! Website registration zaroori hai.`);
     } else if (disposition === 'not_connected') {
       toast.info(`Call logged as "Not Connected" by ${agent}. Follow-up tag assigned (${followupRec}).`);
@@ -3379,9 +3546,9 @@ export default function BookingsPage() {
                           <div className="space-y-1">
                             <button
                               type="button"
-                              onClick={(e) => handleUpdateWebsiteStatus(b.id, 'pending', e)}
+                              onClick={(e) => handleOpenWebsiteReminder(b, e)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-200 cursor-pointer transition-colors shadow-2xs"
-                              title="Website Status: Done. Click to toggle to Pending."
+                              title="Website Status: Done. Click to view / re-copy details."
                             >
                               <Globe className="h-3 w-3 text-emerald-600" />
                               <span>Website Done</span>
@@ -3394,14 +3561,14 @@ export default function BookingsPage() {
                           <div className="space-y-1">
                             <button
                               type="button"
-                              onClick={(e) => handleUpdateWebsiteStatus(b.id, 'done', e)}
+                              onClick={(e) => handleOpenWebsiteReminder(b, e)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 border border-amber-300 dark:border-amber-800 hover:bg-emerald-100 hover:text-emerald-900 hover:border-emerald-300 cursor-pointer transition-all shadow-2xs group/web"
-                              title="Click to mark Done on Website"
+                              title="Click to open website booking details and punch on website"
                             >
                               <Clock className="h-3 w-3 text-amber-600 group-hover/web:hidden" />
-                              <Check className="h-3 w-3 text-emerald-600 hidden group-hover/web:inline" />
+                              <Globe className="h-3 w-3 text-emerald-600 hidden group-hover/web:inline" />
                               <span className="group-hover/web:hidden">Website Pending</span>
-                              <span className="hidden group-hover/web:inline text-emerald-800">Mark as Done</span>
+                              <span className="hidden group-hover/web:inline text-emerald-800">Punch on Website</span>
                             </button>
                             <div className="text-[10px] text-amber-700 dark:text-amber-400 font-medium pl-1">
                               Website par dalna baaki
@@ -3697,13 +3864,13 @@ export default function BookingsPage() {
                             {b.preferred_date ? (
                               <div className="flex items-center gap-1 text-foreground font-medium">
                                 <Calendar className="h-3 w-3 text-primary shrink-0" />
-                                <span>{b.preferred_date}</span>
+                                <span>{formatPreferredScheduleInEnglish(b.preferred_date, null)}</span>
                               </div>
                             ) : null}
                             {b.preferred_time ? (
                               <div className="flex items-center gap-1 text-muted-foreground">
                                 <Clock className="h-3 w-3 shrink-0" />
-                                <span>{b.preferred_time}</span>
+                                <span>{formatPreferredScheduleInEnglish(null, b.preferred_time)}</span>
                               </div>
                             ) : null}
                             {!b.preferred_date && !b.preferred_time && (
@@ -3830,6 +3997,13 @@ export default function BookingsPage() {
                                 }}
                               >
                                 View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleOpenWebsiteReminder(b)}
+                                className="text-emerald-700 dark:text-emerald-300 font-medium"
+                              >
+                                <Globe className="h-4 w-4 mr-2 text-emerald-600" />
+                                Punch on Website (Copy Details)
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleOpenEditName(b)}>
                                 <Pencil className="h-4 w-4 mr-2 text-primary" />
@@ -4335,13 +4509,13 @@ export default function BookingsPage() {
                   <div className="flex items-center gap-1.5">
                     <Calendar className="h-4 w-4 text-primary" />
                     <span className="font-medium">
-                      {selectedBooking.preferred_date || 'Flexible Date'}
+                      {formatPreferredScheduleInEnglish(selectedBooking.preferred_date, null) || 'Flexible Date'}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Clock className="h-4 w-4 text-primary" />
                     <span className="font-medium">
-                      {selectedBooking.preferred_time || '10:00 AM - 8:00 PM'}
+                      {formatPreferredScheduleInEnglish(null, selectedBooking.preferred_time) || '10:00 AM - 8:00 PM'}
                     </span>
                   </div>
                 </div>
@@ -4367,9 +4541,17 @@ export default function BookingsPage() {
                       <Globe className="h-3.5 w-3.5 text-emerald-600" />
                       Website Booking Status
                     </span>
-                    <span className="text-[11px] font-normal text-muted-foreground">
-                      {selectedBooking.clinic_location || selectedBooking.city || 'Jaipur'}
-                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => handleOpenWebsiteReminder(selectedBooking, e)}
+                      className="h-5 px-1.5 text-[11px] text-primary hover:text-primary/80 gap-1 cursor-pointer font-medium"
+                      title="Open full punch form with copy buttons"
+                    >
+                      <Globe className="h-3 w-3" />
+                      <span>Punch Form</span>
+                    </Button>
                   </div>
                   <div className="flex items-center justify-between pt-1">
                     <div>
@@ -4385,36 +4567,15 @@ export default function BookingsPage() {
                         </div>
                       )}
                     </div>
-                    {getEffectiveWebsiteStatus(selectedBooking) === 'done' ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          handleUpdateWebsiteStatus(selectedBooking.id, 'pending', e);
-                          setSelectedBooking((prev) =>
-                            prev ? { ...prev, website_status: 'pending' } : null
-                          );
-                        }}
-                        className="h-7 text-xs px-2"
-                      >
-                        Mark as Pending
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={(e) => {
-                          handleUpdateWebsiteStatus(selectedBooking.id, 'done', e);
-                          setSelectedBooking((prev) =>
-                            prev ? { ...prev, website_status: 'done' } : null
-                          );
-                        }}
-                        className="h-7 text-xs px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
-                      >
-                        ✓ Mark Done on Website
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={(e) => handleOpenWebsiteReminder(selectedBooking, e)}
+                      className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium cursor-pointer gap-1"
+                    >
+                      <Globe className="h-3 w-3" />
+                      <span>{getEffectiveWebsiteStatus(selectedBooking) === 'done' ? 'View Punch Details' : 'Punch on Website'}</span>
+                    </Button>
                   </div>
                 </div>
 
