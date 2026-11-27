@@ -691,4 +691,41 @@ describe('Conversation history extraction helpers', () => {
     expect(bubble1).toContain('धन्यवाद')
     expect(bubble3).toContain('क्या जानना चाहते हैं')
   })
+
+  it('enforces doctor identity & credentials rule in system prompt without specific doctor names', async () => {
+    const { buildSystemPrompt } = await import('./defaults')
+    const prompt = buildSystemPrompt({
+      userPrompt: null,
+      mode: 'auto_reply',
+      isEnglish: false,
+    })
+    expect(prompt).toContain('DOCTOR IDENTITY, QUALIFICATIONS & CREDENTIALS')
+    expect(prompt).toContain('NEVER MENTION OR INVENT SPECIFIC DOCTOR NAMES')
+    expect(prompt).toContain('BAMS / आयुर्वेदाचार्य')
+  })
+
+  it('responds to doctor name or degree questions with BAMS / Ayurvedacharya panel without personal names', async () => {
+    h.engineSendText.mockClear()
+    h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_reply_count: 0 }
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyEnabled: true, systemPrompt: null }))
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Doctor ka naam kya hai aur unki degree kya hai?' },
+    ])
+    h.retrieveKnowledge.mockResolvedValue([])
+    h.generateReply.mockResolvedValue({
+      text: 'हमारे यहाँ डॉक्टर शर्मा देखते हैं',
+      handoff: false,
+      usage: null,
+      contactUpdate: null,
+      bookingConfirmed: null,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalled()
+    const allSent = h.engineSendText.mock.calls.map((c) => c[0].text).join(' ')
+    expect(allSent).toContain('BAMS / आयुर्वेदाचार्य')
+    expect(allSent).toContain('अनुभव')
+    expect(allSent).not.toContain('डॉक्टर शर्मा')
+  })
 })

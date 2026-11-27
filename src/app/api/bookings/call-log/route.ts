@@ -63,42 +63,23 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Update visit_outcome on bookings table (WITHOUT modifying booking.notes)
-    let visitOutcome: string | undefined;
-    if (disposition === 'not_connected') {
-      visitOutcome = 'not_visited';
-    } else if (disposition === 'confirmed') {
-      visitOutcome = 'converted';
-    } else if (disposition === 'not_interested') {
-      visitOutcome = 'non_converted';
-    }
+    // 2b. Automatically trace official agent name from authenticated user profile
+    const { data: userProfile } = await admin
+      .from('profiles')
+      .select('full_name')
+      .eq('id', ctx.userId)
+      .maybeSingle();
 
-    if (visitOutcome) {
-      try {
-        const { error: voErr } = await admin
-          .from('bookings')
-          .update({
-            visit_outcome: visitOutcome,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', booking.id);
+    const officialAgentName =
+      userProfile?.full_name?.trim() ||
+      agentName?.trim() ||
+      'Staff';
 
-        if (voErr) {
-          // If column doesn't exist yet in remote DB schema, update only updated_at
-          await admin
-            .from('bookings')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', booking.id);
-        }
-      } catch (err) {
-        console.warn('[call-log] visit_outcome update notice:', err);
-      }
-    } else {
-      await admin
-        .from('bookings')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', booking.id);
-    }
+    // 3. Update bookings table updated_at (Leave visit_outcome strictly to manual staff updating!)
+    await admin
+      .from('bookings')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', booking.id);
 
     // 4. Tagging in Tags column (Who called, disposition selected, next follow-up call)
     if (contactId) {
@@ -130,9 +111,8 @@ export async function POST(request: Request) {
         return created.id;
       };
 
-      // Tag A: Agent Call Tag (Who called)
-      const agentClean = agentName.trim() || 'Agent';
-      const agentTagName = `Call By ${agentClean}`;
+      // Tag A: Agent Call Tag (Who called - automatically traced from official user profile)
+      const agentTagName = `Call By ${officialAgentName}`;
       const agentTagId = await getOrCreateTag(agentTagName, '#8b5cf6'); // Purple
 
       // Tag B: Call Disposition Tag (What was selected)
@@ -242,7 +222,7 @@ export async function POST(request: Request) {
         contactId,
         contactTagIds,
         allTags: allTags || [],
-        visitOutcome,
+        officialAgentName,
       });
     }
 
@@ -251,7 +231,7 @@ export async function POST(request: Request) {
       contactId: null,
       contactTagIds: [],
       allTags: [],
-      visitOutcome,
+      officialAgentName,
     });
   } catch (error) {
     console.error('[call-log] error:', error);

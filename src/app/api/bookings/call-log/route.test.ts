@@ -49,7 +49,7 @@ describe('POST /api/bookings/call-log', () => {
     expect(json.error).toContain('bookingId and disposition are required');
   });
 
-  it('logs Not Connected disposition, assigns tags and updates visit_outcome without touching notes', async () => {
+  it('logs Not Connected disposition, traces official name from profile and assigns tags without mutating visit_outcome', async () => {
     const mockBooking = {
       id: 'b-1',
       account_id: 'test-account-123',
@@ -61,6 +61,15 @@ describe('POST /api/bookings/call-log', () => {
 
     const mockAdmin = {
       from: (table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { full_name: 'Puneet Choudhary' } }),
+              }),
+            }),
+          };
+        }
         if (table === 'bookings') {
           return {
             select: () => ({
@@ -86,7 +95,7 @@ describe('POST /api/bookings/call-log', () => {
                 }),
                 order: () => ({
                   data: [
-                    { id: 'tag-1', name: 'Call By Meenal', color: '#8b5cf6' },
+                    { id: 'tag-1', name: 'Call By Puneet Choudhary', color: '#8b5cf6' },
                     { id: 'tag-2', name: 'Not Connected', color: '#f43f5e' },
                     { id: 'tag-3', name: 'Follow-up: Today 06:30 PM', color: '#0284c7' },
                   ],
@@ -139,7 +148,7 @@ describe('POST /api/bookings/call-log', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.ok).toBe(true);
-    expect(json.visitOutcome).toBe('not_visited');
+    expect(json.officialAgentName).toBe('Puneet Choudhary');
     expect(json.contactId).toBe('contact-1');
   });
 });

@@ -288,7 +288,7 @@ function BookingTagsCell({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-1 max-w-[220px]"
+      className="flex flex-wrap items-center gap-1.5 min-w-[210px] max-w-[340px]"
       onClick={(e) => e.stopPropagation()}
     >
       {/* Display Assigned Tags */}
@@ -299,7 +299,7 @@ function BookingTagsCell({
           <Badge
             key={tag.id}
             variant="outline"
-            className="text-[11px] font-medium px-1.5 py-0.5 gap-1 border shadow-2xs group/tag transition-all"
+            className="text-[11px] font-medium px-2 py-0.5 gap-1.5 border shadow-2xs group/tag transition-all whitespace-nowrap"
             style={{
               backgroundColor: `${tag.color}15`,
               color: tag.color,
@@ -310,10 +310,10 @@ function BookingTagsCell({
               className="h-1.5 w-1.5 rounded-full shrink-0"
               style={{ backgroundColor: tag.color }}
             />
-            <span className="truncate max-w-[110px]">{tag.name}</span>
+            <span className="font-medium whitespace-nowrap">{tag.name}</span>
             <button
               type="button"
-              className="opacity-0 group-hover/tag:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5 transition-opacity cursor-pointer"
+              className="opacity-0 group-hover/tag:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5 transition-opacity cursor-pointer shrink-0 ml-0.5"
               onClick={(e) => {
                 e.stopPropagation();
                 if (contactId) onToggleTag(contactId, tag.id);
@@ -476,6 +476,8 @@ export default function BookingsPage() {
   const [websiteReminderOpen, setWebsiteReminderOpen] = useState(false);
   const [reminderBooking, setReminderBooking] = useState<Booking | null>(null);
   const [reminderAgentName, setReminderAgentName] = useState('');
+  const [reminderNotes, setReminderNotes] = useState('');
+  const [copiedWebsiteDetails, setCopiedWebsiteDetails] = useState(false);
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1375,30 +1377,22 @@ export default function BookingsPage() {
         }));
       }
 
-      // 2. Update booking visit_outcome in local state if returned
-      if (data.visitOutcome) {
-        setBookings((prev) =>
-          prev.map((b) => (b.id === booking.id ? { ...b, visit_outcome: data.visitOutcome } : b))
-        );
-        if (selectedBooking?.id === booking.id) {
-          setSelectedBooking((prev) =>
-            prev ? { ...prev, visit_outcome: data.visitOutcome } : null
-          );
-        }
-      }
+      const activeAgent = data.officialAgentName || agent;
 
-      // 3. User feedback & Action Reminders
+      // 2. User feedback & Action Reminders
       if (disposition === 'confirmed') {
         setReminderBooking(booking);
-        setReminderAgentName(agent);
+        const initialNotes = booking.health_concern || cleanPatientQueryNotes(booking.notes) || '';
+        setReminderNotes(initialNotes);
+        setReminderAgentName(activeAgent);
         setWebsiteReminderOpen(true);
-        toast.success(`Booking Confirmed by ${agent}! Website registration zaroori hai.`);
+        toast.success(`Booking Confirmed by ${activeAgent}! Website registration zaroori hai.`);
       } else if (disposition === 'not_connected') {
-        toast.info(`Call logged as "Not Connected" by ${agent}. Follow-up tag assigned (${followupRec}).`);
+        toast.info(`Call logged as "Not Connected" by ${activeAgent}. Follow-up tag assigned (${followupRec}).`);
       } else if (disposition === 'callback') {
-        toast.success(`Callback requested logged by ${agent}. Follow-up tag assigned (${followupRec}).`);
+        toast.success(`Callback requested logged by ${activeAgent}. Follow-up tag assigned (${followupRec}).`);
       } else {
-        toast.success(`Call status logged as "Not Interested" by ${agent}`);
+        toast.success(`Call status logged as "Not Interested" by ${activeAgent}`);
       }
     } catch (err: any) {
       console.error('Call status disposition error:', err);
@@ -2783,7 +2777,7 @@ export default function BookingsPage() {
                   <TableHead className="min-w-[190px]">Patient Details</TableHead>
                   <TableHead className="min-w-[140px]">Website Status</TableHead>
                   <TableHead className="min-w-[155px]">Patient Outcome</TableHead>
-                  <TableHead className="min-w-[150px]">Tags</TableHead>
+                  <TableHead className="min-w-[220px]">Tags</TableHead>
                   <TableHead className="min-w-[180px]">Follow-up Notes</TableHead>
                   <TableHead className="min-w-[165px]">Consultation Mode</TableHead>
                   <TableHead>City</TableHead>
@@ -3572,39 +3566,163 @@ export default function BookingsPage() {
 
       {/* Website Booking Reminder Dialog (Triggered when Agent confirms booking on call) */}
       <Dialog open={websiteReminderOpen} onOpenChange={setWebsiteReminderOpen}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-2">
-              <Globe className="h-6 w-6" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-1">
+              <Globe className="h-5 w-5" />
             </div>
             <DialogTitle className="text-base text-emerald-800 dark:text-emerald-300">
               🎉 Call Booking Confirmed! (By {reminderAgentName})
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Lead ne call par consultation confirm kar di hai. Ab kripya is patient ki booking official website par punch karein, aur yahan &quot;Mark as Done&quot; par click karein.
+              Lead ne call par appointment confirm kiya hai. Website par booking punch karne ke liye ye details copy karein:
             </DialogDescription>
           </DialogHeader>
 
           {reminderBooking && (
-            <div className="p-3 bg-muted/40 rounded-lg space-y-1.5 text-xs border border-border">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Patient:</span>
-                <span className="font-semibold text-foreground">{reminderBooking.patient_name}</span>
+            <div className="space-y-3 py-1">
+              {/* Patient Core Details Summary */}
+              <div className="p-3 bg-muted/40 rounded-lg space-y-2 text-xs border border-border">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Patient Name:</span>
+                  <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                    <span>{reminderBooking.patient_name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(reminderBooking.patient_name);
+                        toast.success('Patient name copied!');
+                      }}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                      title="Copy Name"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Phone Number:</span>
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <span>{formatPhoneDisplay(reminderBooking.phone)}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(reminderBooking.phone.replace(/\D/g, ''));
+                        toast.success('Phone number copied!');
+                      }}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                      title="Copy Phone"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Consultation Type:</span>
+                  <div className="flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-300">
+                    <span>
+                      {reminderBooking.consultation_type === 'clinic_visit'
+                        ? `🏥 Clinic Visit (${reminderBooking.clinic_location || reminderBooking.city || 'Clinic'})`
+                        : '📹 Online Video Call (45 Min Session)'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const modeStr =
+                          reminderBooking.consultation_type === 'clinic_visit'
+                            ? `Clinic Visit - ${reminderBooking.clinic_location || reminderBooking.city || 'Clinic'}`
+                            : 'Online Video Call';
+                        navigator.clipboard.writeText(modeStr);
+                        toast.success('Consultation type copied!');
+                      }}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                      title="Copy Mode"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Preferred Schedule:</span>
+                  <div className="flex items-center gap-1.5 font-medium text-primary">
+                    <span>
+                      {[reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' - ') || 'N/A'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const schedStr = [reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' ');
+                        navigator.clipboard.writeText(schedStr);
+                        toast.success('Schedule copied!');
+                      }}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                      title="Copy Schedule"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Phone:</span>
-                <span className="font-mono">{formatPhoneDisplay(reminderBooking.phone)}</span>
+
+              {/* Health Concern / Notes for Website */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-primary" />
+                    <span>Health Concern / Notes (Website form me fill karein):</span>
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-1.5 text-xs text-primary hover:text-primary/80 gap-1"
+                    onClick={() => {
+                      if (reminderNotes) {
+                        navigator.clipboard.writeText(reminderNotes);
+                        toast.success('Health Concern notes copied!');
+                      }
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
+                    Copy Notes
+                  </Button>
+                </div>
+                <Textarea
+                  rows={3}
+                  value={reminderNotes}
+                  onChange={(e) => setReminderNotes(e.target.value)}
+                  placeholder="e.g. 3 saal se PCOD hai, periods irregular, conceiving me issue..."
+                  className="text-xs font-normal"
+                />
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">City / Clinic:</span>
-                <span>{reminderBooking.clinic_location || reminderBooking.city || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Preferred Schedule:</span>
-                <span className="font-medium text-primary">
-                  {[reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' - ') || 'N/A'}
-                </span>
-              </div>
+
+              {/* 1-Click Copy All Booking Details for Website Punching */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full text-xs gap-1.5 border-dashed border-primary/50 text-primary hover:bg-primary/5 cursor-pointer"
+                onClick={() => {
+                  if (!reminderBooking) return;
+                  const typeText =
+                    reminderBooking.consultation_type === 'clinic_visit'
+                      ? `Clinic Visit (${reminderBooking.clinic_location || reminderBooking.city || 'Clinic'})`
+                      : 'Online Video Call';
+                  const scheduleText =
+                    [reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' - ') || 'N/A';
+                  const fullText = `Name: ${reminderBooking.patient_name}\nPhone: ${reminderBooking.phone}\nCity/Clinic: ${reminderBooking.clinic_location || reminderBooking.city || 'N/A'}\nMode: ${typeText}\nSchedule: ${scheduleText}\nHealth Concern: ${reminderNotes || reminderBooking.health_concern || 'None'}`;
+                  navigator.clipboard.writeText(fullText);
+                  setCopiedWebsiteDetails(true);
+                  setTimeout(() => setCopiedWebsiteDetails(false), 2000);
+                  toast.success('All booking details copied for website punching!');
+                }}
+              >
+                {copiedWebsiteDetails ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                <span>{copiedWebsiteDetails ? 'All Details Copied!' : 'Copy All Details for Website Punching'}</span>
+              </Button>
             </div>
           )}
 
@@ -3618,9 +3736,23 @@ export default function BookingsPage() {
             </Button>
             <Button
               size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs"
-              onClick={() => {
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs cursor-pointer"
+              onClick={async () => {
                 if (reminderBooking) {
+                  // Save any edited notes to the booking
+                  if (reminderNotes && reminderNotes !== reminderBooking.notes) {
+                    try {
+                      await supabase
+                        .from('bookings')
+                        .update({ notes: reminderNotes, updated_at: new Date().toISOString() })
+                        .eq('id', reminderBooking.id);
+                      setBookings((prev) =>
+                        prev.map((b) => (b.id === reminderBooking.id ? { ...b, notes: reminderNotes } : b))
+                      );
+                    } catch (nErr) {
+                      console.warn('Note save notice:', nErr);
+                    }
+                  }
                   handleUpdateWebsiteStatus(reminderBooking.id, 'done');
                   setWebsiteReminderOpen(false);
                 }

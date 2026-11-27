@@ -857,6 +857,34 @@ export async function dispatchInboundToAiReply(
       }
     }
 
+    // Intercept questions asking for doctor names / degree / qualification
+    const isAskingDoctorDetails =
+      /\b(?:doctor\s*(?:ka\s*)?naam|doctor\s*name|doctor\s*kaun|kon\s*doctor|kaun\s*se\s*doctor|doctor\s*(?:ki\s*)?degree|doctor\s*qualification|doctors\s*qualification|who\s*is\s*(?:the\s*)?doctor|which\s*doctor|doctors?\s*experience|doctor\s*details)\b/i.test(
+        userMsg
+      ) ||
+      /(?:डॉक्टर\s*का\s*नाम|डॉक्टर\s*कौन|कौन\s*से\s*डॉक्टर|डॉक्टर\s*की\s*डिग्री|डॉक्टर\s*की\s*योग्यता|डॉक्टर\s*का\s*अनुभव)/.test(
+        userMsg
+      )
+
+    if (
+      isAskingDoctorDetails &&
+      !replyText.includes('Booking ID') &&
+      !replyText.includes('📋 Booking ID') &&
+      !replyText.includes('सफलतापूर्वक दर्ज')
+    ) {
+      replyText = isEnglish
+        ? 'At Gynocci, we have a specialized 5-member Senior Medical Board consisting of highly experienced Ayurvedic doctors (BAMS / Ayurvedacharyas and women\'s reproductive healthcare specialists) with over 10+ years of clinical experience. 🌸\n' +
+          '---\n' +
+          'Our doctors deeply review your medical history, symptoms, and previous diagnostic reports together to provide root-cause Ayurvedic treatment.\n' +
+          '---\n' +
+          'Could you please share your city and what health concern you would like to consult our doctors about? 🙏'
+        : 'Gynocci में हमारे पास कई वर्षों (10+ वर्षों) का गहन क्लिनिकल अनुभव रखने वाले वरिष्ठ अनुभवी डॉक्टर्स (BAMS / आयुर्वेदाचार्य और महिला स्वास्थ्य विशेषज्ञ) की 5 सदस्यीय सीनियर मेडिकल पैनल टीम है। 🌸\n' +
+          '---\n' +
+          'हमारी डॉक्टर्स टीम प्राचीन आयुर्वेदिक चिकित्सा पद्धति (नाड़ी एवं जिह्वा परीक्षण) और आपकी पुरानी रिपोर्ट्स का गहराई से अध्ययन करके व्यक्तिगत परामर्श प्रदान करती है ताकि समस्या को जड़ से ठीक किया जा सके।\n' +
+          '---\n' +
+          'कृपया आप बताएं कि आपको क्या स्वास्थ्य समस्या महसूस हो रही है और आप किस शहर (City) से हैं? 🙏'
+    }
+
     if (
       (replyText.includes('Booking ID:') || replyText.includes('📋 Booking ID') || replyText.includes('सफलतापूर्वक दर्ज')) &&
       !replyText.includes('₹499') &&
