@@ -111,11 +111,11 @@ export async function dispatchInboundToAiReply(
     const [autoRespondersRes, convRes, messages, contactRes, accountRes, managedVideos] = await Promise.all([
       db
         .from('automations')
-        .select('id')
+        .select('id, trigger_type, trigger_config')
         .eq('account_id', accountId)
         .eq('is_active', true)
         .in('trigger_type', ['new_message_received', 'keyword_match'])
-        .limit(1),
+        .limit(10),
       db
         .from('conversations')
         .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
@@ -136,7 +136,27 @@ export async function dispatchInboundToAiReply(
     ])
 
     const autoResponders = autoRespondersRes.data
-    if (autoResponders && autoResponders.length > 0) return
+    if (autoResponders && autoResponders.length > 0) {
+      const userMsgText = (latestUserMessage(messages) || '').toLowerCase()
+      const shouldStandDown = autoResponders.some((auto: any) => {
+        // If trigger_type is missing (e.g. test mock without fields) or new_message_received, stand down
+        if (!auto.trigger_type || auto.trigger_type === 'new_message_received') return true
+        // If it's a keyword_match automation, ONLY stand down if the user's message actually matches its keyword!
+        if (auto.trigger_type === 'keyword_match') {
+          const keywords = auto.trigger_config?.keywords
+          if (Array.isArray(keywords) && keywords.length > 0) {
+            return keywords.some(
+              (kw: string) => typeof kw === 'string' && kw.trim() && userMsgText.includes(kw.trim().toLowerCase())
+            )
+          }
+        }
+        return false
+      })
+      if (shouldStandDown) {
+        console.log(`[ai auto-reply] standing down for conversation ${conversationId} due to matching active automation`)
+        return
+      }
+    }
 
     const conv = convRes.data
     if (convRes.error || !conv) return
@@ -916,8 +936,21 @@ export async function dispatchInboundToAiReply(
     if (!effectiveBooking && contactId) {
       void syncBookingTag(db, accountId, contactId, false)
     }
-  } catch (err) {
-    console.error('[ai auto-reply] dispatch failed:', err)
+  } catch (err: any) {
+    const errMsg = err?.message || String(err)
+    if (
+      errMsg.includes('insufficient_quota') ||
+      errMsg.includes('credit_balance_exhausted') ||
+      errMsg.includes('credits remaining') ||
+      err?.status === 429
+    ) {
+      console.error(
+        `[ai auto-reply] CRITICAL: OpenAI credits exhausted for account ${accountId}! Patient message could not be replied to. Please add/recharge credits at https://platform.openai.com/settings/organization/billing/ or provide a key with available balance.`,
+        err
+      )
+    } else {
+      console.error('[ai auto-reply] dispatch failed:', err)
+    }
   }
 }
 
