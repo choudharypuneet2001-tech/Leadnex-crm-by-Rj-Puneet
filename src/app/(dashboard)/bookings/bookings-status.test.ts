@@ -4,6 +4,7 @@ import {
   getEffectiveVisitOutcome,
   normalizeDateStringToYMD,
   cleanPatientQueryNotes,
+  getCombinedBookingNotesForWebsite,
 } from './page';
 import type { Booking } from '@/types';
 
@@ -132,6 +133,51 @@ describe('Bookings Status & Conversion Helpers', () => {
       expect(cleanPatientQueryNotes(polluted)).toBe(
         'Patient bol rahi hai reports WhatsApp par bheji hain'
       );
+    });
+  });
+
+  describe('getCombinedBookingNotesForWebsite', () => {
+    it('combines health_concern and agent follow-up query notes cleanly', () => {
+      const b = createMockBooking({
+        health_concern: 'अनियमित पीरियड्स',
+        notes: '👤 Puneet Choudhary (27 Nov, 05:37 pm): Age: 20 Shadi ko 12 saal ho gaye',
+      });
+      const combined = getCombinedBookingNotesForWebsite(b);
+      expect(combined).toBe('अनियमित पीरियड्स\nAge: 20 Shadi ko 12 saal ho gaye');
+    });
+
+    it('returns only health_concern when no additional query notes exist', () => {
+      const b = createMockBooking({
+        health_concern: 'अनियमित पीरियड्स',
+        notes: null,
+      });
+      expect(getCombinedBookingNotesForWebsite(b)).toBe('अनियमित पीरियड्स');
+    });
+
+    it('returns cleaned query notes when health_concern is absent', () => {
+      const b = createMockBooking({
+        health_concern: undefined,
+        notes: '👤 Puneet Choudhary (27 Nov, 05:37 pm): Age: 20 Shadi ko 12 saal ho gaye',
+      });
+      expect(getCombinedBookingNotesForWebsite(b)).toBe('Age: 20 Shadi ko 12 saal ho gaye');
+    });
+
+    it('filters out automated disposition logs and combines genuine query notes', () => {
+      const b = createMockBooking({
+        health_concern: 'PCOD',
+        notes: `👤 Meenal (27 Nov, 04:30 PM): ❌ Not Connected / Call Not Answered. Next Follow-up: Today 06:00 PM
+👤 Puneet Choudhary (27 Nov, 05:37 pm): Reports WhatsApp par bhej di hain`,
+      });
+      const combined = getCombinedBookingNotesForWebsite(b);
+      expect(combined).toBe('PCOD\nReports WhatsApp par bhej di hain');
+    });
+
+    it('does not duplicate text if health_concern already contains the query note', () => {
+      const b = createMockBooking({
+        health_concern: 'Age: 20 Shadi ko 12 saal ho gaye',
+        notes: '👤 Puneet Choudhary: Age: 20 Shadi ko 12 saal ho gaye',
+      });
+      expect(getCombinedBookingNotesForWebsite(b)).toBe('Age: 20 Shadi ko 12 saal ho gaye');
     });
   });
 });

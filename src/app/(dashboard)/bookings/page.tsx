@@ -227,6 +227,38 @@ export function cleanPatientQueryNotes(notesText: string | null | undefined): st
     .trim();
 }
 
+export function getCombinedBookingNotesForWebsite(b: Booking): string {
+  const rawNotes = (b.notes || '').trim();
+  const cleanNotes = cleanPatientQueryNotes(rawNotes);
+  const concern = (b.health_concern || '').trim();
+
+  // Strip author stamp if present line-by-line (e.g. "👤 Puneet Choudhary (...): Age: 20...")
+  const cleanedLines = cleanNotes
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      const match = trimmed.match(/^👤\s*(?:.*?\)\s*:|[^:]+:)\s*(.*)$/);
+      return match ? match[1].trim() : trimmed;
+    })
+    .filter(Boolean);
+
+  const actualNoteText = cleanedLines.join('\n');
+
+  const parts: string[] = [];
+  if (concern) {
+    parts.push(concern);
+  }
+  if (actualNoteText && !parts.some((p) => p.toLowerCase().includes(actualNoteText.toLowerCase()))) {
+    parts.push(actualNoteText);
+  }
+
+  if (parts.length === 0) {
+    return rawNotes || concern || '';
+  }
+
+  return parts.join('\n');
+}
+
 function toCsv(rows: string[][]): string {
   const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
   return rows.map((r) => r.map(escape).join(',')).join('\n');
@@ -288,7 +320,7 @@ function BookingTagsCell({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5 min-w-[210px] max-w-[340px]"
+      className="flex flex-wrap items-center gap-1.5 min-w-[240px] max-w-[420px]"
       onClick={(e) => e.stopPropagation()}
     >
       {/* Display Assigned Tags */}
@@ -299,7 +331,8 @@ function BookingTagsCell({
           <Badge
             key={tag.id}
             variant="outline"
-            className="text-[11px] font-medium px-2 py-0.5 gap-1.5 border shadow-2xs group/tag transition-all whitespace-nowrap"
+            title={tag.name}
+            className="text-[11px] font-medium px-2 py-0.5 gap-1.5 border shadow-2xs group/tag transition-all shrink-0 max-w-full"
             style={{
               backgroundColor: `${tag.color}15`,
               color: tag.color,
@@ -443,6 +476,322 @@ function BookingTagsCell({
         </PopoverContent>
       </Popover>
     </div>
+  );
+}
+
+const QUICK_MEDICAL_TEMPLATES = [
+  '🌸 PCOD / PCOS Problem',
+  '🩺 Tubal Blockage Reports Discussion',
+  '🩸 Periods Irregular / Heavy Pain',
+  '👨‍⚕️ Direct Doctor Consultation Wanted',
+  '💳 Consultation Fee & Discount Details Sent',
+  '📱 Medical Reports to be Sent on WhatsApp',
+  '🏥 Wants Clinic Visit in Jaipur/Delhi',
+];
+
+interface FollowUpNoteDialogContentProps {
+  booking: Booking;
+  initialNote: string;
+  saving: boolean;
+  onSave: (note: string) => Promise<void>;
+  onClose: () => void;
+}
+
+function FollowUpNoteDialogContent({
+  booking,
+  initialNote,
+  saving,
+  onSave,
+  onClose,
+}: FollowUpNoteDialogContentProps) {
+  const [draft, setDraft] = useState(initialNote);
+
+  return (
+    <DialogContent className="sm:max-w-[480px]">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-primary" />
+          <span>Patient Query & Symptoms (मरीज की समस्या / सवाल)</span>
+        </DialogTitle>
+        <DialogDescription>
+          Patient ne call par jo query ya health issues bataye hain, sirf wahi yaha darj karein:{' '}
+          <strong className="text-foreground">{booking.patient_name}</strong>{' '}
+          <span className="font-mono text-xs">({booking.booking_query_id})</span>
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="space-y-3 py-2">
+        {/* Quick Medical Query Templates */}
+        <div>
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+            Quick Medical & Query Templates (Click to insert)
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {QUICK_MEDICAL_TEMPLATES.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => {
+                  setDraft((prev) => {
+                    const trimmed = prev.trim();
+                    return trimmed ? `${trimmed}\n${chip}` : chip;
+                  });
+                }}
+                className="px-2 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 text-foreground border border-border/60 transition-colors cursor-pointer"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Note Textarea */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-foreground">
+            Patient Query / Discussion Notes (कॉल पर मरीज ने क्या बताया):
+          </label>
+          <Textarea
+            rows={4}
+            placeholder="e.g., Patient ne bataya unhe 3 saal se PCOD hai aur conceiving me dikkat aa rahi hai, doctor se direct video call pe baat karna chahte hain..."
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="text-xs"
+          />
+        </div>
+      </div>
+
+      <DialogFooter className="flex sm:justify-between items-center">
+        <div className="text-xs text-muted-foreground">
+          {booking.phone && (
+            <a
+              href={formatTelUri(booking.phone)}
+              className="text-primary hover:underline flex items-center gap-1"
+            >
+              <Phone className="h-3 w-3" />
+              Call: {formatPhoneDisplay(booking.phone)}
+            </a>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => onSave(draft)}
+            disabled={saving}
+            className="gap-1.5"
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+            Save Note
+          </Button>
+        </div>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+interface WebsiteReminderDialogContentProps {
+  booking: Booking;
+  agentName: string;
+  initialNotes: string;
+  onUpdateStatusDone: (bookingId: string, notes: string) => Promise<void>;
+  onClose: (notes: string) => void;
+}
+
+function WebsiteReminderDialogContent({
+  booking,
+  agentName,
+  initialNotes,
+  onUpdateStatusDone,
+  onClose,
+}: WebsiteReminderDialogContentProps) {
+  const [notes, setNotes] = useState(initialNotes);
+  const [copiedAll, setCopiedAll] = useState(false);
+
+  const consultationDisplay =
+    booking.consultation_type === 'clinic_visit'
+      ? `🏥 Clinic Visit (${booking.clinic_location || booking.city || 'Clinic'})`
+      : '📹 Online Video Call (45 Min Session)';
+
+  const consultationCopyText =
+    booking.consultation_type === 'clinic_visit'
+      ? `Clinic Visit - ${booking.clinic_location || booking.city || 'Clinic'}`
+      : 'Online Video Call';
+
+  const scheduleDisplay =
+    [booking.preferred_date, booking.preferred_time].filter(Boolean).join(' - ') || 'N/A';
+
+  const handleCopyAll = () => {
+    const fullText = `Name: ${booking.patient_name}\nPhone: ${booking.phone}\nCity/Clinic: ${booking.clinic_location || booking.city || 'N/A'}\nMode: ${consultationCopyText}\nSchedule: ${scheduleDisplay}\nHealth Concern / Notes: ${notes || booking.health_concern || 'None'}`;
+    navigator.clipboard.writeText(fullText);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 2000);
+    toast.success('All booking details copied for website punching!');
+  };
+
+  return (
+    <DialogContent className="sm:max-w-[520px]">
+      <DialogHeader>
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-1">
+          <Globe className="h-5 w-5" />
+        </div>
+        <DialogTitle className="text-base text-emerald-800 dark:text-emerald-300">
+          🎉 Call Booking Confirmed! (By {agentName})
+        </DialogTitle>
+        <DialogDescription className="text-xs">
+          Lead ne call par appointment confirm kiya hai. Website par booking punch karne ke liye ye details copy karein:
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="space-y-3 py-1">
+        {/* Patient Core Details Summary */}
+        <div className="p-3 bg-muted/40 rounded-lg space-y-2 text-xs border border-border">
+          <div className="flex justify-between items-center">
+            <span className="text-muted-foreground">Patient Name:</span>
+            <div className="flex items-center gap-1.5 font-semibold text-foreground">
+              <span>{booking.patient_name}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(booking.patient_name);
+                  toast.success('Patient name copied!');
+                }}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Copy Name"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <span className="text-muted-foreground">Phone Number:</span>
+            <div className="flex items-center gap-1.5 font-mono">
+              <span>{formatPhoneDisplay(booking.phone)}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(booking.phone.replace(/\D/g, ''));
+                  toast.success('Phone number copied!');
+                }}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Copy Phone"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <span className="text-muted-foreground">Consultation Type:</span>
+            <div className="flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-300">
+              <span>{consultationDisplay}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(consultationCopyText);
+                  toast.success('Consultation type copied!');
+                }}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Copy Mode"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <span className="text-muted-foreground">Preferred Schedule:</span>
+            <div className="flex items-center gap-1.5 font-medium text-primary">
+              <span>{scheduleDisplay}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(scheduleDisplay);
+                  toast.success('Schedule copied!');
+                }}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Copy Schedule"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Health Concern / Notes for Website */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5 text-primary" />
+              <span>Health Concern / Notes (Website form me fill karein):</span>
+            </label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-xs text-primary hover:text-primary/80 gap-1"
+              onClick={() => {
+                if (notes) {
+                  navigator.clipboard.writeText(notes);
+                  toast.success('Health Concern notes copied!');
+                }
+              }}
+            >
+              <Copy className="h-3 w-3" />
+              Copy Notes
+            </Button>
+          </div>
+          <Textarea
+            rows={3}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="e.g. 3 saal se PCOD hai, periods irregular, conceiving me issue..."
+            className="text-xs font-normal"
+          />
+        </div>
+
+        {/* 1-Click Copy All Booking Details for Website Punching */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full text-xs gap-1.5 border-dashed border-primary/50 text-primary hover:bg-primary/5 cursor-pointer"
+          onClick={handleCopyAll}
+        >
+          {copiedAll ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+          <span>{copiedAll ? 'All Details Copied!' : 'Copy All Details for Website Punching'}</span>
+        </Button>
+      </div>
+
+      <DialogFooter className="flex sm:justify-between items-center gap-2 pt-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onClose(notes)}
+        >
+          Baad Me Karein (Pending)
+        </Button>
+        <Button
+          size="sm"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs cursor-pointer"
+          onClick={() => onUpdateStatusDone(booking.id, notes)}
+        >
+          <Check className="h-4 w-4" />
+          Website Status: Mark as Done
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   );
 }
 
@@ -1280,10 +1629,10 @@ export default function BookingsPage() {
     }
   };
 
-  const handleSaveNote = async () => {
+  const handleSaveNote = async (draftText: string) => {
     if (!editingNoteBooking) return;
     setSavingNote(true);
-    let cleanNote = noteDraft.trim() || null;
+    let cleanNote = draftText.trim() || null;
 
     // Automatically stamp author agent name and date/time if not already present
     if (cleanNote && !cleanNote.startsWith('👤')) {
@@ -1348,7 +1697,66 @@ export default function BookingsPage() {
     e?.stopPropagation();
     const agent = currentAgentName;
     const followupRec = getRecommendedFollowupTime();
+    const contactId = booking.contact_id;
 
+    // Latest booking in case notes or other fields were edited in current session
+    const latestBooking = bookings.find((b) => b.id === booking.id) || booking;
+
+    // 1. Instant Optimistic Tag Assignment in UI (0ms delay!)
+    const agentTagName = `Call By ${agent}`;
+    const dispositionNames: Record<string, { name: string; color: string }> = {
+      not_connected: { name: 'Not Connected', color: '#f43f5e' },
+      callback: { name: 'Callback Requested', color: '#f59e0b' },
+      confirmed: { name: 'Call Confirmed', color: '#10b981' },
+      not_interested: { name: 'Not Interested', color: '#64748b' },
+    };
+    const dispInfo = dispositionNames[disposition];
+
+    if (contactId) {
+      setContactTagsMap((prev) => {
+        const currentTagIds = prev[contactId] || [];
+        // Filter out obsolete agent, status, and followup tags
+        const filteredIds = currentTagIds.filter((tid) => {
+          const t = tagsMap[tid];
+          if (!t) return true;
+          const name = t.name.toLowerCase();
+          if (name.startsWith('call by ')) return false;
+          if (['not connected', 'callback requested', 'call confirmed', 'not interested'].includes(name)) return false;
+          if (name.startsWith('follow-up:') || name.startsWith('next call:')) return false;
+          return true;
+        });
+
+        const newIds = [...filteredIds];
+        const existingAgentTag = allTags.find((t) => t.name.toLowerCase() === agentTagName.toLowerCase());
+        if (existingAgentTag) newIds.push(existingAgentTag.id);
+
+        const existingDispTag = allTags.find((t) => t.name.toLowerCase() === dispInfo.name.toLowerCase());
+        if (existingDispTag) newIds.push(existingDispTag.id);
+
+        return {
+          ...prev,
+          [contactId]: Array.from(new Set(newIds)),
+        };
+      });
+    }
+
+    // 2. Open confirmation popup immediately or show feedback in 0ms!
+    if (disposition === 'confirmed') {
+      const combinedNotes = getCombinedBookingNotesForWebsite(latestBooking);
+      setReminderBooking(latestBooking);
+      setReminderNotes(combinedNotes);
+      setReminderAgentName(agent);
+      setWebsiteReminderOpen(true);
+      toast.success(`Booking Confirmed by ${agent}! Website registration zaroori hai.`);
+    } else if (disposition === 'not_connected') {
+      toast.info(`Call logged as "Not Connected" by ${agent}. Follow-up tag assigned (${followupRec}).`);
+    } else if (disposition === 'callback') {
+      toast.success(`Callback requested logged by ${agent}. Follow-up tag assigned (${followupRec}).`);
+    } else {
+      toast.success(`Call status logged as "Not Interested" by ${agent}`);
+    }
+
+    // 3. Background server call to persist call log and sync official tags
     try {
       const res = await fetch('/api/bookings/call-log', {
         method: 'POST',
@@ -1366,7 +1774,7 @@ export default function BookingsPage() {
         throw new Error(data.error || 'Call status save karne me error aayi');
       }
 
-      // 1. Update tags in UI state immediately (Who called, disposition, next follow-up call)
+      // Reconcile tags with authoritative server response
       if (data.allTags && Array.isArray(data.allTags)) {
         setAllTags(data.allTags);
       }
@@ -1376,28 +1784,49 @@ export default function BookingsPage() {
           [data.contactId]: data.contactTagIds,
         }));
       }
-
-      const activeAgent = data.officialAgentName || agent;
-
-      // 2. User feedback & Action Reminders
-      if (disposition === 'confirmed') {
-        setReminderBooking(booking);
-        const initialNotes = booking.health_concern || cleanPatientQueryNotes(booking.notes) || '';
-        setReminderNotes(initialNotes);
-        setReminderAgentName(activeAgent);
-        setWebsiteReminderOpen(true);
-        toast.success(`Booking Confirmed by ${activeAgent}! Website registration zaroori hai.`);
-      } else if (disposition === 'not_connected') {
-        toast.info(`Call logged as "Not Connected" by ${activeAgent}. Follow-up tag assigned (${followupRec}).`);
-      } else if (disposition === 'callback') {
-        toast.success(`Callback requested logged by ${activeAgent}. Follow-up tag assigned (${followupRec}).`);
-      } else {
-        toast.success(`Call status logged as "Not Interested" by ${activeAgent}`);
+      if (data.officialAgentName && disposition === 'confirmed') {
+        setReminderAgentName(data.officialAgentName);
       }
     } catch (err: any) {
       console.error('Call status disposition error:', err);
       toast.error(err?.message || 'Call status save karne me error aayi');
+      void fetchBookings();
     }
+  };
+
+  const handleUpdateWebsiteStatusDone = async (bookingId: string, currentNotes?: string) => {
+    if (currentNotes && reminderBooking && currentNotes !== reminderBooking.notes) {
+      try {
+        await supabase
+          .from('bookings')
+          .update({ notes: currentNotes, updated_at: new Date().toISOString() })
+          .eq('id', bookingId);
+        setBookings((prev) =>
+          prev.map((b) => (b.id === bookingId ? { ...b, notes: currentNotes } : b))
+        );
+      } catch (nErr) {
+        console.warn('Note save notice:', nErr);
+      }
+    }
+    await handleUpdateWebsiteStatus(bookingId, 'done');
+    setWebsiteReminderOpen(false);
+  };
+
+  const handleCloseWebsiteReminder = async (currentNotes?: string) => {
+    if (currentNotes && reminderBooking && currentNotes !== reminderBooking.notes) {
+      try {
+        await supabase
+          .from('bookings')
+          .update({ notes: currentNotes, updated_at: new Date().toISOString() })
+          .eq('id', reminderBooking.id);
+        setBookings((prev) =>
+          prev.map((b) => (b.id === reminderBooking.id ? { ...b, notes: currentNotes } : b))
+        );
+      } catch (nErr) {
+        console.warn('Note save notice:', nErr);
+      }
+    }
+    setWebsiteReminderOpen(false);
   };
 
   const handleDelete = async () => {
@@ -2777,7 +3206,7 @@ export default function BookingsPage() {
                   <TableHead className="min-w-[190px]">Patient Details</TableHead>
                   <TableHead className="min-w-[140px]">Website Status</TableHead>
                   <TableHead className="min-w-[155px]">Patient Outcome</TableHead>
-                  <TableHead className="min-w-[220px]">Tags</TableHead>
+                  <TableHead className="min-w-[260px]">Tags</TableHead>
                   <TableHead className="min-w-[180px]">Follow-up Notes</TableHead>
                   <TableHead className="min-w-[165px]">Consultation Mode</TableHead>
                   <TableHead>City</TableHead>
@@ -3101,7 +3530,7 @@ export default function BookingsPage() {
                       </TableCell>
 
                       {/* Tags Column */}
-                      <TableCell onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="min-w-[260px]" onClick={(e) => e.stopPropagation()}>
                         <BookingTagsCell
                           contactId={b.contact_id}
                           patientName={b.patient_name}
@@ -3464,305 +3893,30 @@ export default function BookingsPage() {
 
       {/* Follow-up Note Dialog */}
       <Dialog open={noteModalOpen} onOpenChange={setNoteModalOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="text-lg flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              Patient Query & Symptoms (मरीज की समस्या / सवाल)
-            </DialogTitle>
-            <DialogDescription>
-              Patient ne call par jo query ya health issues bataye hain, sirf wahi yaha darj karein:{' '}
-              <strong className="text-foreground">{editingNoteBooking?.patient_name}</strong>{' '}
-              <span className="font-mono text-xs">({editingNoteBooking?.booking_query_id})</span>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2">
-            {/* Quick Medical Query Templates */}
-            <div>
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
-                Quick Medical & Query Templates (Click to insert)
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  '🌸 PCOD / PCOS Problem',
-                  '🩺 Tubal Blockage Reports Discussion',
-                  '🩸 Periods Irregular / Heavy Pain',
-                  '👨‍⚕️ Direct Doctor Consultation Wanted',
-                  '💳 Consultation Fee & Discount Details Sent',
-                  '📱 Medical Reports to be Sent on WhatsApp',
-                  '🏥 Wants Clinic Visit in Jaipur/Delhi',
-                ].map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() => {
-                      setNoteDraft((prev) => {
-                        const trimmed = prev.trim();
-                        return trimmed ? `${trimmed}\n${chip}` : chip;
-                      });
-                    }}
-                    className="px-2 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 text-foreground border border-border/60 transition-colors cursor-pointer"
-                  >
-                    {chip}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Note Textarea */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
-                Patient Query / Discussion Notes (कॉल पर मरीज ने क्या बताया):
-              </label>
-              <Textarea
-                rows={4}
-                placeholder="e.g., Patient ne bataya unhe 3 saal se PCOD hai aur conceiving me dikkat aa rahi hai, doctor se direct video call pe baat karna chahte hain..."
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-                className="text-xs"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="flex sm:justify-between items-center">
-            <div className="text-xs text-muted-foreground">
-              {editingNoteBooking?.phone && (
-                <a
-                  href={formatTelUri(editingNoteBooking.phone)}
-                  className="text-primary hover:underline flex items-center gap-1"
-                >
-                  <Phone className="h-3 w-3" />
-                  Call: {formatPhoneDisplay(editingNoteBooking.phone)}
-                </a>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setNoteModalOpen(false)}
-                disabled={savingNote}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSaveNote}
-                disabled={savingNote}
-                className="gap-1.5"
-              >
-                {savingNote ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Check className="h-3.5 w-3.5" />
-                )}
-                Save Note
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
+        {editingNoteBooking && (
+          <FollowUpNoteDialogContent
+            key={editingNoteBooking.id}
+            booking={editingNoteBooking}
+            initialNote={noteDraft}
+            saving={savingNote}
+            onSave={handleSaveNote}
+            onClose={() => setNoteModalOpen(false)}
+          />
+        )}
       </Dialog>
 
       {/* Website Booking Reminder Dialog (Triggered when Agent confirms booking on call) */}
       <Dialog open={websiteReminderOpen} onOpenChange={setWebsiteReminderOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mb-1">
-              <Globe className="h-5 w-5" />
-            </div>
-            <DialogTitle className="text-base text-emerald-800 dark:text-emerald-300">
-              🎉 Call Booking Confirmed! (By {reminderAgentName})
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Lead ne call par appointment confirm kiya hai. Website par booking punch karne ke liye ye details copy karein:
-            </DialogDescription>
-          </DialogHeader>
-
-          {reminderBooking && (
-            <div className="space-y-3 py-1">
-              {/* Patient Core Details Summary */}
-              <div className="p-3 bg-muted/40 rounded-lg space-y-2 text-xs border border-border">
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Patient Name:</span>
-                  <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                    <span>{reminderBooking.patient_name}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(reminderBooking.patient_name);
-                        toast.success('Patient name copied!');
-                      }}
-                      className="text-muted-foreground hover:text-foreground cursor-pointer"
-                      title="Copy Name"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Phone Number:</span>
-                  <div className="flex items-center gap-1.5 font-mono">
-                    <span>{formatPhoneDisplay(reminderBooking.phone)}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(reminderBooking.phone.replace(/\D/g, ''));
-                        toast.success('Phone number copied!');
-                      }}
-                      className="text-muted-foreground hover:text-foreground cursor-pointer"
-                      title="Copy Phone"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Consultation Type:</span>
-                  <div className="flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-300">
-                    <span>
-                      {reminderBooking.consultation_type === 'clinic_visit'
-                        ? `🏥 Clinic Visit (${reminderBooking.clinic_location || reminderBooking.city || 'Clinic'})`
-                        : '📹 Online Video Call (45 Min Session)'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const modeStr =
-                          reminderBooking.consultation_type === 'clinic_visit'
-                            ? `Clinic Visit - ${reminderBooking.clinic_location || reminderBooking.city || 'Clinic'}`
-                            : 'Online Video Call';
-                        navigator.clipboard.writeText(modeStr);
-                        toast.success('Consultation type copied!');
-                      }}
-                      className="text-muted-foreground hover:text-foreground cursor-pointer"
-                      title="Copy Mode"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Preferred Schedule:</span>
-                  <div className="flex items-center gap-1.5 font-medium text-primary">
-                    <span>
-                      {[reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' - ') || 'N/A'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const schedStr = [reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' ');
-                        navigator.clipboard.writeText(schedStr);
-                        toast.success('Schedule copied!');
-                      }}
-                      className="text-muted-foreground hover:text-foreground cursor-pointer"
-                      title="Copy Schedule"
-                    >
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Health Concern / Notes for Website */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 text-primary" />
-                    <span>Health Concern / Notes (Website form me fill karein):</span>
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-1.5 text-xs text-primary hover:text-primary/80 gap-1"
-                    onClick={() => {
-                      if (reminderNotes) {
-                        navigator.clipboard.writeText(reminderNotes);
-                        toast.success('Health Concern notes copied!');
-                      }
-                    }}
-                  >
-                    <Copy className="h-3 w-3" />
-                    Copy Notes
-                  </Button>
-                </div>
-                <Textarea
-                  rows={3}
-                  value={reminderNotes}
-                  onChange={(e) => setReminderNotes(e.target.value)}
-                  placeholder="e.g. 3 saal se PCOD hai, periods irregular, conceiving me issue..."
-                  className="text-xs font-normal"
-                />
-              </div>
-
-              {/* 1-Click Copy All Booking Details for Website Punching */}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full text-xs gap-1.5 border-dashed border-primary/50 text-primary hover:bg-primary/5 cursor-pointer"
-                onClick={() => {
-                  if (!reminderBooking) return;
-                  const typeText =
-                    reminderBooking.consultation_type === 'clinic_visit'
-                      ? `Clinic Visit (${reminderBooking.clinic_location || reminderBooking.city || 'Clinic'})`
-                      : 'Online Video Call';
-                  const scheduleText =
-                    [reminderBooking.preferred_date, reminderBooking.preferred_time].filter(Boolean).join(' - ') || 'N/A';
-                  const fullText = `Name: ${reminderBooking.patient_name}\nPhone: ${reminderBooking.phone}\nCity/Clinic: ${reminderBooking.clinic_location || reminderBooking.city || 'N/A'}\nMode: ${typeText}\nSchedule: ${scheduleText}\nHealth Concern: ${reminderNotes || reminderBooking.health_concern || 'None'}`;
-                  navigator.clipboard.writeText(fullText);
-                  setCopiedWebsiteDetails(true);
-                  setTimeout(() => setCopiedWebsiteDetails(false), 2000);
-                  toast.success('All booking details copied for website punching!');
-                }}
-              >
-                {copiedWebsiteDetails ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                <span>{copiedWebsiteDetails ? 'All Details Copied!' : 'Copy All Details for Website Punching'}</span>
-              </Button>
-            </div>
-          )}
-
-          <DialogFooter className="flex sm:justify-between items-center gap-2 pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setWebsiteReminderOpen(false)}
-            >
-              Baad Me Karein (Pending)
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs cursor-pointer"
-              onClick={async () => {
-                if (reminderBooking) {
-                  // Save any edited notes to the booking
-                  if (reminderNotes && reminderNotes !== reminderBooking.notes) {
-                    try {
-                      await supabase
-                        .from('bookings')
-                        .update({ notes: reminderNotes, updated_at: new Date().toISOString() })
-                        .eq('id', reminderBooking.id);
-                      setBookings((prev) =>
-                        prev.map((b) => (b.id === reminderBooking.id ? { ...b, notes: reminderNotes } : b))
-                      );
-                    } catch (nErr) {
-                      console.warn('Note save notice:', nErr);
-                    }
-                  }
-                  handleUpdateWebsiteStatus(reminderBooking.id, 'done');
-                  setWebsiteReminderOpen(false);
-                }
-              }}
-            >
-              <Check className="h-4 w-4" />
-              Website Status: Mark as Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+        {reminderBooking && (
+          <WebsiteReminderDialogContent
+            key={reminderBooking.id}
+            booking={reminderBooking}
+            agentName={reminderAgentName}
+            initialNotes={reminderNotes}
+            onUpdateStatusDone={handleUpdateWebsiteStatusDone}
+            onClose={handleCloseWebsiteReminder}
+          />
+        )}
       </Dialog>
 
       {/* Reschedule Date & Time Dialog */}
